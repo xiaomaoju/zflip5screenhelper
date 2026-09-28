@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="外屏快捷栏的交互原型目录：体验控制中心、应用 Dock、通知与 One UI 设置。">
+  <title>外屏快捷栏 · 原型预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f5f7; color: #202631; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 960px; margin: auto; padding: 64px 24px 32px; }
+    .eyebrow { color: #526581; font-size: 12px; letter-spacing: .14em; }
+    h1 { margin: 16px 0; font-size: clamp(28px, 5vw, 42px); letter-spacing: -.04em; }
+    .intro { max-width: 600px; color: #586373; line-height: 1.8; margin-bottom: 32px; }
+    .prototypes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .card { display: flex; flex-direction: column; padding: 28px; border-radius: 24px; background: #fff; color: inherit; text-decoration: none; border: 1px solid #dde2e9; }
+    .card:hover { border-color: #416ca8; }
+    a:focus-visible { outline: 3px solid #245dc2; outline-offset: 5px; }
+    .number { color: #5d708d; font-size: 13px; }
+    h2 { margin: 24px 0 12px; font-size: 23px; }
+    .card p { margin: 0 0 24px; color: #586373; line-height: 1.8; }
+    .open { margin-top: auto; color: #2459a5; font-weight: 600; }
+    .resources { margin-top: 28px; padding: 24px 0; border-top: 1px solid #d8dee7; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .resources a, footer a { color: #375c8e; text-underline-offset: 4px; }
+    footer { color: #687483; font-size: 13px; line-height: 1.8; }
+    @media (max-width: 600px) { main { padding: 36px 20px 24px; } .prototypes { grid-template-columns: 1fr; } .card { padding: 24px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">FLIP COVER CONTROLS</div>
+      <h1>外屏快捷栏 · 原型预览</h1>
+      <p class="intro">选择一个原型，直接在浏览器中体验界面与交互。电脑和手机都可以打开，无需安装应用。</p>
+    </header>
+    <nav class="prototypes" aria-label="交互原型">
+      <a class="card" href="flipcover-prototype.html">
+        <span class="number">01 · 功能演示</span>
+        <h2>外屏交互原型</h2>
+        <p>体验控制中心、应用 Dock、应用中心、多任务、通知和小组件流程。此原型保留 0.10.0 版本的演示内容。</p>
+        <span class="open">打开交互原型 →</span>
+      </a>
+      <a class="card" href="settings-oneui-prototype.html">
+        <span class="number">02 · 设置体验</span>
+        <h2>One UI 设置原型</h2>
+        <p>浏览设置首页，调整状态栏、控制中心和应用方向，体验配置预览与快捷项编辑。</p>
+        <span class="open">打开设置原型 →</span>
+      </a>
+    </nav>
+    <nav class="resources" aria-label="相关资源">
+      <a href="device-frames/preview.html">设备外框预览与下载 →</a>
+      <a href="https://github.com/xiaomaoju/zflip5screenhelper">查看 GitHub 项目 →</a>
+    </nav>
+    <footer>原型使用示例数据，用于演示界面与操作；不连接手机，也不修改设备设置。原型效果不代表三星物理真机验证结果。</footer>
+  </main>
+</body>
+</html>
