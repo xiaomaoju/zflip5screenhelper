@@ -2,14 +2,17 @@
 
 网站入口：<https://xiaomaoju.github.io/zflip5screenhelper/>
 
+直接体验教程：<https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html>
+
 ## 页面与资源
 
 - `dist/index.html`：原型目录首页。
-- `dist/flipcover-prototype.html`：0.10.0 外屏交互原型。
+- `dist/flipcover-tutorial.html`：最新版外屏上手教程，打开即自动快速演示，包含第2屏三星原生启动器。
+- `dist/flipcover-prototype.html`：与教程同内容的兼容入口，旧分享链接继续有效。
 - `dist/settings-oneui-prototype.html`：One UI 设置交互原型。
 - `dist/device-frames/preview.html`：设备外框预览及 PNG / SVG 下载。
 
-上述页面保留相对路径，既可通过普通浏览器直接打开，也可部署到 GitHub Pages 或 NAS。离线复制设置原型时，需要一并保留 `device-frames/` 内的 SVG；复制外框预览时，需要一并保留它链接的 PNG 与 SVG。
+教程两个入口各自内嵌完整脚本、样式、图标和设备外框。上述页面保留相对路径，既可通过普通浏览器直接打开，也可部署到 GitHub Pages 或 NAS。离线复制设置原型时，需要一并保留 `device-frames/` 内的 SVG；复制外框预览时，需要一并保留它链接的 PNG 与 SVG。
 
 ## 发布与更新
 
