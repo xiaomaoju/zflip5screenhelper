@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Z Flip5 外屏镂空贴图</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:32px 20px;background:#f5f6f8;color:#242a32;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:760px;margin:auto}h1{margin:0 0 10px;font-size:clamp(23px,4vw,30px)}p{margin:0 0 20px;line-height:1.7;color:#525d6a}.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}label{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:8px 13px;border:1px solid #c3c9d0;border-radius:8px;background:#fff;cursor:pointer}input{accent-color:#35546c;margin:0}.stage{width:min(100%,480px);margin:0 auto 20px;border-radius:14px;background-color:#fff;background-image:conic-gradient(#dce1e7 25%,transparent 0 50%,#dce1e7 0 75%,transparent 0);background-size:24px 24px}.stage svg{display:block;width:100%;height:auto}main:has(#light:checked) .stage{background:#fff}main:has(#dark:checked) .stage{background:#111318}main:has(#color:checked) .stage{background:linear-gradient(135deg,#c2f0eb,#b4b9ee 55%,#f6c9bf)}.caption{text-align:center;font-size:14px;margin-bottom:12px}.links{display:flex;justify-content:center;gap:20px;flex-wrap:wrap}a{color:#264e79;text-underline-offset:4px}footer{margin-top:24px;font-size:13px;color:#6b7480}
+</style>
+</head>
+<body><main>
+<h1>Z Flip5 外屏镂空贴图</h1>
+<p>外框、双摄和闪光灯保留；屏幕区域透明。切换底色，可以检查屏幕开孔与摄像头遮挡。</p>
+<div class="controls" role="group" aria-label="透明区域预览底色">
+<label><input id="checker" type="radio" name="background" checked>棋盘格</label>
+<label><input id="light" type="radio" name="background">浅色</label>
+<label><input id="dark" type="radio" name="background">深色</label>
+<label><input id="color" type="radio" name="background">彩色</label>
+</div>
+<div class="stage"><svg xmlns="http://www.w3.org/2000/svg" width="720" height="748" viewBox="0 0 440 457.111111" role="img" aria-labelledby="title description">
+  <title id="title">Galaxy Z Flip5 外屏镂空贴图</title>
+  <desc id="description">依据项目 HTML 原型制作的外框、双摄与闪光灯示意。屏幕及机身外侧完全透明；默认摄像头位于右下角。</desc>
+  <defs>
+    <clipPath id="screen-corners">
+      <rect x="12" y="12" width="416" height="433.111111" rx="26"/>
+    </clipPath>
+    <mask id="screen-opening" maskUnits="userSpaceOnUse" x="0" y="0" width="440" height="457.111111" style="mask-type:luminance">
+      <rect width="440" height="457.111111" fill="white"/>
+      <polygon points="12,12 428,12 428,406.997333 244.96,406.997333 232.48,410.462222 224.16,419.124444 215.84,436.448889 207.52,445.111111 12,445.111111" fill="black" clip-path="url(#screen-corners)"/>
+    </mask>
+  </defs>
+  <!-- CSS 原型基准宽 440：边框 3、内边距 9、外圆角 38、屏幕圆角 26。 -->
+  <g mask="url(#screen-opening)">
+    <rect width="440" height="457.111111" rx="38" fill="#434c59"/>
+    <rect x="3" y="3" width="434" height="451.111111" rx="35" fill="#282d35"/>
+  </g>
+  <!-- 摄像头基于 glass：直径 8%，右距 4% / 18%，底距 1%。 -->
+  <g fill="#090c12" stroke="#535c68" stroke-width="3">
+    <circle cx="394.72" cy="424.14" r="15.14"/>
+    <circle cx="336.48" cy="424.14" r="15.14"/>
+  </g>
+  <g fill="none" stroke="#18212e" stroke-width="4">
+    <circle cx="394.72" cy="424.14" r="11.64"/>
+    <circle cx="336.48" cy="424.14" r="11.64"/>
+  </g>
+  <!-- 闪光灯基于 glass：直径 2.8%，右距 34%，底距 3.8%。 -->
+  <circle cx="280.736" cy="422.828889" r="5.824" fill="#e3dfc7"/>
+</svg>
+</div>
+<p class="caption">720 × 748 · 背景仅用于预览，不包含在透明贴图内</p>
+<nav class="links" aria-label="贴图下载"><a href="zflip5-cover-overlay.png" download>透明 PNG</a><a href="zflip5-cover-overlay@2x.png" download>二倍 PNG</a><a href="zflip5-cover-overlay.svg" download>SVG 源文件</a></nav>
+<footer>基于项目 HTML 原型的外观示意；真机圆角、缺口和窗口路由需另行验证。此页可离线打开。</footer>
+</main></body></html>

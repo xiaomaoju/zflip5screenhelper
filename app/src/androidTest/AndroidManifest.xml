@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="组件验证示例">
+        <activity android:name="io.github.flipcover.controls.WidgetResultActivity" android:exported="true" android:theme="@android:style/Theme.Material.NoActionBar" />
+        <receiver android:name="io.github.flipcover.controls.WidgetFixtureProvider" android:exported="true" android:label="跨应用小组件验证">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_fixture" />
+        </receiver>
+        <activity android:name="io.github.flipcover.controls.RecentTaskFixtureActivity" android:exported="true" android:theme="@android:style/Theme.Material.NoActionBar" android:resizeableActivity="true" />
+    </application>
+</manifest>

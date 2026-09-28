@@ -1,0 +1,1 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_cell" android:layout_width="1dp" android:layout_height="1dp" android:layout_gravity="top|left" android:clipChildren="true" android:clipToPadding="true" />

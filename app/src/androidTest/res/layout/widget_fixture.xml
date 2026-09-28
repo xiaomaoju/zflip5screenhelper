@@ -1,0 +1,6 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="#FFF0EFEA" android:padding="8dp">
+    <TextView android:id="@+id/fixture_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="等待更新" android:textColor="#FF111111" android:textSize="18sp" />
+    <TextView android:id="@+id/fixture_variant" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="布局变体" android:textColor="#FF111111" />
+    <Button android:id="@+id/fixture_button" android:layout_width="match_parent" android:layout_height="48dp" android:text="测试原组件点击" />
+    <ListView android:id="@+id/fixture_list" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+</LinearLayout>

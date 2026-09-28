@@ -1,0 +1,6 @@
+<!-- Google Material Symbols Rounded, Apache-2.0. Viewport translated from upstream SVG. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="960" android:viewportHeight="960">
+    <group android:translateX="-0" android:translateY="960">
+        <path android:fillColor="#FFF4F5F7" android:pathData="M200-312v-336l240 168-240 168Zm320-8v-320h80v320h-80Zm160 0v-320h80v320h-80Z" />
+    </group>
+</vector>

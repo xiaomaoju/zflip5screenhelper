@@ -1,0 +1,5 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="352dp" android:minHeight="339dp" android:targetCellWidth="4" android:targetCellHeight="4"
+    android:resizeMode="horizontal|vertical" android:widgetCategory="keyguard"
+    android:initialLayout="@layout/launcher_widget" android:previewLayout="@layout/launcher_widget"
+    android:updatePeriodMillis="0" android:description="@string/launcher_widget_description" />

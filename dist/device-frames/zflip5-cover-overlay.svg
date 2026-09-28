@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="748" viewBox="0 0 440 457.111111" role="img" aria-labelledby="title description">
+  <title id="title">Galaxy Z Flip5 外屏镂空贴图</title>
+  <desc id="description">依据项目 HTML 原型制作的外框、双摄与闪光灯示意。屏幕及机身外侧完全透明；默认摄像头位于右下角。</desc>
+  <defs>
+    <clipPath id="screen-corners">
+      <rect x="12" y="12" width="416" height="433.111111" rx="26"/>
+    </clipPath>
+    <mask id="screen-opening" maskUnits="userSpaceOnUse" x="0" y="0" width="440" height="457.111111" style="mask-type:luminance">
+      <rect width="440" height="457.111111" fill="white"/>
+      <polygon points="12,12 428,12 428,406.997333 244.96,406.997333 232.48,410.462222 224.16,419.124444 215.84,436.448889 207.52,445.111111 12,445.111111" fill="black" clip-path="url(#screen-corners)"/>
+    </mask>
+  </defs>
+  <!-- CSS 原型基准宽 440：边框 3、内边距 9、外圆角 38、屏幕圆角 26。 -->
+  <g mask="url(#screen-opening)">
+    <rect width="440" height="457.111111" rx="38" fill="#434c59"/>
+    <rect x="3" y="3" width="434" height="451.111111" rx="35" fill="#282d35"/>
+  </g>
+  <!-- 摄像头基于 glass：直径 8%，右距 4% / 18%，底距 1%。 -->
+  <g fill="#090c12" stroke="#535c68" stroke-width="3">
+    <circle cx="394.72" cy="424.14" r="15.14"/>
+    <circle cx="336.48" cy="424.14" r="15.14"/>
+  </g>
+  <g fill="none" stroke="#18212e" stroke-width="4">
+    <circle cx="394.72" cy="424.14" r="11.64"/>
+    <circle cx="336.48" cy="424.14" r="11.64"/>
+  </g>
+  <!-- 闪光灯基于 glass：直径 2.8%，右距 34%，底距 3.8%。 -->
+  <circle cx="280.736" cy="422.828889" r="5.824" fill="#e3dfc7"/>
+</svg>

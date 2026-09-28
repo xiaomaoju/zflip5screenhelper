@@ -1,0 +1,79 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Background system text Toasts require notifications to be allowed by the user. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Official host declaration; actual binding uses ACTION_APPWIDGET_BIND user consent. -->
+    <uses-permission android:name="android.permission.BIND_APPWIDGET" tools:ignore="ProtectedPermissions" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <queries>
+        <intent><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent>
+        <intent><action android:name="android.service.quicksettings.action.QS_TILE" /></intent>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
+    </queries>
+    <application android:name=".CoverApp" android:label="外屏快捷栏" android:theme="@style/AppTheme"
+        android:icon="@drawable/ic_launcher" android:allowBackup="false" android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:exported="true" android:resizeableActivity="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity>
+        <activity android:name=".SystemOutputActivity" android:exported="false" android:resizeableActivity="true" />
+        <activity android:name=".LauncherWidgetActivity" android:exported="false" android:resizeableActivity="true" android:excludeFromRecents="true" android:taskAffinity="" android:theme="@style/LauncherWidgetEntryTheme" />
+        <receiver android:name=".LauncherWidgetProvider" android:exported="false" android:label="@string/launcher_widget_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/launcher_widget" />
+            <meta-data android:name="com.samsung.android.appwidget.provider" android:resource="@xml/samsung_native_widget" />
+        </receiver>
+        <activity android:name=".NativeWidgetActivity" android:exported="true" android:resizeableActivity="true" android:label="@string/native_widget_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
+        </activity>
+        <receiver android:name=".NativeWidgetProvider" android:exported="false" android:label="@string/native_widget_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/native_widget" />
+            <meta-data android:name="com.samsung.android.appwidget.provider" android:resource="@xml/samsung_native_widget" />
+        </receiver>
+        <receiver android:name=".NativeWidgetProvider$Slot2" android:exported="false" android:label="@string/native_widget_slot_2">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/native_widget" />
+            <meta-data android:name="com.samsung.android.appwidget.provider" android:resource="@xml/samsung_native_widget" />
+        </receiver>
+        <receiver android:name=".NativeWidgetProvider$Slot3" android:exported="false" android:label="@string/native_widget_slot_3">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/native_widget" />
+            <meta-data android:name="com.samsung.android.appwidget.provider" android:resource="@xml/samsung_native_widget" />
+        </receiver>
+        <receiver android:name=".NativeWidgetProvider$Slot4" android:exported="false" android:label="@string/native_widget_slot_4">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/native_widget" />
+            <meta-data android:name="com.samsung.android.appwidget.provider" android:resource="@xml/samsung_native_widget" />
+        </receiver>
+        <receiver android:name=".NativeWidgetProvider$Slot5" android:exported="false" android:label="@string/native_widget_slot_5">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/native_widget" />
+            <meta-data android:name="com.samsung.android.appwidget.provider" android:resource="@xml/samsung_native_widget" />
+        </receiver>
+        <receiver android:name=".NativeWidgetProvider$Slot6" android:exported="false" android:label="@string/native_widget_slot_6">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/native_widget" />
+            <meta-data android:name="com.samsung.android.appwidget.provider" android:resource="@xml/samsung_native_widget" />
+        </receiver>
+        <service android:name=".CoverService" android:label="外屏快捷栏" android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service" />
+        </service>
+        <service android:name=".CoverNotifications" android:label="外屏通知" android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
+        </service>
+        <provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="${applicationId}.shizuku"
+            android:enabled="true" android:exported="true" android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+        <meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />
+    </application>
+</manifest>

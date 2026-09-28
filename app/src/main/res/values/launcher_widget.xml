@@ -1,0 +1,11 @@
+<resources>
+    <string name="launcher_widget_label">应用启动器 · 外屏卡片</string>
+    <string name="launcher_widget_description">与浮窗启动器共用应用、文件夹和固定项；编辑请到浮窗启动器。</string>
+    <style name="LauncherWidgetEntryTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

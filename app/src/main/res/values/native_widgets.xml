@@ -1,0 +1,11 @@
+<resources>
+    <string name="native_widget_label">组合卡片1 · 桌面小组件</string>
+    <string name="native_widget_slot_2">组合卡片2 · 桌面小组件</string>
+    <string name="native_widget_slot_3">组合卡片3 · 桌面小组件</string>
+    <string name="native_widget_slot_4">组合卡片4 · 桌面小组件</string>
+    <string name="native_widget_slot_5">组合卡片5 · 桌面小组件</string>
+    <string name="native_widget_slot_6">组合卡片6 · 桌面小组件</string>
+    <string name="native_widget_description">4×4自由布局，可放多个桌面小组件。按应用选择预览与尺寸。</string>
+    <string name="native_widget_setup">布置这张卡片</string>
+    <string name="native_widget_help">点按添加组件 · 4×4自由布局</string>
+</resources>

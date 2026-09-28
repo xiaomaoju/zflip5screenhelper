@@ -1,0 +1,34 @@
+/Cache/
+/.gradle/
+/**/build/
+/local.properties
+*.jks
+*.keystore
+.DS_Store
+
+# Local IDE settings and credentials
+/.idea/
+/.vscode/
+*.iml
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+key.properties
+keystore.properties
+
+# Reference APKs, installable builds, and personal recordings
+*.apk
+*.apk.sha256
+*.aab
+*.apks
+*.mp4
+*.mov
+
+# Keep delivery documentation, portable prototypes, and required device frames
+/dist/**
+!/dist/**/
+!/dist/**/*.md
+!/dist/**/*.html
+!/dist/device-frames/**

@@ -1,0 +1,4 @@
+<resources>
+    <item type="id" name="order_move_up" />
+    <item type="id" name="order_move_down" />
+</resources>

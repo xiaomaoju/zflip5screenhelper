@@ -1,0 +1,17 @@
+<resources>
+    <item name="toggle_dock" type="id" />
+    <item type="id" name="open_notifications" />
+    <item type="id" name="open_controls" />
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#AFCDEB</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:colorControlHighlight">#24FFFFFF</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <string name="accessibility_description">在所选外屏显示快捷栏，执行导航和外屏截图；根据外屏窗口所属应用自动收起按钮。窗口识别能力需无障碍的检索窗口权限，但本应用只处理窗口编号、类型与应用包名，不读取页面文字，不上传信息。可随时暂停。</string>
+</resources>
