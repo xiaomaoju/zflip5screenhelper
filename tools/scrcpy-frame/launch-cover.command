@@ -31,7 +31,8 @@ export SCRCPY_ICON_DIR="$resources_dir"
 
 print '正在打开带机型框的 Z Flip5 外屏。请合上手机并正常解锁。'
 print 'F8 切换外框；F9 切换系统缺口安全线。Mac 媒体键模式请加 Fn。'
-print 'Option+左/右箭头旋转整个展示窗口。关闭窗口结束投屏。'
+print '菜单栏「投屏方向」可选 0° / 90° / 180° / 270°，画面和机型框一起旋转。'
+print 'Option+左/右箭头也可旋转；菜单 0° 复位。只改变电脑展示，关闭窗口结束投屏。'
 print '边框与镜头为外观示意；绿色线仅表示系统缺口安全边界。'
 adb -s "$device_serial" shell cmd device_state state reset || fail '无法恢复实际开合状态。'
 adb -s "$device_serial" shell input -d 1 keyevent KEYCODE_WAKEUP
@@ -39,5 +40,5 @@ adb -s "$device_serial" shell input -d 1 keyevent KEYCODE_WAKEUP
 "$resources_dir/../MacOS/scrcpy" --serial="$device_serial" --display-id=1 \
     --no-audio --no-clipboard-autosync --no-power-on --keep-active \
     --capture-orientation=@0 --no-terminal-title --window-width=543 --window-height=645 \
-    --window-title='Z Flip5 外屏 · 校准机型框 · F8 外框 / F9 辅助线' \
+    --window-title='Z Flip5 外屏 · 投屏 0° · 菜单「投屏方向」 · F8 外框 / F9 辅助线' \
     || fail '外屏投屏已中断或启动失败。请检查 USB 连接后重试。'

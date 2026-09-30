@@ -18,7 +18,7 @@ fi
     || { echo 'scrcpy 源码校验失败。'; exit 1; }
 tar -xzf "$archive" -C "$build_root"
 patch -d "$source_dir" -p1 < "$tools_dir/scrcpy.patch"
-cp "$tools_dir/cover_frame.c" "$tools_dir/cover_frame.h" "$source_dir/app/src/"
+cp "$tools_dir/cover_frame.c" "$tools_dir/cover_frame.h" "$tools_dir/cover_menu.m" "$tools_dir/cover_menu.h" "$source_dir/app/src/"
 if [[ -d "$build_root/build/meson-private" ]]; then
     meson setup --reconfigure "$build_root/build" "$source_dir" --buildtype=release -Dcompile_server=false -Dportable=true -Dusb=false
 else

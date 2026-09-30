@@ -1,6 +1,12 @@
 --- a/app/src/screen.c
 +++ b/app/src/screen.c
-@@ -18,6 +18,10 @@
+@@ -1,4 +1,5 @@
+ #include "screen.h"
++#include "cover_menu.h"
+ 
+ #include <assert.h>
+ #include <string.h>
+@@ -18,6 +19,10 @@
  set_aspect_ratio(struct sc_screen *screen, struct sc_size content_size) {
      assert(content_size.width && content_size.height);
  
@@ -11,7 +17,7 @@
      if (screen->window_aspect_ratio_lock) {
          float ar = (float) content_size.width / content_size.height;
          bool ok = SDL_SetWindowAspectRatio(screen->window, ar, ar);
-@@ -227,6 +231,10 @@
+@@ -227,6 +232,10 @@
      bool is_icon = !screen->video || screen->disconnected;
  
      struct sc_size window_size = sc_sdl_get_window_size(screen->window);
@@ -22,7 +28,7 @@
      compute_content_rect(window_size, screen->content_size, is_icon,
                           screen->render_fit, &screen->rect);
  }
-@@ -304,6 +312,8 @@
+@@ -304,6 +313,8 @@
      if (!ok) {
          LOGE("Could not render texture: %s", SDL_GetError());
      }
@@ -31,7 +37,7 @@
  
  end:
      sc_sdl_render_present(renderer);
-@@ -492,6 +502,7 @@
+@@ -492,6 +503,7 @@
      screen->orientation = SC_ORIENTATION_0;
      screen->disconnected = false;
      screen->disconnect_started = false;
@@ -39,7 +45,7 @@
  
      screen->video = params->video;
      screen->camera = params->camera;
-@@ -672,6 +683,11 @@
+@@ -672,6 +684,12 @@
  
      // Initialize even if not used for simplicity
      sc_mouse_capture_init(&screen->mc, screen->window, params->shortcut_mods);
@@ -48,10 +54,11 @@
 +        av_frame_free(&screen->frame);
 +        goto error_destroy_texture;
 +    }
++    cover_menu_init(screen);
  
  #ifdef CONTINUOUS_RESIZING_WORKAROUND
      if (screen->video) {
-@@ -744,7 +760,9 @@
+@@ -744,7 +762,9 @@
      };
  
      struct sc_size window_size =
@@ -62,15 +69,16 @@
                                                         screen->req.height);
  
      if (screen->flex_display
-@@ -807,6 +825,7 @@
+@@ -807,6 +827,8 @@
      if (screen->disconnect_started) {
          sc_disconnect_destroy(&screen->disconnect);
      }
++    cover_menu_destroy(screen);
 +    cover_frame_destroy(&screen->cover);
      sc_texture_destroy(&screen->tex);
      av_frame_free(&screen->frame);
  #ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
-@@ -895,6 +914,11 @@
+@@ -895,6 +917,11 @@
  void
  sc_screen_set_orientation(struct sc_screen *screen,
                            enum sc_orientation orientation) {
@@ -82,7 +90,7 @@
      assert(screen->video);
  
      if (orientation == screen->orientation) {
-@@ -904,9 +928,21 @@
+@@ -904,10 +931,23 @@
      struct sc_size new_content_size =
          get_oriented_size(screen->frame_size, orientation);
  
@@ -105,12 +113,17 @@
 +        set_content_size(screen, new_content_size, true);
 +    }
      LOGI("Display orientation set to %s", sc_orientation_get_name(orientation));
++    cover_menu_update(screen);
  
      sc_screen_render(screen, true);
-@@ -1133,6 +1169,29 @@
+ }
+@@ -1133,6 +1173,30 @@
  
  void
  sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
++    if (cover_menu_handle_event(screen, event)) {
++        return;
++    }
 +    if (screen->cover.texture && screen->window_shown
 +            && (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP)
 +            && (event->key.key == SDLK_F8 || event->key.key == SDLK_F9)) {
@@ -124,9 +137,7 @@
 +            } else {
 +                LOGW("Device cutout metadata unavailable; guide remains disabled");
 +            }
-+            SDL_SetWindowTitle(screen->window, screen->cover.guides
-+                ? "Z Flip5 外屏 · 绿色：系统缺口安全线 · F8 外框 / F9 辅助线"
-+                : "Z Flip5 外屏 · 校准机型框 · F8 外框 / F9 辅助线");
++            cover_menu_update(screen);
 +            sc_screen_render(screen, true);
 +        }
 +        return;
@@ -210,6 +221,27 @@
      'src/sdl_hints.c',
      'src/server.c',
      'src/texture.c',
+@@ -95,6 +96,9 @@
+     ]
+     if host_machine.system() == 'darwin'
+         feature_test_macros += '-D_DARWIN_C_SOURCE'
++        add_languages('objc', native: false)
++        add_project_arguments('-fobjc-arc', language: 'objc')
++        src += ['src/cover_menu.m']
+     endif
+ endif
+ 
+@@ -130,6 +134,10 @@
+     dependency('sdl3', version: '>= 3.2.0', static: static),
+ ]
+ 
++if host_machine.system() == 'darwin'
++    dependencies += dependency('appleframeworks', modules: ['Cocoa'])
++endif
++
+ if v4l2_support
+     dependencies += dependency('libavdevice', static: static)
+ endif
 --- a/server/src/main/java/com/genymobile/scrcpy/control/Controller.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/control/Controller.java
 @@ -546,6 +546,11 @@
@@ -239,7 +271,7 @@
          if (index != -1) {
 --- a/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
 +++ b/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
-@@ -159,7 +159,11 @@
+@@ -160,7 +160,11 @@
          if (vdListener != null) {
              int virtualDisplayId;
              PositionMapper positionMapper;
@@ -263,3 +295,13 @@
  CLASSES_DIR="$BUILD_DIR/classes"
  GEN_DIR="$BUILD_DIR/gen"
  SERVER_DIR=$(dirname "$0")
+--- a/app/src/events.h
++++ b/app/src/events.h
+@@ -21,6 +21,7 @@
+     SC_EVENT_AOA_OPEN_ERROR,
+     SC_EVENT_DISCONNECTED_ICON_LOADED,
+     SC_EVENT_DISCONNECTED_TIMEOUT,
++    SC_EVENT_COVER_ROTATION,
+ };
+ 
+ bool
