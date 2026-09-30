@@ -37,6 +37,111 @@ final class LauncherWidgetChecks {
     private TextView text(View view, String value) { if (view instanceof TextView label && value.contentEquals(label.getText())) return label; if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) { TextView found = text(group.getChildAt(i), value); if (found != null) return found; } return null; }
     private View described(View view, String value) { if (view.getContentDescription() != null && view.getContentDescription().toString().startsWith(value)) return view; if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) { View found = described(group.getChildAt(i), value); if (found != null) return found; } return null; }
     private int describedCount(View view, String value) { int count = view.getContentDescription() != null && view.getContentDescription().toString().startsWith(value) ? 1 : 0; if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) count += describedCount(group.getChildAt(i), value); return count; }
+    private void filledBackground() {
+        View background = card.findViewById(R.id.launcher_background), panel = card.findViewById(R.id.launcher_panel);
+        require(background.getLeft() == 0 && background.getTop() == 0 && background.getWidth() == card.getWidth() && background.getHeight() == card.getHeight(), "background fills the native host independently of content insets");
+        require(panel.getBackground() == null, "safe content has no second inset rounded background");
+        android.graphics.Bitmap pixels = android.graphics.Bitmap.createBitmap(background.getWidth(), background.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+        try {
+            background.getBackground().draw(new android.graphics.Canvas(pixels)); boolean filled = true; int color = card.findViewById(R.id.launcher_catalog) == null ? Ui.SURFACE : Ui.BACKGROUND;
+            for (int x = 0; x < pixels.getWidth(); x++) filled &= pixels.getPixel(x, 0) == color && pixels.getPixel(x, pixels.getHeight() - 1) == color;
+            for (int y = 0; y < pixels.getHeight(); y++) filled &= pixels.getPixel(0, y) == color && pixels.getPixel(pixels.getWidth() - 1, y) == color;
+            require(filled, "all four rendered edges and corners keep the panel color instead of exposing the host");
+        } finally { pixels.recycle(); }
+    }
+    private void sharedHubLayout(Prefs prefs) {
+        ViewGroup panel = card.findViewById(R.id.launcher_panel);
+        AppHubView floating = new AppHubView(activity, prefs, new AppHubView.Listener() {
+            public void action(String id) { } public void editFavorites() { } public void editPinned() { } public void expand(boolean value) { } public void close() { }
+        });
+        try {
+            floating.measure(View.MeasureSpec.makeMeasureSpec(panel.getWidth(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(panel.getHeight(), View.MeasureSpec.EXACTLY)); floating.layout(0, 0, panel.getWidth(), panel.getHeight());
+            ViewGroup tools = floating.findViewWithTag("hub-tools"), nativeTools = panel.findViewById(R.id.launcher_rail_tools);
+            require(tools.getChildCount() == 1 && nativeTools.getChildCount() == 1, "both sidebar footers contain only the edit button");
+            require(floating.findViewWithTag("hub-close") != null && described(card, "收起应用区，保留 Dock") == null && described(card, "关闭应用中心") == null, "only the floating launcher has a close button");
+            View rail = floating.findViewWithTag("hub-rail"), nativeRail = panel.findViewById(R.id.launcher_rail_panel);
+            require(Math.abs(rail.getLeft() - nativeRail.getLeft()) <= 1 && Math.abs(rail.getWidth() - nativeRail.getWidth()) <= 1 && Math.abs(rail.getHeight() - nativeRail.getHeight()) <= 1, "both hosts consume the same full-height sidebar geometry");
+            AppWorkspaceView grid = floating.findViewWithTag("hub-grid"); View nativeGrid = panel.findViewById(R.id.launcher_grid);
+            android.graphics.Rect a = new android.graphics.Rect(0, 0, grid.getWidth(), grid.getHeight()), b = new android.graphics.Rect(0, 0, nativeGrid.getWidth(), nativeGrid.getHeight());
+            floating.offsetDescendantRectToMyCoords(grid, a); panel.offsetDescendantRectToMyCoords(nativeGrid, b);
+            require(Math.abs(a.left - b.left) <= 2 && Math.abs(a.top - b.top) <= 2 && Math.abs(a.width() - b.width()) <= 2, "native grid starts on the same horizontal and vertical alignment as the floating workspace");
+            int pagingDifference = Ui.dp(activity, AppLauncherStyle.BUTTON_PAGER_HEIGHT) - Ui.dp(activity, AppLauncherStyle.WORKSPACE_PAGER_HEIGHT);
+            require(Math.abs(grid.gridHeight() - nativeGrid.getHeight() - pagingDifference) <= 2, "the only grid-height difference is native button paging instead of swiping");
+            require(panel.findViewById(R.id.launcher_rail).getHeight() > nativeGrid.getHeight(), "sidebar uses the whole body instead of stopping at the app grid");
+        } finally { floating.dispose(); }
+    }
+    private void surfaceBroadcasts(LauncherWidgetBridge bridge, int widget, int target) {
+        require(CoverService.instance == null, "emulator fixture exercises missing-service fallback without opening real overlays");
+        Instrumentation.ActivityMonitor monitor = test.addMonitor(LauncherWidgetActivity.class.getName(), null, false);
+        try {
+            for (int id : new int[]{R.id.launcher_search, R.id.launcher_sort, R.id.launcher_tasks}) {
+                android.widget.Toast previous = nativeToast(bridge);
+                main(() -> card.findViewById(id).performClick());
+                until(() -> nativeToast(bridge) != previous, "native surface click reaches the existing bridge through its broadcast PendingIntent");
+            }
+            require(monitor.getHits() == 0, "search, sort and tasks do not create a transient Activity or steal its window focus");
+            android.widget.Toast previous = nativeToast(bridge);
+            main(() -> { bridge.action(widget, 0, "surface", "tasks"); bridge.action(-1, target, "surface", "tasks"); bridge.action(widget, target, "surface", "arbitrary"); bridge.action(widget, target, "surface", null); });
+            require(nativeToast(bridge) == previous, "wrong display, unknown card and unsupported surface operations are rejected before service dispatch");
+        } finally { test.removeMonitor(monitor); }
+    }
+    private int nativeGridTop() {
+        View grid = card.findViewById(R.id.launcher_grid); android.graphics.Rect box = new android.graphics.Rect(0, 0, grid.getWidth(), grid.getHeight()); card.offsetDescendantRectToMyCoords(grid, box); return box.top;
+    }
+    private void folderReturn(Prefs prefs, LauncherWidgetBridge bridge, int widget, int target, String folder) throws Exception {
+        AppWorkspaceLayout original = prefs.workspace();
+        try {
+            main(() -> prefs.saveWorkspace(original.move(folder, 45, false), false));
+            until(() -> card.findViewById(R.id.launcher_page).getContentDescription().toString().contains("共4页"), "folder fixture is on a later application page");
+            for (int page = 2; page <= 4; page++) { int expected = page; main(() -> bridge.action(widget, target, "next", "")); until(() -> card.findViewById(R.id.launcher_page).getContentDescription().toString().startsWith("第" + expected + "页"), "native page advances to the folder origin"); }
+            int[] top = {0}; main(() -> { top[0] = nativeGridTop(); described(card, "同步改名，文件夹").performClick(); });
+            until(() -> card.findViewById(R.id.launcher_back).getVisibility() == View.VISIBLE, "later-page folder shows its return bar");
+            main(() -> {
+                View back = card.findViewById(R.id.launcher_back), header = card.findViewById(R.id.launcher_header);
+                require(back.getWidth() == header.getWidth() && back.getHeight() == Ui.dp(activity, AppLauncherStyle.FOLDER_RETURN_HEIGHT), "whole 44dp title row is the folder return target");
+                require(card.findViewById(R.id.launcher_summary).getVisibility() == View.GONE && card.findViewById(R.id.launcher_search_field).getVisibility() == View.GONE, "return bar borrows existing search and summary height");
+                require(Math.abs(nativeGridTop() - top[0]) <= 1, "return bar does not push down the member grid");
+                View apps = described(card, "全部应用（固定显示）"); require(!apps.isEnabled(), "Dock grid icon remains disabled inside folders"); apps.performClick(); bridge.action(widget, target, "apps", "");
+                require(back.getVisibility() == View.VISIBLE && card.findViewById(R.id.launcher_body).getVisibility() == View.VISIBLE, "disabled or stale Dock click neither exits the folder nor hides the native body");
+            });
+            cardFrame("folder-return-180");
+            main(() -> {
+                android.view.ViewGroup grid = card.findViewById(R.id.launcher_grid); View surface = grid.findViewById(R.id.launcher_folder_backplate), first = grid.getChildAt(1), last = grid.getChildAt(grid.getChildCount() - 1);
+                require(surface == grid.getChildAt(0) && !surface.isClickable() && !surface.isFocusable(), "folder background is behind members and does not consume blank touches");
+                require(surface.getWidth() == surface.getHeight() && Math.abs(surface.getWidth() - (3 * first.getWidth() + 2 * Ui.dp(activity, AppLauncherStyle.FOLDER_PADDING))) <= 2, "two-member folder retains a full three-by-three square background");
+                require(surface.getLeft() < first.getLeft() && surface.getTop() < first.getTop() && surface.getRight() > last.getRight() && surface.getBottom() > last.getBottom(), "rounded folder background encloses the compact member block with padding");
+                require(first.getWidth() <= Ui.dp(activity, AppLauncherStyle.FOLDER_MEMBER_HEIGHT) && first.getHeight() == first.getWidth(), "folder members use compact square hit targets");
+                require(Math.abs(first.getLeft() + last.getRight() - grid.getWidth()) <= 2 && Math.abs(first.getTop() + last.getBottom() - grid.getHeight()) <= 2, "two-member folder is centered in both axes");
+                require(card.findViewById(R.id.launcher_previous).getVisibility() == View.INVISIBLE && card.findViewById(R.id.launcher_next).getVisibility() == View.INVISIBLE, "single-page folder has no redundant paging buttons");
+            });
+            for (int blank : new int[]{0, 1, 2}) {
+                main(() -> {
+                    View grid = card.findViewById(R.id.launcher_grid); long down = SystemClock.uptimeMillis();
+                    View surface = grid.findViewById(R.id.launcher_folder_backplate); float x = blank == 2 ? surface.getLeft() + 1 : blank == 1 ? grid.getWidth() - 2 : 2, y = blank == 2 ? surface.getTop() + surface.getHeight() / 2f : blank == 1 ? grid.getHeight() - 2 : 2;
+                    for (int action : new int[]{android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP}) { android.view.MotionEvent event = android.view.MotionEvent.obtain(down, down + (action == android.view.MotionEvent.ACTION_UP ? 50 : 0), action, x, y, 0); grid.dispatchTouchEvent(event); event.recycle(); }
+                });
+                until(() -> card.findViewById(R.id.launcher_back).getVisibility() == View.GONE && card.findViewById(R.id.launcher_page).getContentDescription().toString().startsWith("第4页"), "blank corner closes the folder and restores its originating page");
+                main(() -> { require(!card.findViewById(R.id.launcher_grid).hasOnClickListeners(), "workspace blank area does not keep a folder-dismiss listener"); described(card, "同步改名，文件夹").performClick(); });
+                until(() -> card.findViewById(R.id.launcher_back).getVisibility() == View.VISIBLE, "folder can reopen after blank-area dismissal");
+            }
+            main(() -> {
+                View back = card.findViewById(R.id.launcher_back); long down = SystemClock.uptimeMillis();
+                for (int action : new int[]{android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP}) { android.view.MotionEvent event = android.view.MotionEvent.obtain(down, down + (action == android.view.MotionEvent.ACTION_UP ? 50 : 0), action, back.getWidth() - Ui.dp(activity, 8), back.getHeight() / 2f, 0); back.dispatchTouchEvent(event); event.recycle(); }
+            });
+            until(() -> card.findViewById(R.id.launcher_back).getVisibility() == View.GONE && card.findViewById(R.id.launcher_page).getContentDescription().toString().startsWith("第4页"), "tapping the far end of the return bar restores the original fourth page");
+            main(() -> bridge.action(widget, target, "back", ""));
+            require(card.findViewById(R.id.launcher_page).getContentDescription().toString().startsWith("第4页"), "repeated stale back does not reset the workspace to page one");
+        } finally {
+            main(() -> { bridge.action(widget, target, "back", ""); prefs.saveWorkspace(original, false); for (int i = 0; i < 4; i++) bridge.action(widget, target, "previous", ""); });
+        }
+        until(() -> text(card, "同步改名") != null, "folder fixture restores the original workspace");
+    }
+    private void rotateDisplay(int target, int rotation) throws Exception {
+        try (java.io.InputStream output = new android.os.ParcelFileDescriptor.AutoCloseInputStream(test.getUiAutomation().executeShellCommand("wm user-rotation -d " + target + " lock " + rotation))) {
+            byte[] buffer = new byte[1024]; while (output.read(buffer) != -1) { }
+        }
+        until(() -> test.getTargetContext().getSystemService(DisplayManager.class).getDisplay(target).getRotation() == rotation, "owned emulator display applies the requested rotation");
+    }
     private void fixedGrid(Prefs prefs) {
         ViewGroup grid = card.findViewById(R.id.launcher_grid); AppWorkspaceLayout layout = prefs.workspace().project(5, 3); int index = 0;
         for (String id : layout.ordered()) {
@@ -86,6 +191,12 @@ final class LauncherWidgetChecks {
         SystemClock.sleep(160); android.graphics.Bitmap image = test.getUiAutomation().takeScreenshot(); java.io.File dir = new java.io.File(activity.getFilesDir(), "launcher-widget-raw"); dir.mkdirs();
         try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(dir, name + ".png"))) { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out); } finally { image.recycle(); }
     }
+    private void cardFrame(String name) throws Exception {
+        android.graphics.Bitmap[] image = {null};
+        main(() -> { image[0] = android.graphics.Bitmap.createBitmap(card.getWidth(), card.getHeight(), android.graphics.Bitmap.Config.ARGB_8888); card.draw(new android.graphics.Canvas(image[0])); });
+        java.io.File dir = new java.io.File(activity.getFilesDir(), "launcher-widget-raw"); dir.mkdirs();
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(dir, name + ".png"))) { image[0].compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out); } finally { image[0].recycle(); }
+    }
     String run() throws Exception {
         require(android.os.Build.HARDWARE.equals("ranchu") || android.os.Build.HARDWARE.equals("goldfish"), "disposable emulator guard");
         Context context = test.getTargetContext(); Prefs prefs = new Prefs(context); AppCatalogCache cache = CoverApp.catalog(context);
@@ -112,6 +223,7 @@ final class LauncherWidgetChecks {
                 FrameLayout root = new FrameLayout(activity); root.setBackgroundColor(Ui.BACKGROUND); root.addView(card, new FrameLayout.LayoutParams(Ui.dp(activity, 310), Ui.dp(activity, 280), android.view.Gravity.CENTER)); activity.setContentView(root); activity.getWindow().getInsetsController().hide(android.view.WindowInsets.Type.systemBars()); host.startListening(); bridge.refresh();
             });
             until(() -> text(card, "共享文件夹") != null, "card displays the floating workspace folder");
+            main(this::filledBackground);
             require(!java.util.Arrays.stream(CoverApp.widgets(context).cards()).anyMatch(id -> id == ids[0]), "launcher does not consume a combination slot");
             Map<String, ?> before = prefs.data.getAll();
             main(() -> card.findViewById(R.id.launcher_edit).performClick());
@@ -140,6 +252,7 @@ final class LauncherWidgetChecks {
             smallerOptions.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 260); smallerOptions.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 260);
             main(() -> { ViewGroup.LayoutParams params = card.getLayoutParams(); params.height = Ui.dp(activity, 260); card.setLayoutParams(params); manager.updateAppWidgetOptions(ids[0], smallerOptions); bridge.refresh(); });
             until(() -> card.findViewById(R.id.launcher_grid).getHeight() < originalGridHeight, "native host applies a smaller available height"); main(() -> fixedGrid(prefs));
+            main(this::filledBackground);
             main(() -> { ViewGroup.LayoutParams params = card.getLayoutParams(); params.height = Ui.dp(activity, 280); card.setLayoutParams(params); manager.updateAppWidgetOptions(ids[0], originalOptions); bridge.refresh(); });
             until(() -> card.findViewById(R.id.launcher_grid).getHeight() == originalGridHeight, "native host restores original height"); main(() -> fixedGrid(prefs));
             require(describedCount(card.findViewById(R.id.launcher_pins), "常用：") == prefs.hubPins().size(), "native fixed row uses shared Dock membership");
@@ -163,18 +276,21 @@ final class LauncherWidgetChecks {
             main(() -> rail.setSelection(0));
             until(() -> rail.getFirstVisiblePosition() == 0, "sidebar can return to the first item");
             require(before.equals(prefs.data.getAll()), "sidebar navigation keeps shared data read only");
-            main(() -> described(card, "收起全部应用，保留 Dock").performClick());
-            until(() -> card.findViewById(R.id.launcher_grid).getVisibility() == View.INVISIBLE, "native Dock can collapse workspace");
-            require(card.findViewById(R.id.launcher_rail).getVisibility() == View.INVISIBLE && card.findViewById(R.id.launcher_pins).getVisibility() == View.VISIBLE, "collapsed state preserves only Dock content");
-            main(() -> described(card, "展开全部应用").performClick());
-            until(() -> card.findViewById(R.id.launcher_grid).getVisibility() == View.VISIBLE, "apps entry expands native workspace");
+            main(() -> {
+                View appsButton = described(card, "全部应用（固定显示）"), icon = appsButton.findViewById(R.id.launcher_icon), mark = appsButton.findViewById(R.id.launcher_disabled_mark);
+                require(!appsButton.isEnabled(), "native Dock grid icon is not an action");
+                require(mark.getVisibility() == View.VISIBLE && Math.abs(mark.getWidth() * 2 - icon.getWidth()) <= 1 && mark.getHeight() == mark.getWidth() && Math.abs(mark.getLeft() * 2 + mark.getWidth() - icon.getLeft() * 2 - icon.getWidth()) <= 1 && Math.abs(mark.getTop() * 2 + mark.getHeight() - icon.getTop() * 2 - icon.getHeight()) <= 1 && Math.abs(mark.getAlpha() - .7f) < .01f, "Material block mark is centered at half size and 70 percent opacity");
+                appsButton.performClick(); bridge.action(ids[0], target, "apps", "");
+            });
+            require(card.findViewById(R.id.launcher_grid).getVisibility() == View.VISIBLE && card.findViewById(R.id.launcher_rail).getVisibility() == View.VISIBLE, "disabled grid icon and stale toggle intents cannot collapse the native card");
+            main(this::filledBackground);
             List<RecentTasks.Task> tasks = new ArrayList<>();
             for (int i = 0; i < 6; i++) { String pkg = "fixture.recent" + i; tasks.add(new RecentTasks.Task(100 + i, target, android.os.Process.myUid() / 100000, new ComponentName(pkg, pkg + ".Main").flattenToString(), pkg, i == 0)); }
             require(AppRecentTasks.tasks(new org.json.JSONArray(AppRecentTasks.encode(tasks)), target).equals(tasks), "native pending task payload preserves canonical system identity");
             main(() -> bridge.recent(tasks, true, true));
             until(() -> describedCount(card, "最近任务：") == 4, "native Dock renders at most four recent app groups");
             main(() -> {
-                View dock = card.findViewById(R.id.launcher_dock_row), appsButton = described(dock, "收起全部应用，保留 Dock"), clearButton = described(dock, "清理可见最近应用");
+                View dock = card.findViewById(R.id.launcher_dock_row), appsButton = described(dock, "全部应用（固定显示）"), clearButton = described(dock, "清理可见最近应用");
                 require(appsButton.getWidth() == clearButton.getWidth() && appsButton.getWidth() == Ui.dp(activity, 24), "native Dock side actions share a compact 24dp width");
                 require(Math.abs(appsButton.getLeft() + appsButton.getWidth() / 2f - (dock.getWidth() - clearButton.getLeft() - clearButton.getWidth() / 2f)) <= 1, "native Dock action centers mirror around the row center");
                 require(Math.abs(appsButton.getLeft() - (dock.getWidth() - clearButton.getRight())) <= 1, "native Dock has matching left and right outer spacing");
@@ -200,6 +316,7 @@ final class LauncherWidgetChecks {
             until(() -> text(card, "共享文件夹") != null, "previous-page button restores folder page");
             main(() -> described(card, "共享文件夹，文件夹").performClick());
             until(() -> text(card.findViewById(R.id.launcher_grid), "共享别名") != null, "folder opens inside the card with shared alias");
+            main(() -> { View back = card.findViewById(R.id.launcher_back); require(back.getWidth() == card.findViewById(R.id.launcher_header).getWidth() && back.getHeight() == Ui.dp(activity, AppLauncherStyle.FOLDER_RETURN_HEIGHT), "legacy native folder also has a full-width 44dp return bar"); });
             require(text(second, "共享文件夹") != null && text(second.findViewById(R.id.launcher_grid), "共享别名") == null, "separate card instances keep independent navigation");
             main(() -> prefs.workspaceAlias(all.get(0), "修改后别名"));
             until(() -> text(card, "修改后别名") != null, "shared alias edit updates open card folder");
@@ -241,28 +358,56 @@ final class LauncherWidgetChecks {
             context.registerReceiver(launched, new android.content.IntentFilter("fixture.LAUNCHER_RESULT"), Context.RECEIVER_EXPORTED);
             try {
                 clickRail(card.findViewById(R.id.launcher_rail), 0); until(() -> launchedDisplay.get() == target, "collection fill-in click launches favorite app on selected secondary display"); launchedDisplay.set(-1);
-                main(() -> described(card.findViewById(R.id.launcher_grid), "修改后别名").performClick()); until(() -> launchedDisplay.get() == target, "real card PendingIntent launches a different-package activity on selected secondary display");
+                main(() -> {
+                    android.view.ViewGroup grid = card.findViewById(R.id.launcher_grid); View member = described(grid, "修改后别名"); android.graphics.Rect hit = new android.graphics.Rect(); member.getDrawingRect(hit); grid.offsetDescendantRectToMyCoords(member, hit); long down = SystemClock.uptimeMillis();
+                    for (int action : new int[]{android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP}) { android.view.MotionEvent event = android.view.MotionEvent.obtain(down, down + (action == android.view.MotionEvent.ACTION_UP ? 50 : 0), action, hit.centerX(), hit.centerY(), 0); grid.dispatchTouchEvent(event); event.recycle(); }
+                }); until(() -> launchedDisplay.get() == target, "member touch through the folder grid launches the app instead of dismissing the folder");
             }
             finally { context.unregisterReceiver(launched); }
             main(() -> prefs.saveActions("favorites", List.of("app_dock", all.get(0))));
             until(() -> described(card, "侧栏：应用 Dock") != null, "collection updates configured system shortcuts");
-            clickRail(card.findViewById(R.id.launcher_rail), 0);
-            until(() -> card.findViewById(R.id.launcher_grid).getVisibility() == View.INVISIBLE, "collection system shortcut uses the native card action path");
-            main(() -> described(card, "展开全部应用").performClick());
-            until(() -> card.findViewById(R.id.launcher_grid).getVisibility() == View.VISIBLE, "collection Dock shortcut leaves workspace recoverable");
+            android.widget.Toast beforeDockShortcut = nativeToast(bridge); clickRail(card.findViewById(R.id.launcher_rail), 0);
+            until(() -> nativeToast(bridge) != beforeDockShortcut, "sidebar Dock shortcut delegates to the service instead of collapsing the native card");
+            require(card.findViewById(R.id.launcher_grid).getVisibility() == View.VISIBLE, "native folder remains visible when the floating service is unavailable");
+            main(() -> card.findViewById(R.id.launcher_back).performClick());
             until(() -> text(card, "共享文件夹") != null, "back returns to workspace");
             String folder = prefs.workspace().parent(all.get(0));
             main(() -> prefs.saveWorkspace(prefs.workspace().rename(folder, "同步改名"), false));
             until(() -> text(card, "同步改名") != null, "folder rename from shared model refreshes card");
+            // Insets arrive in current display coordinates. Exercise each camera-side edge.
+            for (DockGeometry.Box safe : new DockGeometry.Box[]{new DockGeometry.Box(0, 0, 720, 648), new DockGeometry.Box(0, 0, 620, 748), new DockGeometry.Box(0, 100, 720, 648), new DockGeometry.Box(100, 0, 620, 748)}) {
+                main(() -> CoverApp.widgets(context).safeArea(display.getDisplay(), 720, 748, safe));
+                until(() -> {
+                    View panel = card.findViewById(R.id.launcher_panel);
+                    return Math.abs(panel.getLeft() - Ui.dp(activity, safe.x() / 2f)) <= 1 && Math.abs(panel.getTop() - Ui.dp(activity, safe.y() / 2f)) <= 1 && Math.abs(panel.getWidth() - Ui.dp(activity, 310 - (720 - safe.width()) / 2f)) <= 1 && Math.abs(panel.getHeight() - Ui.dp(activity, 280 - (748 - safe.height()) / 2f)) <= 1;
+                }, "content follows the reported safe edge without moving the full background");
+                main(() -> { filledBackground(); fixedGrid(prefs); });
+            }
             main(() -> { CoverApp.widgets(context).safeArea(display.getDisplay(), 720, 748, new DockGeometry.Box(160, 60, 560, 608)); bridge.action(ids[0], target, "edit", ""); });
             until(() -> Math.abs(card.findViewById(R.id.launcher_panel).getLeft() - Ui.dp(activity, 80)) <= 1, "native card follows rotated-edge safe area");
             main(() -> {
                 View panel = card.findViewById(R.id.launcher_panel);
                 require(panel.getVisibility() == View.VISIBLE && Math.abs(panel.getTop() - Ui.dp(activity, 30)) <= 1, "Toast does not cover or replace the native panel");
                 require(panel.getRight() <= card.getWidth() && panel.getBottom() <= card.getHeight(), "panel stays inside native host bounds");
+                filledBackground();
                 CoverApp.widgets(context).safeArea(null, 0, 0, null);
             });
             until(() -> card.findViewById(R.id.launcher_panel).getLeft() == 0, "restored content geometry reaches the host before idle-cache check");
+            until(() -> card.findViewById(R.id.launcher_panel).getHeight() == Ui.dp(activity, 280), "normal orientation restores full content height");
+            rotateDisplay(target, android.view.Surface.ROTATION_180);
+            until(() -> card.findViewById(R.id.launcher_catalog) != null, "180-degree native card uses the shared hub regions");
+            main(() -> {
+                View panel = card.findViewById(R.id.launcher_panel), dock = card.findViewById(R.id.launcher_pins);
+                require(panel.getTop() == 0 && panel.getLeft() == 0 && panel.getHeight() == Ui.dp(activity, 280), "shared layout uses available safe space without the old extra 20dp strip");
+                require(dock.getBottom() == panel.getHeight(), "independent Dock reaches the same safe bottom as the floating launcher");
+                filledBackground(); fixedGrid(prefs); sharedHubLayout(prefs);
+            });
+            surfaceBroadcasts(bridge, ids[0], target);
+            cardFrame("hub-180-card");
+            main(() -> { described(card, "全部应用（固定显示）").performClick(); bridge.action(ids[0], target, "apps", ""); filledBackground(); require(card.findViewById(R.id.launcher_body).getVisibility() == View.VISIBLE, "180-degree native body cannot collapse"); });
+            folderReturn(prefs, bridge, ids[0], target, folder);
+            rotateDisplay(target, android.view.Surface.ROTATION_0);
+            until(() -> card.findViewById(R.id.launcher_catalog) == null, "returning to zero degrees restores the existing card presentation");
             until(() -> cache.pendingIconCount() == 0, "icon queue drains"); int decodes = cache.decodeCount(); SystemClock.sleep(400); require(cache.decodeCount() == decodes, "idle card updates do not restart icon decoding");
             main(() -> { cache.trimMemory(); bridge.refresh(); }); SystemClock.sleep(200);
             require(cache.decodeCount() == decodes, "shared-cache eviction preserves current card bitmaps without decode loops");
@@ -278,6 +423,7 @@ final class LauncherWidgetChecks {
                 prefs.data.edit().putInt("display", 99999).commit(); bridge.refresh();
             });
             until(() -> text(card, "请先选择目标外屏") != null, "missing external display cannot fall back to primary");
+            main(this::filledBackground);
             main(() -> { prefs.data.edit().putInt("display", target).commit(); bridge.refresh(); });
             until(() -> text(card, "同步改名") != null, "display recovery reads saved shared workspace");
             main(() -> { host.deleteHost(); bridge.refresh(); }); require(bridge.cards().length == 0, "last card deletion removes provider instances");

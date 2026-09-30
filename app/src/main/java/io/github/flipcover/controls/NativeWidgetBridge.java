@@ -215,7 +215,12 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
         if (maxWidth > maxHeight) { width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width); height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, height); }
         return new SizeF(Math.max(1, Math.min(maxWidth, width)), Math.max(1, Math.min(maxHeight, height)));
     }
-    WidgetSafeArea.Frame frame(int outer) {
+    WidgetSafeArea.Frame frame(int outer) { return frame(outer, null); }
+    WidgetSafeArea.Frame launcherFrame(int outer) {
+        Display selected = Displays.selected(context, prefs); CoverService service = CoverService.instance;
+        return frame(outer, selected == null || service == null ? null : service.launcherContentBounds(selected.getDisplayId()));
+    }
+    private WidgetSafeArea.Frame frame(int outer, DockGeometry.Box launcherBounds) {
         SizeF canvas = canvasSize(outer); Display display = Displays.selected(context, prefs);
         if (display == null || Build.VERSION.SDK_INT < 31) return new WidgetSafeArea.Frame(0, 0, canvas.getWidth(), canvas.getHeight());
         Point pixels = Displays.size(display); float density = context.createDisplayContext(display).getResources().getDisplayMetrics().density;
@@ -227,7 +232,7 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
             android.view.DisplayCutout cutout = display.getCutout(); int left = cutout.getSafeInsetLeft(), top = cutout.getSafeInsetTop();
             safe = new DockGeometry.Box(left, top, Math.max(0, pixels.x - left - cutout.getSafeInsetRight()), Math.max(0, pixels.y - top - cutout.getSafeInsetBottom()));
         }
-        return WidgetSafeArea.fit(canvas.getWidth(), canvas.getHeight(), pixels.x, pixels.y, density, safe);
+        return WidgetSafeArea.fit(canvas.getWidth(), canvas.getHeight(), pixels.x, pixels.y, density, launcherBounds == null ? safe : launcherBounds);
     }
     SizeF size(int outer) { WidgetSafeArea.Frame frame = frame(outer); return new SizeF(Math.max(1, frame.width()), Math.max(1, frame.height())); }
     SizeF size(int outer, int width, int height) { SizeF full = size(outer); return new SizeF(full.getWidth() * width / 4, full.getHeight() * height / 4); }

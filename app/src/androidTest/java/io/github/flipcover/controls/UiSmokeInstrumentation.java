@@ -640,8 +640,8 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         runOnMainSync(() -> {
             AppWorkspaceView grid = find(hub[0], AppWorkspaceView.class); EditText search = find(hub[0], EditText.class);
             int original = grid.getCount(); require(original > 0, "installed apps are loaded"); require(grid.getNumColumns() >= 3, "grid adapts to cover width with at least three columns");
-            View edit = hub[0].findViewWithTag("hub-edit"), expand = hub[0].findViewWithTag("hub-expand");
-            require(edit.getWidth() >= Ui.dp(activity, 20) && edit.getHeight() == Ui.dp(activity, 28) && expand.getHeight() == Ui.dp(activity, 28) && expand.getLeft() >= edit.getRight() && expand.getTop() == edit.getTop(), "sidebar tools share one compact row without overlap");
+            View edit = hub[0].findViewWithTag("hub-edit"); ViewGroup tools = (ViewGroup) edit.getParent();
+            require(tools.getChildCount() == 1 && hub[0].findViewWithTag("hub-expand") == null && edit.getWidth() == tools.getWidth() && edit.getHeight() == Ui.dp(activity, AppLauncherStyle.RAIL_TOOLS_HEIGHT), "sidebar footer contains only one full-width edit button");
             search.setText("__no_matching_application__"); require(grid.getCount() == 0, "app search filters grid");
             search.setText(""); require(grid.getCount() == original, "clearing search restores apps");
             hub[0].toggle(); require(!hub[0].expanded(), "hub collapses again"); hub[0].dispose();
@@ -680,7 +680,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         require(visibleRecent <= 4 && (activity.getResources().getConfiguration().densityDpi != 340 || visibleRecent == 4), "normal cover density shows exactly four fixed and four recent applications");
         if (activity.getResources().getConfiguration().densityDpi == 340) for (int i = 1; i <= 4; i++) { require(row.getChildAt(i).getWidth() >= Ui.dp(activity, 33), "four plus four keeps existing compact touch widths"); ViewGroup cell = (ViewGroup) row.getChildAt(i); require(cell.getChildAt(0).getWidth() == Ui.dp(activity, 28), "four plus four keeps 28dp application icons"); }
         View fullClear = view[0].findViewWithTag("hub-clear"), summary = view[0].findViewWithTag("hub-summary");
-        require(row.getChildAt(row.getChildCount() - 1) == fullClear && fullClear.getRight() <= row.getWidth() - row.getPaddingRight() && fullClear.getWidth() < row.getChildAt(0).getWidth(), "compact clear remains narrower than an application and completely visible at the far right");
+        require(row.getChildAt(row.getChildCount() - 1) == fullClear && fullClear.getRight() <= row.getWidth() - row.getPaddingRight() && fullClear.getWidth() == row.getChildAt(0).getWidth() && fullClear.getWidth() < row.getChildAt(1).getWidth(), "compact clear matches the apps action, stays narrower than a pinned application and remains completely visible at the far right");
         View dockArea = view[0].findViewWithTag("hub-dock-area");
         require(dockArea.getHeight() == Ui.dp(activity, 2) + Ui.dp(activity, 34), "Dock uses one 34dp row plus 2dp gap without a footer");
         require(summary.getBottom() <= find(view[0], AppWorkspaceView.class).getTop() && view[0].findViewWithTag("hub-recent-status").getParent() == summary, "recent status shares the catalog count row above applications");
@@ -698,7 +698,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         require(refreshes[0] == previousRefreshes + 1 && closes[0] == 2, "recent task status keeps its refresh action: " + previousRefreshes + " -> " + refreshes[0] + ", closes=" + closes[0]);
         checkHubBlur(view[0], prefs);
         runOnMainSync(() -> { view[0].recentFailure("Shizuku unavailable"); require(row.getChildCount() == 7 && !view[0].findViewWithTag("hub-clear").isEnabled(), "failed sync retains last rows but disables cleaning"); view[0].recentResult(recent.subList(0, 2), null); });
-        View clear = view[0].findViewWithTag("hub-clear"); require(clear.getWidth() == Ui.dp(activity, 22) && clear.getHeight() == Ui.dp(activity, 34) && clear.getPaddingLeft() == 0 && clear.getPaddingRight() == 0 && clear.getParent() == row, "clear uses a compact 22x34dp target without horizontal padding inside Dock");
+        View clear = view[0].findViewWithTag("hub-clear"); require(clear.getWidth() == Ui.dp(activity, 24) && clear.getHeight() == Ui.dp(activity, 34) && clear.getPaddingLeft() == Ui.dp(activity, 3) && clear.getPaddingRight() == Ui.dp(activity, 3) && clear.getParent() == row, "clear uses the shared compact 24x34dp target with a centered 18dp icon inside Dock");
         tapHub(view[0], clear, 0, false); require(clearRequests[0] == 1 && row.getChildCount() == 7 && !clear.isEnabled() && closes[0] == 2, "clear waits for system acknowledgement and is not intercepted by dismissal");
         runOnMainSync(() -> view[0].recentResult(java.util.List.of(), "本地界面检查 · 已确认移除")); waitForIdleSync();
         require(row.getChildCount() == 3 && Math.abs(row.getLeft() + row.getWidth() / 2f - view[0].getWidth() / 2f) <= 1, "clear preserves launcher and pins; empty recent group is centered"); screenshot("hub-dock-cleared");

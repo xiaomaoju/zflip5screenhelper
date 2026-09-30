@@ -1034,6 +1034,15 @@ public final class CoverService extends AccessibilityService implements DisplayM
         if (!currentTaskDisplay(target) || !prefs.actions("favorites").contains(id) || !ActionCatalog.valid(id)) return false;
         act(id); return true;
     }
+    DockGeometry.Box launcherContentBounds(int target) { return display != null && display.getDisplayId() == target ? hubFrame : null; }
+    boolean launcherSurface(String operation, int target) {
+        if (operation == null || !currentTaskDisplay(target) || !java.util.Set.of("search", "sort", "tasks").contains(operation)) return false;
+        showHub(true, operation.equals("tasks"));
+        if (hub == null) return false;
+        AppHubView opened = hub;
+        if (!operation.equals("tasks")) opened.post(() -> { if (hub == opened && opened.isAttachedToWindow()) opened.widgetEntry(operation); });
+        return true;
+    }
     void launch(Intent intent) {
         if (!notificationDisplayReady()) { message("所选外屏不可用，请解锁后重试"); return; }
         try { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK), ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle()); dismissHub(); closePanel(); }

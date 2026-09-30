@@ -12,6 +12,9 @@ import org.json.JSONObject;
 /** Shared launcher rules; neither renderer owns a second app/folder configuration. */
 final class AppLauncherModel {
     static final String EDIT_HINT = "如需编辑，请到浮窗启动器内操作。";
+    static String sortLabel(String order) { return switch (order) { case "manual" -> "手动 ▾"; case "reverse" -> "名称 ↓"; case "recent" -> "最近 ▾"; default -> "名称 ↑"; }; }
+    static String catalogStatus(int count, boolean ready, boolean failed) { return count == 0 && !ready ? failed ? "应用目录暂不可用" : "正在读取应用…" : count == 0 ? "未找到应用" : "全部应用 · " + count; }
+    static String recentStatus(int pins, int recent) { return "常用 " + pins + " · 最近任务 " + recent; }
     static long itemId(String id) { long hash = 0xcbf29ce484222325L; for (int i = 0; i < id.length(); i++) { hash ^= id.charAt(i); hash *= 0x100000001b3L; } return hash; }
     static List<AppCatalogCache.Entry> select(List<AppCatalogCache.Entry> catalog, List<String> pins, JSONObject aliases, String query, String order, List<RecentTasks.Task> tasks, AppSearchIndex index) {
         List<AppCatalogCache.Entry> result = new ArrayList<>();

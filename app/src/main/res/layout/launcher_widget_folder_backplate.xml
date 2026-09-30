@@ -1,0 +1,3 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/launcher_folder_backplate"
+    android:layout_width="1dp" android:layout_height="1dp" android:layout_gravity="top|left"
+    android:background="@drawable/launcher_widget_folder" android:clickable="false" android:focusable="false" android:importantForAccessibility="no" />

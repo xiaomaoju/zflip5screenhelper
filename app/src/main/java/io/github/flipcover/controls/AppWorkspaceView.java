@@ -67,7 +67,7 @@ final class AppWorkspaceView extends ViewGroup {
     int capacity() { return columns * rows; }
     int page() { return page; }
     int pageCount() { return displayed.pages(capacity()); }
-    int gridHeight() { return Math.max(1, getMeasuredHeight() - dp(8)); }
+    int gridHeight() { return Math.max(1, getMeasuredHeight() - dp(AppLauncherStyle.WORKSPACE_PAGER_HEIGHT)); }
     int edgeWidth() { return Math.min(dp(24), getWidth() / 6); }
     boolean editable() { return manual && !prefs.workspaceLocked(); }
     boolean draggable() { return !prefs.workspaceLocked(); }
@@ -135,9 +135,9 @@ final class AppWorkspaceView extends ViewGroup {
     private void layoutGeometry(int width, int height) {
         // Stable page/row/column identity takes priority over fitting extra rows into free space.
         int nextColumns = AppLauncherStyle.GRID_COLUMNS, nextRows = AppLauncherStyle.GRID_ROWS;
-        if (width != measuredWidth || height - dp(8) != measuredGridHeight || nextColumns != columns || nextRows != rows) {
+        if (width != measuredWidth || height - dp(AppLauncherStyle.WORKSPACE_PAGER_HEIGHT) != measuredGridHeight || nextColumns != columns || nextRows != rows) {
             cancelInteraction(); int anchor = page * capacity(); columns = nextColumns; rows = nextRows;
-            measuredWidth = width; measuredGridHeight = height - dp(8); page = anchor / capacity(); dirty = true;
+            measuredWidth = width; measuredGridHeight = height - dp(AppLauncherStyle.WORKSPACE_PAGER_HEIGHT); page = anchor / capacity(); dirty = true;
             if (manual) displayed = projected();
         }
         if (pendingSlot >= 0) { page = pendingSlot / capacity(); pendingSlot = -1; dirty = true; }
@@ -188,9 +188,8 @@ final class AppWorkspaceView extends ViewGroup {
         if (shadow != null && (!dragging() || !listener.outsideDragVisual())) {
             checkpoint = canvas.save(); canvas.clipRect(0, 0, getWidth(), getHeight()); canvas.translate(dragX - shadow.getWidth() / 2f, dragY - shadow.getHeight() / 2f); canvas.scale(shadowScale, shadowScale, shadow.getWidth() / 2f, shadow.getHeight() / 2f); shadow.draw(canvas); canvas.restoreToCount(checkpoint);
         }
-        int count = dragging() ? dragPageCount() : pageCount(), dots = Math.min(count, 7), start = Math.max(0, Math.min(page - 3, count - dots));
-        float gap = dp(12), first = (getWidth() - (dots - 1) * gap) / 2f;
-        for (int i = 0; i < dots; i++) { paint.setColor(start + i == page ? Ui.TEXT : 0xFF68717D); canvas.drawCircle(first + i * gap, gridHeight() + dp(4), dp(start + i == page ? 2.4f : 1.7f), paint); }
+        checkpoint = canvas.save(); canvas.translate(0, gridHeight());
+        AppLauncherStyle.drawPageDots(canvas, getWidth(), dp(AppLauncherStyle.WORKSPACE_PAGER_HEIGHT), page, dragging() ? dragPageCount() : pageCount(), getResources().getDisplayMetrics().density, paint); canvas.restoreToCount(checkpoint);
         if (!mergeMessage.isEmpty()) { paint.setColor(Ui.TEXT); paint.setTextAlign(Paint.Align.CENTER); paint.setTextSize(dp(10)); canvas.drawText(mergeMessage, getWidth() / 2f, gridHeight() - dp(3), paint); paint.setTextAlign(Paint.Align.LEFT); }
     }
     String hit(float x, float y) {

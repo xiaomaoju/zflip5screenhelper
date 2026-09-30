@@ -47,71 +47,139 @@ final class LauncherWidgetViews {
         view.setTextViewText(R.id.launcher_empty, text); view.setViewVisibility(R.id.launcher_pager, View.GONE); view.setViewVisibility(R.id.launcher_edit, View.GONE); return view;
     }
     private static RemoteViews base(Context context) {
-        RemoteViews view = new RemoteViews(context.getPackageName(), R.layout.launcher_widget);
-        view.setViewPadding(R.id.launcher_panel, Ui.dp(context, AppLauncherStyle.PANEL_PADDING_X), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_Y), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_X), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_Y));
-        for (int id : new int[]{R.id.launcher_title, R.id.launcher_back}) view.setTextColor(id, Ui.TEXT);
-        for (int id : new int[]{R.id.launcher_page, R.id.launcher_empty}) view.setTextColor(id, Ui.MUTED);
+        return base(context, false);
+    }
+    private static RemoteViews base(Context context, boolean hubLayout) {
+        RemoteViews view = new RemoteViews(context.getPackageName(), hubLayout ? R.layout.launcher_widget_native_hub : R.layout.launcher_widget);
+        view.setInt(R.id.launcher_background, "setBackgroundColor", hubLayout ? Ui.BACKGROUND : Ui.SURFACE);
+        view.setViewPadding(hubLayout ? R.id.launcher_catalog : R.id.launcher_panel, Ui.dp(context, AppLauncherStyle.PANEL_PADDING_X), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_Y), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_X), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_Y));
+        view.setTextColor(R.id.launcher_title, hubLayout ? Ui.MUTED : Ui.TEXT); view.setTextColor(R.id.launcher_back, Ui.TEXT);
+        view.setTextColor(R.id.launcher_empty, Ui.MUTED); if (!hubLayout) view.setTextColor(R.id.launcher_page, Ui.MUTED);
+        if (hubLayout && Build.VERSION.SDK_INT >= 31) {
+            view.setTextColor(R.id.launcher_search, Ui.MUTED); view.setTextColor(R.id.launcher_sort, Ui.TEXT); view.setTextColor(R.id.launcher_refresh, Ui.MUTED);
+            view.setColorStateList(R.id.launcher_catalog, "setBackgroundTintList", ColorStateList.valueOf(Ui.SURFACE));
+            view.setInt(R.id.launcher_tasks, "setColorFilter", Ui.TEXT);
+            view.setTextViewTextSize(R.id.launcher_search, TypedValue.COMPLEX_UNIT_DIP, AppLauncherStyle.HUB_SEARCH_TEXT);
+            view.setTextViewTextSize(R.id.launcher_sort, TypedValue.COMPLEX_UNIT_DIP, AppLauncherStyle.HUB_SORT_TEXT);
+            view.setTextViewTextSize(R.id.launcher_title, TypedValue.COMPLEX_UNIT_DIP, AppLauncherStyle.HUB_SUMMARY_TEXT);
+            view.setTextViewTextSize(R.id.launcher_refresh, TypedValue.COMPLEX_UNIT_DIP, AppLauncherStyle.HUB_RECENT_TEXT);
+            view.setViewLayoutWidth(R.id.launcher_sort, AppLauncherStyle.HUB_SORT_WIDTH, TypedValue.COMPLEX_UNIT_DIP);
+            view.setViewLayoutWidth(R.id.launcher_tasks, AppLauncherStyle.HUB_TASK_WIDTH, TypedValue.COMPLEX_UNIT_DIP);
+            view.setViewLayoutWidth(R.id.launcher_back, AppLauncherStyle.HUB_CLOSE_WIDTH, TypedValue.COMPLEX_UNIT_DIP);
+            int field = Ui.dp(context, AppLauncherStyle.HUB_FIELD_PADDING), button = Ui.dp(context, AppLauncherStyle.HUB_BUTTON_PADDING), task = Ui.dp(context, AppLauncherStyle.HUB_TASK_PADDING), sort = Ui.dp(context, AppLauncherStyle.HUB_SORT_PADDING);
+            view.setViewPadding(R.id.launcher_search, Ui.dp(context, AppLauncherStyle.HUB_SEARCH_PADDING), field, field, field);
+            view.setViewPadding(R.id.launcher_sort, sort, field, sort, field);
+            view.setViewPadding(R.id.launcher_tasks, task, task, task, task);
+            view.setViewPadding(R.id.launcher_edit, button, button, button, button);
+        }
         if (Build.VERSION.SDK_INT >= 31) {
-            view.setColorStateList(R.id.launcher_panel, "setBackgroundTintList", ColorStateList.valueOf(Ui.SURFACE));
-            view.setColorStateList(R.id.launcher_rail, "setBackgroundTintList", ColorStateList.valueOf(Ui.SURFACE));
-            for (int id : new int[]{R.id.launcher_refresh, R.id.launcher_edit, R.id.launcher_previous, R.id.launcher_next}) view.setInt(id, "setColorFilter", Ui.TEXT);
+            view.setColorStateList(hubLayout ? R.id.launcher_rail_panel : R.id.launcher_rail, "setBackgroundTintList", ColorStateList.valueOf(Ui.SURFACE));
+            if (!hubLayout) view.setInt(R.id.launcher_refresh, "setColorFilter", Ui.TEXT);
+            for (int id : new int[]{R.id.launcher_edit, R.id.launcher_previous, R.id.launcher_next}) view.setInt(id, "setColorFilter", Ui.TEXT);
         }
         return view;
     }
     RemoteViews render() {
         if (Build.VERSION.SDK_INT < 31) return message(context, "原生启动器卡片需要 Android 12 或更新版本");
-        WidgetSafeArea.Frame frame = CoverApp.widgets(context).frame(widget);
+        boolean hubLayout = display.getRotation() == android.view.Surface.ROTATION_180;
+        WidgetSafeArea.Frame frame = hubLayout ? CoverApp.widgets(context).launcherFrame(widget) : CoverApp.widgets(context).frame(widget);
+        float density = context.getResources().getDisplayMetrics().density; boolean right = prefs.handSide().equals("right");
+        AppLauncherStyle.HubGeometry hubGeometry = AppLauncherStyle.hubGeometry(Ui.dp(context, frame.width()), Ui.dp(context, frame.height()), density, right, true);
         List<String> pins = prefs.hubPins();
-        float headerHeight = dimension(R.dimen.launcher_header_height), pageHeight = dimension(R.dimen.launcher_page_height);
-        float dockWidth = frame.width() - 2 * AppLauncherStyle.PANEL_PADDING_X, width = dockWidth - AppLauncherStyle.RAIL_WIDTH - AppLauncherStyle.RAIL_GAP, height = frame.height() - 2 * AppLauncherStyle.PANEL_PADDING_Y - headerHeight - pageHeight - AppLauncherStyle.dockHeight();
+        float headerHeight = hubLayout ? AppLauncherStyle.HUB_HEADER_HEIGHT : dimension(R.dimen.launcher_header_height), pageHeight = dimension(R.dimen.launcher_page_height);
+        float dockWidth = frame.width() - (hubLayout ? 0 : 2 * AppLauncherStyle.PANEL_PADDING_X), width = frame.width() - 2 * AppLauncherStyle.PANEL_PADDING_X - AppLauncherStyle.RAIL_WIDTH - AppLauncherStyle.RAIL_GAP, height = frame.height() - 2 * AppLauncherStyle.PANEL_PADDING_Y - headerHeight - pageHeight - AppLauncherStyle.dockHeight() - (hubLayout ? AppLauncherStyle.HUB_SUMMARY_HEIGHT : 0);
+        if (hubLayout) { width = hubGeometry.gridWidth() / density; height = hubGeometry.gridHeight() / density; headerHeight = hubGeometry.headerHeight() / density; pageHeight = hubGeometry.pagerHeight() / density; }
         int columns = AppLauncherStyle.GRID_COLUMNS, rows = AppLauncherStyle.GRID_ROWS;
         if (width < 80 || height < 60) return message(context, "卡片空间不足，请调整尺寸");
         AppWorkspaceLayout saved = prefs.workspace();
         if (cache.ready() && !cache.failed()) saved = AppLauncherModel.reconcile(saved, cache.snapshot(), pins, prefs.workspaceCompact());
         AppWorkspaceLayout.Folder opened = saved.folder(state.folder);
-        if (opened == null) state.folder = null;
-        float gridHeight = opened == null ? height : Math.min(height, AppLauncherStyle.FOLDER_MEMBER_HEIGHT * rows);
+        if (opened == null) state.closeFolder();
+        if (opened != null) {
+            if (!hubLayout) height = Math.max(0, height - (AppLauncherStyle.FOLDER_RETURN_HEIGHT - headerHeight));
+            headerHeight = AppLauncherStyle.FOLDER_RETURN_HEIGHT;
+        }
+        float gridHeight = height;
         List<AppCatalogCache.Entry> selected = AppLauncherModel.select(cache.snapshot(), pins, aliases, "", prefs.hubSort(), recents.tasks(), new AppSearchIndex());
         AppWorkspaceLayout layout;
         if (opened != null) { columns = AppLauncherStyle.FOLDER_COLUMNS; layout = AppWorkspaceLayout.sequential(opened.members()).project(columns, rows); }
         else if (prefs.hubSort().equals("manual")) layout = saved.project(columns, rows);
         else layout = AppWorkspaceLayout.sequential(selected.stream().map(AppCatalogCache.Entry::id).collect(java.util.stream.Collectors.toList())).project(columns, rows);
         int capacity = columns * rows; state.pages = layout.pages(capacity); state.page = Math.max(0, Math.min(state.page, state.pages - 1));
-        RemoteViews view = base(context);
+        RemoteViews view = base(context, hubLayout);
         geometry(view, R.id.launcher_panel, frame.left(), frame.top(), frame.width(), frame.height());
         view.setViewLayoutHeight(R.id.launcher_header, headerHeight, TypedValue.COMPLEX_UNIT_DIP);
         view.setViewLayoutHeight(R.id.launcher_pager, pageHeight, TypedValue.COMPLEX_UNIT_DIP);
-        view.setViewLayoutHeight(R.id.launcher_pins, AppLauncherStyle.dockHeight(), TypedValue.COMPLEX_UNIT_DIP);
-        boolean right = prefs.handSide().equals("right");
-        float contentLeft = right ? 0 : AppLauncherStyle.RAIL_WIDTH + AppLauncherStyle.RAIL_GAP;
+        view.setViewLayoutHeight(R.id.launcher_pins, hubLayout ? hubGeometry.dockHeight() / density : AppLauncherStyle.dockHeight(), TypedValue.COMPLEX_UNIT_DIP);
+        float contentLeft = hubLayout || right ? 0 : AppLauncherStyle.RAIL_WIDTH + AppLauncherStyle.RAIL_GAP;
         geometry(view, R.id.launcher_grid, contentLeft, 0, width, gridHeight);
         geometry(view, R.id.launcher_empty, contentLeft, 0, width, height);
-        geometry(view, R.id.launcher_rail, right ? width + AppLauncherStyle.RAIL_GAP : 0, 0, AppLauncherStyle.RAIL_WIDTH, height);
-        view.setTextViewText(R.id.launcher_title, !state.expanded ? "应用 Dock" : opened == null ? "应用中心" : opened.name() + " · " + opened.members().size() + "/9");
+        if (hubLayout) {
+            geometry(view, R.id.launcher_catalog, hubGeometry.catalogLeft() / density, 0, hubGeometry.catalogWidth() / density, hubGeometry.bodyHeight() / density);
+            geometry(view, R.id.launcher_rail_panel, hubGeometry.railLeft() / density, 0, hubGeometry.railWidth() / density, hubGeometry.bodyHeight() / density);
+            view.setViewLayoutHeight(R.id.launcher_summary, AppLauncherStyle.HUB_SUMMARY_HEIGHT, TypedValue.COMPLEX_UNIT_DIP);
+            view.setViewVisibility(R.id.launcher_summary, opened == null ? View.VISIBLE : View.GONE);
+            view.setViewVisibility(R.id.launcher_search_field, opened == null ? View.VISIBLE : View.GONE);
+            view.setViewVisibility(R.id.launcher_tasks, opened == null ? View.VISIBLE : View.GONE);
+            view.setViewLayoutHeight(R.id.launcher_rail_tools, AppLauncherStyle.RAIL_TOOLS_HEIGHT, TypedValue.COMPLEX_UNIT_DIP);
+            view.setOnClickPendingIntent(R.id.launcher_search, action("surface", "search")); view.setOnClickPendingIntent(R.id.launcher_sort, action("surface", "sort")); view.setOnClickPendingIntent(R.id.launcher_tasks, action("surface", "tasks"));
+            view.setTextViewText(R.id.launcher_sort, AppLauncherModel.sortLabel(prefs.hubSort()));
+            view.setTextViewText(R.id.launcher_refresh, recents.busy() ? "正在刷新…" : !recents.error().isEmpty() ? "刷新失败 · 重试" : !recents.known() ? "最近应用 · 刷新" : AppLauncherModel.recentStatus(pins.size(), RecentTasks.apps(recents.tasks(), AppDockLayout.packages(pins)).size()));
+            view.setViewVisibility(R.id.launcher_body, View.VISIBLE);
+        } else geometry(view, R.id.launcher_rail, right ? width + AppLauncherStyle.RAIL_GAP : 0, 0, AppLauncherStyle.RAIL_WIDTH, height);
+        view.setTextViewText(R.id.launcher_title, opened == null ? "应用中心" : opened.name() + " · " + opened.members().size() + "/9");
+        if (hubLayout && opened == null) view.setTextViewText(R.id.launcher_title, AppLauncherModel.catalogStatus(selected.size(), cache.ready(), cache.failed()));
         view.setViewVisibility(R.id.launcher_back, opened == null ? View.GONE : View.VISIBLE);
+        if (!hubLayout) {
+            view.setViewVisibility(R.id.launcher_title, opened == null ? View.VISIBLE : View.GONE);
+            view.setViewVisibility(R.id.launcher_edit, opened == null ? View.VISIBLE : View.GONE);
+            view.setViewVisibility(R.id.launcher_refresh, opened == null ? View.VISIBLE : View.GONE);
+        }
+        view.setViewLayoutWidth(R.id.launcher_back, -1, TypedValue.COMPLEX_UNIT_PX);
+        view.setTextViewTextSize(R.id.launcher_back, TypedValue.COMPLEX_UNIT_DIP, AppLauncherStyle.FOLDER_RETURN_TEXT);
+        view.setBoolean(R.id.launcher_back, "setSingleLine", true);
+        view.setInt(R.id.launcher_back, "setGravity", android.view.Gravity.CENTER);
+        int returnPadding = Ui.dp(context, AppLauncherStyle.HUB_SEARCH_PADDING); view.setViewPadding(R.id.launcher_back, returnPadding, 0, returnPadding, 0);
+        view.setTextViewText(R.id.launcher_back, opened == null ? "" : "‹ 全部应用 · " + opened.name());
+        view.setContentDescription(R.id.launcher_back, opened == null ? "返回应用列表" : "返回全部应用，当前文件夹：" + opened.name());
         view.setViewVisibility(R.id.launcher_empty, layout.size() == 0 ? View.VISIBLE : View.GONE);
         view.setTextViewText(R.id.launcher_empty, cache.ready() ? "未找到应用" : cache.failed() ? "应用目录暂不可用" : "正在读取应用…");
-        view.setTextViewText(R.id.launcher_page, (state.page + 1) + " / " + state.pages);
+        if (hubLayout) {
+            int dotsWidth = Ui.dp(context, Math.min(state.pages, AppLauncherStyle.PAGE_DOT_LIMIT) * AppLauncherStyle.PAGE_DOT_GAP), dotsHeight = Ui.dp(context, AppLauncherStyle.WORKSPACE_PAGER_HEIGHT);
+            Bitmap dots = Bitmap.createBitmap(dotsWidth, dotsHeight, Bitmap.Config.ARGB_8888); dots.setDensity(Bitmap.DENSITY_NONE);
+            AppLauncherStyle.drawPageDots(new Canvas(dots), dotsWidth, dotsHeight, state.page, state.pages, density, new Paint(Paint.ANTI_ALIAS_FLAG)); view.setImageViewBitmap(R.id.launcher_page, dots);
+            view.setViewLayoutWidth(R.id.launcher_page, dotsWidth / density, TypedValue.COMPLEX_UNIT_DIP);
+        } else view.setTextViewText(R.id.launcher_page, (state.page + 1) + " / " + state.pages);
+        view.setContentDescription(R.id.launcher_page, "第" + (state.page + 1) + "页，共" + state.pages + "页");
         String status = recents.busy() ? "正在刷新最近应用" : !recents.error().isEmpty() ? "最近应用不可用，点击重试" : !recents.known() ? "最近应用待刷新，点击刷新" : "刷新最近应用";
         view.setContentDescription(R.id.launcher_refresh, status);
         view.setTextViewText(R.id.launcher_refresh_status, recents.busy() ? "…" : !recents.error().isEmpty() ? "!" : "·");
-        view.setViewVisibility(R.id.launcher_refresh_status, recents.busy() || !recents.known() || !recents.error().isEmpty() ? View.VISIBLE : View.GONE);
+        view.setViewVisibility(R.id.launcher_refresh_status, opened != null && !hubLayout ? View.GONE : recents.busy() || !recents.known() || !recents.error().isEmpty() ? View.VISIBLE : View.GONE);
         view.setBoolean(R.id.launcher_previous, "setEnabled", state.page > 0); view.setBoolean(R.id.launcher_next, "setEnabled", state.page + 1 < state.pages);
         view.setFloat(R.id.launcher_previous, "setAlpha", state.page > 0 ? 1f : .5f); view.setFloat(R.id.launcher_next, "setAlpha", state.page + 1 < state.pages ? 1f : .5f);
         view.setOnClickPendingIntent(R.id.launcher_edit, action("edit", "")); view.setOnClickPendingIntent(R.id.launcher_back, action("back", ""));
         view.setOnClickPendingIntent(R.id.launcher_refresh, action("refresh", "")); view.setBoolean(R.id.launcher_refresh, "setEnabled", !recents.busy());
         view.setOnClickPendingIntent(R.id.launcher_previous, action("previous", "")); view.setOnClickPendingIntent(R.id.launcher_next, action("next", ""));
         view.removeAllViews(R.id.launcher_grid); view.removeAllViews(R.id.launcher_dock_row);
-        float density = context.getResources().getDisplayMetrics().density;
+        view.setOnClickPendingIntent(R.id.launcher_grid, opened == null ? null : action("back", ""));
+        view.setContentDescription(R.id.launcher_grid, opened == null ? null : "文件夹，点击空白处返回全部应用");
+        view.setOnClickPendingIntent(R.id.launcher_pager, opened == null ? null : action("back", ""));
+        for (int id : new int[]{R.id.launcher_previous, R.id.launcher_page, R.id.launcher_next}) view.setViewVisibility(id, opened == null ? View.VISIBLE : View.INVISIBLE);
+        if (opened != null) {
+            android.graphics.Rect surface = AppLauncherStyle.folderMemberSurface(Ui.dp(context, width), Ui.dp(context, gridHeight), density);
+            RemoteViews backplate = new RemoteViews(context.getPackageName(), R.layout.launcher_widget_folder_backplate);
+            geometry(backplate, R.id.launcher_folder_backplate, surface.left / density, surface.top / density, surface.width() / density, surface.height() / density);
+            backplate.setColorStateList(R.id.launcher_folder_backplate, "setBackgroundTintList", ColorStateList.valueOf(AppLauncherStyle.FOLDER_COLORS[opened.color()]));
+            view.addView(R.id.launcher_grid, backplate);
+        }
         for (String id : layout.ordered()) {
             int slot = layout.slot(id); if (slot / capacity != state.page) continue;
-            android.graphics.Rect box = AppLauncherStyle.gridCell(Ui.dp(context, width), Ui.dp(context, gridHeight), columns, rows, slot, layout.span(id), state.page);
+            android.graphics.Rect box = opened == null ? AppLauncherStyle.gridCell(Ui.dp(context, width), Ui.dp(context, gridHeight), columns, rows, slot, layout.span(id), state.page) : AppLauncherStyle.folderMemberCell(Ui.dp(context, width), Ui.dp(context, gridHeight), opened.members().size(), slot, density);
             RemoteViews cell = cell(id, layout.folder(id), box.width() / density, box.height() / density, false, false);
             geometry(cell, R.id.launcher_cell, box.left / density, box.top / density, box.width() / density, box.height() / density); view.addView(R.id.launcher_grid, cell);
         }
-        view.setViewVisibility(R.id.launcher_grid, state.expanded ? View.VISIBLE : View.INVISIBLE);
-        view.setViewVisibility(R.id.launcher_pager, state.expanded ? View.VISIBLE : View.INVISIBLE);
-        if (!state.expanded) { view.setViewVisibility(R.id.launcher_empty, View.GONE); view.setViewVisibility(R.id.launcher_back, View.GONE); }
+        view.setViewVisibility(R.id.launcher_grid, View.VISIBLE);
+        view.setViewVisibility(R.id.launcher_pager, View.VISIBLE);
         renderRail(view);
         renderDock(view, dockWidth, pins);
         return view;
@@ -119,7 +187,7 @@ final class LauncherWidgetViews {
     private float dimension(int resource) { return context.getResources().getDimension(resource) / context.getResources().getDisplayMetrics().density; }
     @androidx.annotation.RequiresApi(31)
     private void renderRail(RemoteViews view) {
-        view.setViewVisibility(R.id.launcher_rail, state.expanded ? View.VISIBLE : View.INVISIBLE);
+        view.setViewVisibility(R.id.launcher_rail, View.VISIBLE);
         int padding = Ui.dp(context, AppLauncherStyle.RAIL_FRAME_PADDING); view.setViewPadding(R.id.launcher_rail, padding, padding, padding, padding);
         List<String> favorites = prefs.actions("favorites");
         float height = AppLauncherStyle.RAIL_CELL;
@@ -149,8 +217,13 @@ final class LauncherWidgetViews {
         float total = (geometry.chrome() + (pins.size() + shown.size()) * geometry.cell()) / density, x = AppLauncherStyle.DOCK_EDGE;
         geometry(view, R.id.launcher_dock_row, (width - total) / 2, AppLauncherStyle.DOCK_TOP, total, AppLauncherStyle.DOCK_ROW);
         view.setColorStateList(R.id.launcher_dock_row, "setBackgroundTintList", ColorStateList.valueOf(AppLauncherStyle.DOCK_COLOR));
-        RemoteViews toggle = tool(R.drawable.ic_ms_apps, state.expanded ? "收起全部应用，保留 Dock" : "展开全部应用", action("apps", ""));
-        toggle.setViewLayoutWidth(R.id.launcher_icon, AppLauncherStyle.DOCK_APPS_ICON, TypedValue.COMPLEX_UNIT_DIP); toggle.setViewLayoutHeight(R.id.launcher_icon, AppLauncherStyle.DOCK_APPS_ICON, TypedValue.COMPLEX_UNIT_DIP);
+        RemoteViews toggle = new RemoteViews(context.getPackageName(), R.layout.launcher_widget_disabled_apps);
+        toggle.setContentDescription(R.id.launcher_cell, "全部应用（固定显示），九宫格按钮已禁用"); toggle.setOnClickPendingIntent(R.id.launcher_cell, null);
+        toggle.setBoolean(R.id.launcher_cell, "setEnabled", false); toggle.setBoolean(R.id.launcher_cell, "setFocusable", false);
+        for (int id : new int[]{R.id.launcher_icon, R.id.launcher_disabled_mark}) { toggle.setViewLayoutWidth(id, AppLauncherStyle.DOCK_APPS_ICON, TypedValue.COMPLEX_UNIT_DIP); toggle.setViewLayoutHeight(id, AppLauncherStyle.DOCK_APPS_ICON, TypedValue.COMPLEX_UNIT_DIP); toggle.setInt(id, "setColorFilter", Ui.TEXT); }
+        toggle.setViewLayoutWidth(R.id.launcher_disabled_mark, AppLauncherStyle.DOCK_APPS_ICON * AppLauncherStyle.DOCK_DISABLED_SCALE, TypedValue.COMPLEX_UNIT_DIP);
+        toggle.setViewLayoutHeight(R.id.launcher_disabled_mark, AppLauncherStyle.DOCK_APPS_ICON * AppLauncherStyle.DOCK_DISABLED_SCALE, TypedValue.COMPLEX_UNIT_DIP);
+        toggle.setFloat(R.id.launcher_disabled_mark, "setAlpha", AppLauncherStyle.DOCK_DISABLED_ALPHA);
         place(view, R.id.launcher_dock_row, toggle, x, 0, AppLauncherStyle.DOCK_TOOL_WIDTH, AppLauncherStyle.DOCK_ROW); x += AppLauncherStyle.DOCK_TOOL_WIDTH;
         for (String id : pins) { RemoteViews pin = cell(id, null, size, AppLauncherStyle.DOCK_ROW, true, false); pin.setContentDescription(R.id.launcher_cell, "常用：" + AppLauncherModel.label(id, aliases, cache)); place(view, R.id.launcher_dock_row, pin, x, 0, size, AppLauncherStyle.DOCK_ROW); x += size; }
         if (!pins.isEmpty() && !shown.isEmpty()) {

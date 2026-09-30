@@ -20,7 +20,11 @@ import java.util.Set;
 
 /** Native-card lifecycle and ephemeral navigation only. All durable content belongs to Prefs. */
 final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
-    static final class State { int page, pages = 1; String folder; boolean expanded = true; }
+    static final class State {
+        int page, pages = 1, workspacePage; String folder;
+        void openFolder(String id) { if (folder == null) workspacePage = page; folder = id; page = 0; }
+        boolean closeFolder() { if (folder == null) return false; folder = null; page = workspacePage; return true; }
+    }
     record Recents(List<RecentTasks.Task> tasks, boolean known, boolean busy, boolean canOpen, boolean canClear, String error) { }
     private final Context context;
     private final Prefs prefs;
@@ -99,11 +103,20 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
         if (!owns(id) || selected == null || selected.getDisplayId() != target || selected.getState() != Display.STATE_ON || operation == null) return;
         State state = states.computeIfAbsent(id, ignored -> new State());
         switch (operation) {
+            case "surface" -> {
+                if (item == null || !Set.of("search", "sort", "tasks").contains(item)) return;
+                // These are our accessibility overlays, not application launches. Avoid a
+                // transient Activity taking focus and changing Samsung's bars/insets.
+                if (!AppLauncher.ready(context, prefs, target)) { notice(selected, "请先解锁外屏后使用此功能"); return; }
+                CoverService service = CoverService.instance;
+                if (service == null || !service.launcherSurface(item, target)) notice(selected, "请开启浮窗服务后使用此功能");
+                return;
+            }
             case "edit" -> { cancelToast(); editToast = android.widget.Toast.makeText(context.createDisplayContext(selected), AppLauncherModel.EDIT_HINT, android.widget.Toast.LENGTH_SHORT); editToast.show(); return; }
-            case "apps" -> { state.expanded = !state.expanded; state.folder = null; state.page = 0; }
+            case "apps" -> { return; } // Ignore stale Dock toggle PendingIntents from older card views.
             case "side" -> {
                 if (!prefs.actions("favorites").contains(item) || !ActionCatalog.valid(item)) return;
-                if (item.equals("app_hub") || item.equals("app_dock")) { state.expanded = item.equals("app_hub"); state.folder = null; state.page = 0; }
+                if (item.equals("app_hub")) state.closeFolder();
                 else { CoverService service = CoverService.instance; if (service == null || !service.launcherAction(item, target)) notice(selected, "请解锁外屏并开启浮窗服务后使用此快捷操作"); return; }
             }
             case "refresh" -> { requestTasks(id, target, null); return; }
@@ -115,8 +128,8 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
             }
             case "next" -> state.page = Math.min(state.pages - 1, state.page + 1);
             case "previous" -> state.page = Math.max(0, state.page - 1);
-            case "folder" -> { if (prefs.workspace().folder(item) == null) return; state.folder = item; state.page = 0; }
-            case "back" -> { state.folder = null; state.page = 0; }
+            case "folder" -> { if (prefs.workspace().folder(item) == null) return; state.openFolder(item); }
+            case "back" -> state.closeFolder();
             default -> { return; }
         }
         requestedIcons.clear();

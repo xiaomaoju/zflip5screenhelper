@@ -1,0 +1,39 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/launcher_background" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000">
+    <LinearLayout android:id="@+id/launcher_panel" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:layout_gravity="top|left">
+        <FrameLayout android:id="@+id/launcher_body" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+            <LinearLayout android:id="@+id/launcher_catalog" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/launcher_widget_panel">
+                <LinearLayout android:id="@+id/launcher_header" android:layout_width="match_parent" android:layout_height="30dp" android:gravity="center_vertical">
+                    <TextView android:id="@+id/launcher_back" android:layout_width="24dp" android:layout_height="match_parent" android:text="‹" android:textSize="18dp" android:gravity="center" android:textColor="#F2F5F8" android:visibility="gone" android:singleLine="true" android:ellipsize="end" android:contentDescription="返回应用列表" />
+                    <LinearLayout android:id="@+id/launcher_search_field" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:background="@drawable/launcher_widget_search">
+                        <TextView android:id="@+id/launcher_search" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:paddingLeft="6dp" android:text="搜索应用" android:textColor="#B3B9C3" android:textSize="11dp" android:singleLine="true" android:contentDescription="打开浮窗搜索应用" />
+                        <TextView android:id="@+id/launcher_sort" android:layout_width="50dp" android:layout_height="match_parent" android:gravity="center" android:text="手动 ▾" android:textColor="#F2F5F8" android:textSize="9dp" android:singleLine="true" android:contentDescription="打开应用排序" />
+                    </LinearLayout>
+                    <ImageButton android:id="@+id/launcher_tasks" android:layout_width="28dp" android:layout_height="match_parent" android:padding="6dp" android:src="@drawable/ic_ms_view_carousel" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="外屏多任务" />
+                </LinearLayout>
+                <LinearLayout android:id="@+id/launcher_summary" android:layout_width="match_parent" android:layout_height="14dp" android:gravity="center_vertical">
+                    <TextView android:id="@+id/launcher_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:paddingLeft="2dp" android:textSize="9dp" android:textColor="#B3B9C3" android:singleLine="true" android:ellipsize="end" />
+                    <TextView android:id="@+id/launcher_refresh" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="end|center_vertical" android:paddingRight="2dp" android:textSize="8dp" android:textColor="#B3B9C3" android:singleLine="true" android:ellipsize="end" android:contentDescription="刷新最近应用" />
+                    <TextView android:id="@+id/launcher_refresh_status" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+                </LinearLayout>
+                <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+                    <FrameLayout android:id="@+id/launcher_grid" android:layout_width="match_parent" android:layout_height="match_parent" />
+                    <TextView android:id="@+id/launcher_empty" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:textSize="13dp" android:textColor="#B3B9C3" />
+                </FrameLayout>
+                <LinearLayout android:id="@+id/launcher_pager" android:layout_width="match_parent" android:layout_height="18dp" android:gravity="center">
+                    <ImageButton android:id="@+id/launcher_previous" android:layout_width="44dp" android:layout_height="match_parent" android:padding="3dp" android:src="@drawable/launcher_page_previous" android:scaleType="fitCenter" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="上一页应用" />
+                    <ImageView android:id="@+id/launcher_page" android:layout_width="84dp" android:layout_height="match_parent" android:scaleType="center" />
+                    <ImageButton android:id="@+id/launcher_next" android:layout_width="44dp" android:layout_height="match_parent" android:padding="3dp" android:src="@drawable/launcher_page_next" android:scaleType="fitCenter" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="下一页应用" />
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/launcher_rail_panel" android:layout_width="44dp" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/launcher_widget_panel">
+                <ListView android:id="@+id/launcher_rail" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:divider="@null" android:dividerHeight="0dp" android:scrollbars="none" android:overScrollMode="never" android:contentDescription="常用侧栏，上下滑动查看更多" />
+                <LinearLayout android:id="@+id/launcher_rail_tools" android:layout_width="match_parent" android:layout_height="28dp">
+                    <ImageButton android:id="@+id/launcher_edit" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:padding="5dp" android:src="@drawable/ic_ms_edit" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="编辑说明" />
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+        <FrameLayout android:id="@+id/launcher_pins" android:layout_width="match_parent" android:layout_height="36dp">
+            <FrameLayout android:id="@+id/launcher_dock_row" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/launcher_widget_dock" />
+        </FrameLayout>
+    </LinearLayout>
+</FrameLayout>
