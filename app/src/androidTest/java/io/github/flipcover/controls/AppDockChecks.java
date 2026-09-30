@@ -64,6 +64,10 @@ final class AppDockChecks {
             require(refreshes > 0, "standalone Dock refreshes on mount");
             require(recentItems().size() >= 2 && recentItems().size() <= 4, "recent capacity adapts to cover density with a four-app limit");
             ViewGroup row = find("hub-dock"); require(row.getWidth() <= hub.getWidth(), "Dock fits available width");
+            View appsButton = row.getChildAt(0), clearButton = find("hub-clear");
+            require(appsButton.getWidth() == clearButton.getWidth() && appsButton.getWidth() == Ui.dp(activity, 24), "floating Dock side actions share the compact width");
+            require(appsButton.getLeft() == row.getWidth() - clearButton.getRight(), "floating Dock action centers and outer margins are symmetric");
+            require(find("hub-apps").getWidth() - find("hub-apps").getPaddingLeft() - find("hub-apps").getPaddingRight() == Ui.dp(activity, 24), "compact side action preserves the apps icon size");
             for (View item : recentItems()) require(item.getWidth() >= Ui.dp(activity, 28), "recent targets retain at least 28dp width");
             row.getChildAt(1).performClick(); require(launches == 1, "standalone fixed app routes to launch"); recentItems().get(0).performClick(); require(opened == 1 && launches == 1, "recent item restores exact task instead of launching app");
         });

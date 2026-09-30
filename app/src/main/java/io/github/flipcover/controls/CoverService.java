@@ -53,7 +53,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
     final Handler main = new Handler(Looper.getMainLooper());
     final Map<String, Integer> states = new HashMap<>();
     Prefs prefs;
-    Context screenContext;
+    volatile Context screenContext;
     Display display;
     DockGeometry.Placement placement;
     private WindowManager windows;
@@ -66,15 +66,21 @@ public final class CoverService extends AccessibilityService implements DisplayM
     private final Map<Integer, String> windowPackages = new java.util.LinkedHashMap<>();
     private LinearLayout panel;
     private FrameLayout panelHost;
+    PanelGlassSession panelGlass;
+    private boolean panelMemoryFallback;
+    private String lastGlassDiagnostics = "玻璃背景：未打开\n";
     private DockGeometry.Box panelFrame;
     private StatusBarView statusBar;
     private DockGeometry.Box statusBox;
     private AppHubView hub;
+    private PanelGlassSession taskGlass;
+    private RecentTasksView taskSurface;
+    private String lastTaskGlassDiagnostics = "多任务玻璃：未打开\n";
     private FrameLayout hubHost;
     private DockGeometry.Box hubFrame;
     private boolean panelDragging;
     private float panelProgress = 1;
-    private boolean panelPulling, panelTargetOpen = true, panelPullCancelOpen;
+    private boolean panelPulling, panelTargetOpen = true, panelPullCancelOpen, panelPullFresh;
     private float panelPullStartProgress, panelPullStartDistance;
     private ValueAnimator panelAnimation;
     private ValueAnimator panelTintAnimation;
@@ -107,9 +113,9 @@ public final class CoverService extends AccessibilityService implements DisplayM
     Boolean torchOn;
     private final CameraManager.TorchCallback torchCallback = new CameraManager.TorchCallback() {
         @Override public void onTorchModeChanged(String cameraId, boolean enabled) {
-            if (cameraId.equals(torchCamera)) { torchOn = enabled; if (panels != null) panels.updateStates(); }
+            if (cameraId.equals(torchCamera)) { torchOn = enabled; if (panels != null) panels.updateStates(); if (detailContent!=null) detailContent.torchChanged(); }
         }
-        @Override public void onTorchModeUnavailable(String cameraId) { if (cameraId.equals(torchCamera)) { torchOn = null; if (panels != null) panels.updateStates(); } }
+        @Override public void onTorchModeUnavailable(String cameraId) { if (cameraId.equals(torchCamera)) { torchOn = null; if (panels != null) panels.updateStates(); if (detailContent!=null) detailContent.torchChanged(); } }
     };
     private int navigationInsetPixels;
     private final Runnable updateDisplay = () -> reconcile(false);
@@ -132,9 +138,11 @@ public final class CoverService extends AccessibilityService implements DisplayM
         boolean ready = granted && connected;
         if (hub != null) { if (!ready) hub.recentFailure("Shizuku 连接中断"); else requestHubTasks(null); }
         if (!ready) {
+            closeTaskGlass(); refreshBlurState();
             pendingBrightness = null; brightnessSequence++; main.removeCallbacks(drainBrightness);
             stopAutomaticRotation();
             states.clear();
+            if (detailContent!=null) detailContent.statesInvalidated();
             if (panels != null) { panels.updateStates(); panels.brightness(new ShizukuBridge.Result(false, "连接中断", "")); }
         } else if (panelPage.equals("controls")) refreshStates(true);
     }
@@ -165,6 +173,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
         systemControlGuard = new SystemControlGuard(prefs, main, CoverApp.bridge(this), result -> {
             states.put("system_controls", result.ok ? 0 : -1);
             if (panels != null) panels.updateStates();
+            if (detailContent!=null) detailContent.stateChanged("system_controls");
             if (!result.ok) android.util.Log.w("SystemControlGuard", result.message);
         });
         systemControlGuard.changed();
@@ -303,7 +312,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
             CoverApp.widgets(this).safeArea(selected, size.x, size.y, new DockGeometry.Box(widgetLeft, widgetTop, Math.max(0, widgetRight - widgetLeft), Math.max(0, widgetBottom - widgetTop)));
             signature = nextSignature;
             setStatus("快捷栏运行中 · 屏幕 " + selected.getDisplayId() + (placement.measured() ? " · 按缺口定位" : " · 位置需校准"));
-            if (!reopen.isEmpty()) { showPanel(reopen); if (editorState != null) editControls(editorState); } else if (reopenHub) { showHub(expandedHub); if (hub != null) { hub.restoreWorkspaceState(workspaceState); if (reopenTasks) { hub.showTasks(true); hub.selectTask(selectedTask); } } }
+            if (!reopen.isEmpty()) { showPanel(reopen); if (editorState != null) editControls(editorState); } else if (reopenHub) { showHub(expandedHub, reopenTasks); if (hub != null) { hub.restoreWorkspaceState(workspaceState); if (reopenTasks) { hub.showTasks(true); hub.selectTask(selectedTask); } } }
         } catch (RuntimeException e) { removeWindows(); signature = ""; setStatus("外屏挂载失败：" + e.getClass().getSimpleName()); }
     }
     private void addDock() {
@@ -317,7 +326,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
         return new DockView.Listener() {
                 @Override public void action(String id) { act(id); }
                 @Override public void configure() { openSettings("dock"); }
-                @Override public void beginPull(String page, float distance) { beginPanelPull(page, distance); }
+                @Override public void beginPull(String page, float distance, float originY) { beginPanelPull(page, distance, originY); }
                 @Override public void pull(String page, float distance) { pullPanel(page, distance); }
                 @Override public void release(String page, float distance, float velocity, boolean canceled) { releasePanel(distance, velocity, canceled); }
                 @Override public void toggleVisibility() { dockVisibility.toggle(prefs.autoHideDock(), prefs.compactApps()); syncDockVisibility(); }
@@ -352,22 +361,42 @@ public final class CoverService extends AccessibilityService implements DisplayM
         params.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         params.setFitInsetsTypes(0); params.setTitle("外屏快捷栏"); return params;
     }
+    private boolean glassTargetSelected(PanelGlassSession opening) { Display selected=Displays.selected(this,prefs); return selected != null && selected.getDisplayId() == opening.displayId; }
+    private static boolean glassPage(String page) { return page.equals("controls") || page.equals("notifications") || page.equals("media") || page.equals("rotation"); }
     void showPanel(String page) { showPanel(page, false); }
     private void showPanel(String page, boolean dragging) {
         if (windows == null || dock == null) return;
-        dismissHub(); closePanel(); panelPage = page; panelDragging = dragging; panelTargetOpen = !dragging; panelProgress = dragging ? 0 : 1;
+        dismissHub();
+        boolean retainedFallback = panel != null && panelMemoryFallback && glassPage(page);
+        // A failed or pending capture belongs to this opening too; switching pages must not retry it.
+        PanelGlassSession retained = panelGlass != null && panelGlass.matches(display) && glassPage(page) ? panelGlass : null;
+        if (retained != null) { panelGlass = null; retained.clearViews(); }
+        closePanel(); panelMemoryFallback = retainedFallback; panelGlass = retained; panelPage = page; panelDragging = dragging; panelTargetOpen = !dragging; panelProgress = dragging ? 0 : 1;
         buildPanelContent(page, panelFrame, page.equals("controls") && statusBox != null ? statusBox.y() : placement.panel().y());
-        if (page.equals("controls") && statusBar != null) statusBar.setVisibility(View.INVISIBLE);
         try {
             WindowManager.LayoutParams layout = parameters(panelFrame);
-            ensurePanelHost(); panelHost.addView(panel, new FrameLayout.LayoutParams(-1, -1)); panelHost.setVisibility(View.VISIBLE);
+            ensurePanelHost(); panelHost.addView(panel, new FrameLayout.LayoutParams(-1, -1));
+            boolean capture = !panelMemoryFallback && panelGlass == null && glassPage(page) && PanelGlassSession.allowed(screenContext, prefs);
+            if (capture) panelGlass = new PanelGlassSession(screenContext, display);
+            if (page.equals("controls") && statusBar != null) { statusBar.setAlpha(panelGlass == null ? 1 : 0); statusBar.setVisibility(panelGlass == null ? View.INVISIBLE : View.VISIBLE); }
+            panelHost.setVisibility(panelGlass != null && panelGlass.preparing() ? View.INVISIBLE : View.VISIBLE);
             if (dragging) layout.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
             applyPanelBlur(layout, Build.VERSION.SDK_INT >= 31 && windows.isCrossWindowBlurEnabled());
             windows.updateViewLayout(panelHost, layout); setPanelProgress(panelProgress);
+            if (panelGlass != null) {
+                panelGlass.attach(panelHost, page.equals("notifications"));
+                if (capture) {
+                    PanelGlassSession opening = panelGlass;
+                    opening.capture(this, () -> panelGlass == opening && panelHost != null && panel != null && display != null && opening.matches(display) && glassTargetSelected(opening) && display.getState() == Display.STATE_ON && !getSystemService(KeyguardManager.class).isKeyguardLocked(), () -> {
+                        panelHost.setVisibility(View.VISIBLE);
+                        lastGlassDiagnostics = opening.diagnostics();
+                    });
+                }
+            }
             if (panelEntry != null) panelEntry.panelVisible(true);
             // The persistent panel host was added below the chrome. Keep the entry's
             // existing surface attached so showing/settling a panel cannot blink it.
-            if (Build.VERSION.SDK_INT >= 31 && prefs.panelBlur()) {
+            if (panelGlass == null && Build.VERSION.SDK_INT >= 31 && prefs.panelBlur()) {
                 LinearLayout observed = panel; WindowManager observedWindows = windows;
                 blurListener = enabled -> {
                     if (panel != observed || windows != observedWindows || panelHost == null || !(panelHost.getLayoutParams() instanceof WindowManager.LayoutParams current)) return;
@@ -419,6 +448,10 @@ public final class CoverService extends AccessibilityService implements DisplayM
             refresh.setOnClickListener(v -> { refresh.setEnabled(false); refresh.setActivated(true); refresh.setStateDescription("正在刷新"); refreshStates(true, () -> { refresh.setEnabled(true); refresh.setActivated(false); refresh.setStateDescription("刷新状态"); }); }); header.addView(refresh);
         }
         header.addView(RuntimeVisuals.button(screenContext, R.drawable.ic_ms_close, "关闭面板", this::closePanel)); LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(-1, -2); headerParams.bottomMargin = Ui.dp(screenContext, 3); panel.addView(header, headerParams);
+        if (page.equals("controls") || page.equals("notifications")) for (int i=1;i<header.getChildCount();i++) {
+            View action=header.getChildAt(i); android.view.ViewGroup.LayoutParams size=action.getLayoutParams();
+            header.removeViewAt(i); header.addView(new PanelActionSlot(action),i,size);
+        }
         ScrollView scroll = new ScrollView(screenContext); scroll.setFillViewport(page.equals("controls")); scroll.setVerticalScrollBarEnabled(!page.equals("notifications")); scroll.addView(contents);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         feedback = Ui.text(screenContext, "", 11, Ui.MUTED); feedback.setVisibility(View.GONE); feedback.setMaxLines(2); panel.addView(feedback);
@@ -433,7 +466,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
             screenContext.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(controlEditor.getWindowToken(), 0);
             controlEditor = null; populatePanel("controls"); panelEditorFocus(false); if (instance == this) refreshStates(true);
         });
-        panel.addView(controlEditor, new LinearLayout.LayoutParams(-1, 0, 1)); panelEditorFocus(true); controlEditor.requestFocus();
+        controlEditor.glass(panelGlass); panel.addView(controlEditor, new LinearLayout.LayoutParams(-1, 0, 1)); panelEditorFocus(true); controlEditor.requestFocus();
     }
     private void panelEditorFocus(boolean editing) {
         if (windows == null || panelHost == null || !(panelHost.getLayoutParams() instanceof WindowManager.LayoutParams layout)) return;
@@ -448,12 +481,14 @@ public final class CoverService extends AccessibilityService implements DisplayM
         windows.addView(panelHost, layout);
     }
     void closePanel() {
+        panelMemoryFallback = false;
+        if (panelGlass != null) { lastGlassDiagnostics = panelGlass.diagnostics(); panelGlass.close(); panelGlass = null; }
         if (controlEditor != null) { screenContext.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(controlEditor.getWindowToken(), 0); controlEditor.cancelDrag(); controlEditor = null; }
         if (panelTintAnimation != null) panelTintAnimation.cancel(); panelTintAnimation = null; panelBackdrop = null;
         pendingBrightness = null; brightnessSequence++; main.removeCallbacks(drainBrightness);
         dismissDetails();
         cancelPanelAnimation(); panelDragging = false; panelPulling = false; panelTargetOpen = false;
-        if (statusBar != null) statusBar.setVisibility(View.VISIBLE);
+        if (statusBar != null) { statusBar.setAlpha(1); statusBar.setVisibility(View.VISIBLE); }
         if (Build.VERSION.SDK_INT >= 31 && blurListener != null && windows != null) windows.removeCrossWindowBlurEnabledListener(blurListener);
         blurListener = null;
         if (panelHost != null && windows != null) { panelHost.setVisibility(View.INVISIBLE); panelHost.removeAllViews(); try { WindowManager.LayoutParams layout = (WindowManager.LayoutParams) panelHost.getLayoutParams(); layout.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE; layout.flags &= ~(WindowManager.LayoutParams.FLAG_BLUR_BEHIND | WindowManager.LayoutParams.FLAG_DIM_BEHIND); layout.dimAmount = 0; if (Build.VERSION.SDK_INT >= 31) layout.setBlurBehindRadius(0); windows.updateViewLayout(panelHost, layout); } catch (RuntimeException ignored) { } }
@@ -462,7 +497,12 @@ public final class CoverService extends AccessibilityService implements DisplayM
         if (panelEntry != null && windows != null) { try { windows.updateViewLayout(panelEntry, panelEntryParameters()); } catch (RuntimeException ignored) { } }
     }
     private void applyPanelBlur(WindowManager.LayoutParams layout, boolean supported) {
-        boolean enabled = visualEffectsAllowed() && supported && !panelDragging;
+        if (panelGlass != null) {
+            layout.flags &= ~(WindowManager.LayoutParams.FLAG_BLUR_BEHIND | WindowManager.LayoutParams.FLAG_DIM_BEHIND); layout.dimAmount = 0;
+            if (Build.VERSION.SDK_INT >= 31) layout.setBlurBehindRadius(0);
+            return;
+        }
+        boolean enabled = visualEffectsAllowed() && supported && !panelDragging && !panelPage.equals("notifications");
         int tint = enabled ? 0xC2000000 : Ui.BACKGROUND;
         if (panelBackdrop == null) { panelBackdrop = new android.graphics.drawable.ColorDrawable(tint); panel.setBackground(panelBackdrop); }
         else if (panelBackdrop.getColor() != tint) {
@@ -476,9 +516,11 @@ public final class CoverService extends AccessibilityService implements DisplayM
         else { layout.flags &= ~(WindowManager.LayoutParams.FLAG_BLUR_BEHIND | WindowManager.LayoutParams.FLAG_DIM_BEHIND); layout.dimAmount = 0; }
         if (details != null) setDetailBlur(true);
     }
-    private boolean visualEffectsAllowed() { return Build.VERSION.SDK_INT >= 31 && prefs.panelBlur() && !screenContext.getSystemService(android.os.PowerManager.class).isPowerSaveMode(); }
+    private boolean visualEffectsAllowed() { return !panelMemoryFallback && Build.VERSION.SDK_INT >= 31 && prefs.panelBlur() && !screenContext.getSystemService(android.os.PowerManager.class).isPowerSaveMode(); }
     private void refreshBlurState() {
         if (screenContext == null || windows == null) return;
+        if (taskGlass != null && !PanelGlassSession.allowed(screenContext, prefs)) closeTaskGlass();
+        if (panelGlass != null && !PanelGlassSession.allowed(screenContext, prefs)) { lastGlassDiagnostics = panelGlass.diagnostics(); panelGlass.close(); panelGlass = null; if (panelHost != null) panelHost.setVisibility(View.VISIBLE); }
         boolean supported = Build.VERSION.SDK_INT >= 31 && windows.isCrossWindowBlurEnabled();
         if (panel != null && panelHost != null && panelHost.getLayoutParams() instanceof WindowManager.LayoutParams layout) {
             applyPanelBlur(layout, supported);
@@ -491,21 +533,22 @@ public final class CoverService extends AccessibilityService implements DisplayM
     }
     String blurDiagnostics() {
         String accelerated = panelHost == null || !panelHost.isAttachedToWindow() ? "未挂载" : String.valueOf(panelHost.isHardwareAccelerated());
-        return "外屏面板宿主硬件加速：" + accelerated + "\n详情本地模糊当前启用：" + detailBlurApplied + "\n";
+        return "外屏面板宿主硬件加速：" + accelerated + "\n详情本地模糊当前启用：" + detailBlurApplied + "\n" + (panelGlass == null ? lastGlassDiagnostics + "当前会话已释放 · 纹理 0B\n" : panelGlass.diagnostics()) + "多任务：\n" + (taskGlass == null ? lastTaskGlassDiagnostics + "当前会话已释放 · 纹理 0B\n" : taskGlass.diagnostics());
     }
     void showDetails(String id, View source) {
         if (panel == null || !(panel.getParent() instanceof FrameLayout host)) return;
         dismissDetails();
+        if (panelGlass != null) panelGlass.beginModal(panel);
         DetailSheet sheet = new DetailSheet(screenContext, ActionCatalog.label(screenContext, id), this::dismissDetails); details = sheet;
         DockGeometry.Box safe = placement.panel(); FrameLayout.LayoutParams position = new FrameLayout.LayoutParams(safe.width(), safe.height()); position.leftMargin = safe.x(); position.topMargin = safe.y();
         host.addView(sheet, position); panel.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         setDetailBlur(true);
         if (windows != null && panelHost != null) { WindowManager.LayoutParams params = (WindowManager.LayoutParams) panelHost.getLayoutParams(); params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE; windows.updateViewLayout(panelHost, params); }
-        detailContent = new ControlDetails(this, sheet); detailContent.build(id); sheet.enter(source);
+        detailContent = new ControlDetails(this, sheet); detailContent.build(id); sheet.enter(source instanceof Panels.Tile tile ? tile.face : source, panelGlass);
         if (prefs.haptics() && source != null) source.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
     }
     private void setDetailBlur(boolean enabled) {
-        boolean active = enabled && panel != null && panel.isHardwareAccelerated() && visualEffectsAllowed();
+        boolean active = enabled && panelGlass == null && panel != null && panel.isHardwareAccelerated() && visualEffectsAllowed();
         if (detailBlurApplied == active) return;
         detailBlurApplied = active;
         if (panel != null && Build.VERSION.SDK_INT >= 31) panel.setRenderEffect(active ? android.graphics.RenderEffect.createBlurEffect(Ui.dp(screenContext, 5), Ui.dp(screenContext, 5), android.graphics.Shader.TileMode.CLAMP) : null);
@@ -513,6 +556,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
     void dismissDetails() {
         if (detailContent != null) { detailContent.close(); detailContent = null; }
         if (details == null) return;
+        if (panelGlass != null) panelGlass.endModal();
         if (details.getParent() instanceof android.view.ViewGroup host) host.removeView(details); details = null;
         setDetailBlur(false); if (panel != null) panel.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         if (windows != null && panelHost != null) try { WindowManager.LayoutParams params = (WindowManager.LayoutParams) panelHost.getLayoutParams(); params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE; windows.updateViewLayout(panelHost, params); } catch (RuntimeException ignored) { }
@@ -545,7 +589,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
         float offset = (1 - panelProgress) * panelExtent();
         panel.setTranslationX(0); panel.setTranslationY(offset);
     }
-    private void beginPanelPull(String page, float distance) {
+    private void beginPanelPull(String page, float distance, float originY) {
         if (controlEditor != null) return;
         // An already open page is idempotent: no rebuild, loss of scroll, or jump to zero.
         if (panel != null && page.equals(panelPage) && !panelDragging && panelProgress >= 1) return;
@@ -553,17 +597,19 @@ public final class CoverService extends AccessibilityService implements DisplayM
         if (!continuing) showPanel(page, true);
         if (panel == null || !page.equals(panelPage)) return;
         panelPullCancelOpen = panelTargetOpen; cancelPanelAnimation(); panelDragging = true; panelPulling = true;
-        panelPullStartProgress = panelProgress; panelPullStartDistance = continuing ? distance : 0;
+        panelPullFresh = !continuing;
+        panelPullStartProgress = continuing ? panelProgress : PanelDrag.entryStart(originY, panelFrame.y(), panelExtent()); panelPullStartDistance = continuing ? distance : 0;
     }
     private void pullPanel(String page, float distance) {
-        if (!panelPulling || !page.equals(panelPage)) beginPanelPull(page, distance);
         if (panelPulling && page.equals(panelPage)) setPanelProgress(PanelDrag.progress(panelPullStartProgress, distance - panelPullStartDistance, panelExtent()));
     }
     private void releasePanel(float distance, float velocity, boolean canceled) {
         if (!panelPulling || panel == null) return;
         panelPulling = false;
         if (!canceled) setPanelProgress(PanelDrag.progress(panelPullStartProgress, distance - panelPullStartDistance, panelExtent()));
-        settlePanel(canceled ? panelPullCancelOpen : PanelDrag.shouldOpen(panelProgress * panelExtent(), panelExtent(), velocity, screenContext.getResources().getDisplayMetrics().density));
+        // Camera/Home clearance is a position offset, never user-travel toward a commit.
+        float traveled = panelPullFresh ? distance : panelProgress * panelExtent();
+        settlePanel(canceled ? panelPullCancelOpen : PanelDrag.shouldOpen(traveled, panelExtent(), velocity, screenContext.getResources().getDisplayMetrics().density));
     }
     private void cancelPanelAnimation() { if (panelAnimation != null) { panelAnimation.removeAllListeners(); panelAnimation.cancel(); panelAnimation = null; } }
     private void settlePanel(boolean open) {
@@ -588,13 +634,19 @@ public final class CoverService extends AccessibilityService implements DisplayM
     private WindowManager.LayoutParams hubParameters(boolean expanded) {
         // Keep one safe-area window: the transparent region dismisses a temporary Dock,
         // and expanding the catalog does not move or replace its application row.
-        WindowManager.LayoutParams layout = parameters(hubFrame);
+        WindowManager.LayoutParams layout = parameters(hub != null && hub.showingTasks() ? panelFrame : hubFrame);
         layout.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
         layout.softInputMode = (expanded ? WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE : WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING) | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
         applyHubBlur(hub, layout, Build.VERSION.SDK_INT >= 31 && windows.isCrossWindowBlurEnabled());
         return layout;
     }
     void applyHubBlur(AppHubView target, WindowManager.LayoutParams layout, boolean supported) {
+        if (target.showingTasks()) {
+            target.setBackdropBlur(false);
+            layout.flags &= ~(WindowManager.LayoutParams.FLAG_BLUR_BEHIND | WindowManager.LayoutParams.FLAG_DIM_BEHIND); layout.dimAmount = 0;
+            if (Build.VERSION.SDK_INT >= 31) layout.setBlurBehindRadius(0);
+            return;
+        }
         boolean expanded = target.expanded(), enabled = expanded && visualEffectsAllowed() && supported;
         target.setBackdropBlur(enabled);
         if (Build.VERSION.SDK_INT >= 31) layout.setBlurBehindRadius(enabled ? Math.min(100, Ui.dp(screenContext, 32)) : 0);
@@ -602,7 +654,30 @@ public final class CoverService extends AccessibilityService implements DisplayM
         if (expanded) { layout.flags |= WindowManager.LayoutParams.FLAG_DIM_BEHIND; layout.dimAmount = enabled ? .18f : .32f; }
         else { layout.flags &= ~WindowManager.LayoutParams.FLAG_DIM_BEHIND; layout.dimAmount = 0; }
     }
-    private void showHub(boolean expandedInitially) {
+    private void taskPageChanged(RecentTasksView page) {
+        closeTaskGlass(); taskSurface = page;
+        if (hub == null || hubHost == null || windows == null) return;
+        if (page != null) { hub.prepareTaskEntrance(); page.safeArea(hubFrame, panelFrame); }
+        try { windows.updateViewLayout(hubHost, hubParameters(hub.expanded())); } catch (RuntimeException failure) { removeHubImmediately(); return; }
+        if (page == null) return;
+        Display selected = Displays.selected(this, prefs);
+        if (selected != null && display != null && selected.getDisplayId() == display.getDisplayId() && display.getDisplayId() != Display.DEFAULT_DISPLAY && display.getState() == Display.STATE_ON && PanelGlassSession.allowed(screenContext, prefs)) {
+            PanelGlassSession opening = new PanelGlassSession(screenContext, display); taskGlass = opening;
+            AppHubView owner = hub; FrameLayout host = hubHost;
+            host.setVisibility(View.INVISIBLE); refreshBlurState();
+            opening.attach(page, true);
+            opening.capture(this, () -> taskGlass == opening && taskSurface == page && hub == owner && hubHost == host && owner.isAttachedToWindow() && !owner.closing() && display != null && opening.matches(display) && glassTargetSelected(opening) && display.getState() == Display.STATE_ON && PanelGlassSession.allowed(screenContext, prefs), () -> {
+                host.setVisibility(View.VISIBLE); owner.revealTasks(page); lastTaskGlassDiagnostics = opening.diagnostics();
+            });
+        } else { refreshBlurState(); hub.revealTasks(page); }
+    }
+    private void closeTaskGlass() {
+        if (taskGlass != null) { lastTaskGlassDiagnostics = taskGlass.diagnostics(); taskGlass.close(); taskGlass = null; }
+        if (taskSurface != null) { taskSurface.glass(null); taskSurface.previewsVisible(); }
+        if (hubHost != null) hubHost.setVisibility(View.VISIBLE);
+    }
+    private void showHub(boolean expandedInitially) { showHub(expandedInitially, false); }
+    private void showHub(boolean expandedInitially, boolean tasksInitially) {
         if (windows == null || dock == null) return;
         closePanel(); removeHubImmediately();
         hub = new AppHubView(screenContext, prefs, new AppHubView.Listener() {
@@ -617,7 +692,10 @@ public final class CoverService extends AccessibilityService implements DisplayM
             @Override public void close() { dismissHub(); }
             @Override public void refreshRecents() { requestHubTasks(null); }
             @Override public void clearRecents(java.util.List<RecentTasks.Task> tasks) { requestHubTasks(tasks); }
+            @Override public void closeTask(RecentTasks.Task task) { requestHubTasks(java.util.List.of(task), true); }
             @Override public void openTask(RecentTasks.Task task) { openHubTask(task); }
+            @Override public boolean managesTaskEntrance() { return true; }
+            @Override public void taskPageChanged(RecentTasksView page) { CoverService.this.taskPageChanged(page); }
             @Override public void snapshot(RecentTasks.Task task, java.util.function.Consumer<ShizukuBridge.Snapshot> callback) { requestTaskSnapshot(task, callback); }
             @Override public void expand(boolean expanded) {
                 if (hub == null || hubHost == null || !hubHost.isAttachedToWindow()) return;
@@ -628,10 +706,15 @@ public final class CoverService extends AccessibilityService implements DisplayM
         });
         // Let the fixed dock key receive its complete click before toggling the hub.
         // ACTION_OUTSIDE on DOWN would close it early, then UP would reopen it.
-        hub.dockEdge(placement.edge()); hub.setExpanded(expandedInitially); hub.prepareEntrance();
+        hub.dockEdge(placement.edge()); hub.setExpanded(expandedInitially); if (tasksInitially) hub.showTasks(true); hub.prepareEntrance();
         attachHubContent(hub);
+        if (tasksInitially) hubHost.setVisibility(View.INVISIBLE);
         try {
-            windows.addView(hubHost, hubParameters(expandedInitially)); syncHubEntry(); raiseChrome(); hub.enter();
+            windows.addView(hubHost, hubParameters(expandedInitially)); syncHubEntry(); raiseChrome();
+            if (tasksInitially) {
+                AppHubView opening = hub; RecentTasksView page = taskSurface;
+                opening.postOnAnimation(() -> { if (hub == opening && !opening.closing() && opening.isAttachedToWindow()) taskPageChanged(page); });
+            } else hub.enter();
             if (Build.VERSION.SDK_INT >= 31 && prefs.panelBlur()) {
                 AppHubView observed = hub; FrameLayout observedHost = hubHost; WindowManager observedWindows = windows; hubBlurWindows = observedWindows;
                 hubBlurListener = enabled -> {
@@ -653,6 +736,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
         target.dismiss(() -> { if (hub == target) removeHubImmediately(); });
     }
     private void removeHubImmediately() {
+        closeTaskGlass(); taskSurface = null;
         if (Build.VERSION.SDK_INT >= 31 && hubBlurListener != null && hubBlurWindows != null) try { hubBlurWindows.removeCrossWindowBlurEnabledListener(hubBlurListener); } catch (RuntimeException ignored) { }
         hubBlurListener = null; hubBlurWindows = null;
         AppHubView removed = hub; FrameLayout host = hubHost; hub = null; hubHost = null;
@@ -661,37 +745,25 @@ public final class CoverService extends AccessibilityService implements DisplayM
         syncHubEntry();
     }
     private void requestHubTasks(java.util.List<RecentTasks.Task> clearing) {
+        requestHubTasks(clearing, false);
+    }
+    private void requestHubTasks(java.util.List<RecentTasks.Task> clearing, boolean explicitTask) {
         AppHubView target = hub; Display selected = Displays.selected(this, prefs);
         if (target == null || target.closing() || !target.isAttachedToWindow() || target.recentBusy()) return;
         if (clearing == null && CoverApp.bridge(this).busy()) return;
         if (display == null || selected == null || selected.getDisplayId() != display.getDisplayId() || selected.getDisplayId() <= 0 || selected.getState() != Display.STATE_ON || getSystemService(KeyguardManager.class).isKeyguardLocked()) { target.recentResult(java.util.List.of(), null); target.recentFailure("目标外屏不可用"); return; }
-        int displayId = selected.getDisplayId(); String request = "";
-        if (clearing != null) {
-            clearing = CoverApp.taskLocks(this).unlocked(clearing);
-            if (clearing.isEmpty()) { message("没有可清理的后台任务"); return; }
-            try { org.json.JSONArray items = new org.json.JSONArray(); for (RecentTasks.Task task : clearing) items.put(SystemRecentTasks.json(task)); request = items.toString(); }
-            catch (Exception e) { target.recentFailure("任务数据无效"); return; }
-        }
+        int displayId = selected.getDisplayId();
         boolean clearingTasks = clearing != null;
         target.recentBusy(true);
-        CoverApp.bridge(this).run(clearingTasks ? "recent_clear" : "recent_tasks", displayId, 0, request, result -> {
+        java.util.function.BooleanSupplier active = () -> hub == target && !target.closing() && target.isAttachedToWindow();
+        java.util.function.Consumer<AppRecentTasks.Response> complete = result -> {
             if (hub != target) return;
-            Display current = Displays.selected(this, prefs);
-            if (current == null || current.getDisplayId() != displayId || current.getState() != Display.STATE_ON || getSystemService(KeyguardManager.class).isKeyguardLocked()) { target.recentResult(java.util.List.of(), null); target.recentFailure("外屏状态已改变"); return; }
-            if (!result.ok) { target.recentFailure(result.message); if (clearingTasks) message(result.message); return; }
-            try {
-                JSONObject payload = new JSONObject(result.output); org.json.JSONArray items = payload.getJSONArray("tasks"); if (items.length() > 32) throw new IllegalArgumentException("Too many tasks");
-                java.util.List<RecentTasks.Task> tasks = new ArrayList<>();
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.getJSONObject(i); android.content.ComponentName component = android.content.ComponentName.unflattenFromString(item.getString("component"));
-                    if (component == null || item.getInt("displayId") != displayId || item.getInt("userId") != android.os.Process.myUid() / 100000 || item.getInt("id") < 0) throw new IllegalArgumentException("Task identity mismatch");
-                    tasks.add(new RecentTasks.Task(item.getInt("id"), displayId, item.getInt("userId"), component.flattenToString(), component.getPackageName(), item.getBoolean("visible")));
-                }
-                target.recentCapabilities(payload.optBoolean("canOpen"), payload.optBoolean("canClear"), payload.optBoolean("canSnapshot"));
-                CoverApp.taskLocks(this).reconcile(displayId, android.os.Process.myUid() / 100000, tasks, payload.optBoolean("complete"));
-                target.recentResult(tasks, clearingTasks ? result.message : null);
-            } catch (Exception e) { target.recentFailure("系统任务返回格式不兼容"); }
-        });
+            if (result.unchanged()) { target.recentBusy(false); message(result.message()); return; }
+            if (!result.ok()) { target.recentFailure(result.message()); if (clearingTasks) message(result.message()); return; }
+            AppRecentTasks.Snapshot snapshot = result.snapshot(); target.recentCapabilities(snapshot.canOpen(), snapshot.canClear(), snapshot.canSnapshot()); target.recentResult(snapshot.tasks(), result.message());
+        };
+        if (explicitTask) AppRecentTasks.dismiss(this, prefs, clearing.get(0), active, complete);
+        else AppRecentTasks.request(this, prefs, displayId, clearing, active, complete);
     }
     private boolean currentTaskDisplay(int id) {
         Display selected = Displays.selected(this, prefs);
@@ -701,12 +773,11 @@ public final class CoverService extends AccessibilityService implements DisplayM
         AppHubView target = hub;
         if (target == null || target.closing() || !target.isAttachedToWindow() || target.recentBusy()) return;
         if (!currentTaskDisplay(task.displayId())) { target.recentFailure("目标外屏已改变"); return; }
-        String request;
-        try { request = SystemRecentTasks.json(task).toString(); } catch (Exception error) { target.recentFailure("任务数据无效"); return; }
         target.recentBusy(true);
-        CoverApp.bridge(this).run("recent_open", task.displayId(), 0, request, result -> finishHubTask(target, task, result));
+        AppRecentTasks.open(this, prefs, task, () -> hub == target && !target.closing() && target.isAttachedToWindow(), result -> finishHubTask(target, task, result));
     }
     void finishHubTask(AppHubView target, RecentTasks.Task task, ShizukuBridge.Result result) {
+        if (hub != target) return;
         if (!currentTaskDisplay(task.displayId())) { if (hub == target) target.recentFailure("外屏状态已改变"); return; }
         String state = "";
         if (result.ok) try { state = new JSONObject(result.output).getString("state"); } catch (Exception ignored) { }
@@ -772,9 +843,10 @@ public final class CoverService extends AccessibilityService implements DisplayM
             if (instance != this) return;
             if (result.ok) try {
                 JSONObject values = new JSONObject(result.output);
-                for (String key : new String[]{"wifi", "bluetooth", "data", "dnd", "airplane", "system_controls"}) states.put(key, values.optInt(key, -1));
+                for (String key : new String[]{"wifi", "bluetooth", "data", "dnd", "airplane", "system_controls", "nfc", "hotspot"}) states.put(key, values.optInt(key, -1));
             } catch (Exception ignored) { states.clear(); }
             if (!result.ok) states.clear();
+            if (detailContent!=null) { if (result.ok) detailContent.statesChanged(); else detailContent.statesInvalidated(); }
             if (panels != null) panels.updateStates();
             finished.run();
             if (readBrightness && panelPage.equals("controls") && panels != null && panels.hasBrightness() && display != null) {
@@ -838,14 +910,18 @@ public final class CoverService extends AccessibilityService implements DisplayM
             case "notification_list" -> { if (panelPage.equals("notifications")) closePanel(); else showPanel("notifications"); }
             case "configure" -> openSettings("dock");
             case "apps" -> openSettings("apps");
-            case "home" -> global(GLOBAL_ACTION_HOME);
-            case "back" -> { if (controlEditor != null) controlEditor.back(); else if (details != null) details.close(); else if (hub != null && !hub.closing()) hub.back(); else if (panel != null) closePanel(); else if (hub == null) global(GLOBAL_ACTION_BACK); }
-            case "recents" -> { if (hub != null && hub.showingTasks() && !hub.closing()) dismissHub(); else { if (hub == null) showHub(); if (hub != null) { if (hub.closing()) { closePanel(); hub.reopen(); } hub.showTasks(true); } } }
+            case "home" -> returnHome();
+            case "back" -> { if (controlEditor != null) controlEditor.back(); else if (details != null) details.back(); else if (hub != null && !hub.closing()) hub.back(); else if (panel != null) closePanel(); else if (hub == null) global(GLOBAL_ACTION_BACK); }
+            case "recents" -> { if (hub != null && hub.showingTasks() && !hub.closing()) dismissHub(); else { if (hub == null) showHub(true, true); if (hub != null) { if (hub.closing()) { closePanel(); hub.reopen(); } hub.showTasks(true); } } }
             case "system_recents" -> global(GLOBAL_ACTION_RECENTS);
             case "lock" -> global(GLOBAL_ACTION_LOCK_SCREEN);
             case "screenshot" -> screenshot();
             case "torch" -> toggleTorch();
             case "system_controls" -> setSystemControls(-1);
+            case "nfc", "hotspot" -> {
+                if (!CoverApp.bridge(this).connected()) { if (panel == null || !panelPage.equals("controls")) showPanel("controls"); showDetails(id, null); }
+                else connectivityAction(id, -1, "", null);
+            }
             case "wifi", "bluetooth", "data", "dnd", "airplane" -> {
                 Boolean value = on(id);
                 if (value == null) { showPanel("controls"); panels.chooseState(id); }
@@ -857,15 +933,45 @@ public final class CoverService extends AccessibilityService implements DisplayM
             }
         }
     }
+    void connectivityStateChanged(String id, int value) { states.put(id, value); if (panels != null) panels.updateStates(); }
+    void refreshConnectivityStates() {
+        if (instance != this) return;
+        Panels target = panels; int screen = display == null ? -1 : display.getDisplayId();
+        if (target == null || !panelPage.equals("controls") || !currentTaskDisplay(screen)) return;
+        CoverApp.bridge(this).run("connectivity_states", screen, 0, "", result -> {
+            if (instance != this || panels != target || !currentTaskDisplay(screen) || result.retryable) return;
+            try { JSONObject values = result.ok ? new JSONObject(result.output) : new JSONObject(); states.put("nfc", values.optInt("nfc", -1)); states.put("hotspot", values.optInt("hotspot", -1)); }
+            catch (Exception error) { states.put("nfc", -1); states.put("hotspot", -1); }
+            target.updateStates();
+        });
+    }
+    boolean connectivityDisplay(int screen) { return instance == this && currentTaskDisplay(screen); }
+    void connectivityAction(String operation, int value, String input, ShizukuBridge.Callback after) {
+        int screen = display == null ? -1 : display.getDisplayId();
+        if (!currentTaskDisplay(screen)) { message("所选外屏不可用，请解锁后重试"); if (after != null) after.accept(new ShizukuBridge.Result(false, "所选外屏不可用", "")); return; }
+        Panels target = panels; String id = operation.startsWith("nfc") ? "nfc" : "hotspot";
+        if (target != null) { if (target.working(id)) { if (after != null) after.accept(new ShizukuBridge.Result(false, "上一项仍在执行，请稍后重试", "", true)); return; } target.working(id, true); }
+        CoverApp.bridge(this).run(operation, screen, value, input, result -> {
+            if (target != null) target.working(id, false);
+            if (instance != this || !currentTaskDisplay(screen)) return;
+            message(result.message); if (after != null) after.accept(result); refreshConnectivityStates();
+        });
+    }
     void setSwitch(String id, boolean enabled) {
+        setSwitch(id,enabled,() -> { });
+    }
+    void setSwitch(String id, boolean enabled,Runnable finished) {
         Panels target = panels;
         shell(id, enabled ? 1 : 0, "", result -> {
             if (target != null && panels == target) target.working(id, result.ok);
-            main.postDelayed(() -> refreshStates(false, () -> { if (target != null && panels == target) target.working(id, false); }), 700);
+            main.postDelayed(() -> refreshStates(false, () -> { if (target != null && panels == target) target.working(id, false); finished.run(); }), 700);
         });
     }
     void setSystemControls(int value) {
-        if (systemControlsBusy) return;
+        setSystemControls(value,() -> { });
+    }
+    void setSystemControls(int value,Runnable finished) {
+        if (systemControlsBusy) { finished.run(); return; }
         SystemControlGuard guard = systemControlGuard;
         int requested = guard == null ? value : guard.begin(value);
         systemControlsBusy = true; Panels target = panels;
@@ -883,6 +989,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
             if (target != null) target.working("system_controls", false);
             if (panels != null) panels.updateStates();
             systemControlsTip(result.message);
+            finished.run();
         });
     }
     void systemControlsTip(String text) {
@@ -896,6 +1003,26 @@ public final class CoverService extends AccessibilityService implements DisplayM
         systemControlsToast = Toast.makeText(screenContext, text, Toast.LENGTH_LONG);
         systemControlsToast.show();
     }
+    private void returnHome() {
+        int target = display == null ? -1 : display.getDisplayId();
+        if (!currentTaskDisplay(target)) { message("所选外屏不可用，请解锁后重试"); return; }
+        Context owner = screenContext;
+        if (prefs.homeAction().equals("clock")) {
+            dismissHub(); closePanel();
+            main.postDelayed(() -> {
+                if (owner != screenContext || !currentTaskDisplay(target) || !prefs.homeAction().equals("clock")) return;
+                if (!performGlobalAction(GLOBAL_ACTION_HOME)) message("系统未接受返回锁屏页面");
+            }, 80);
+            return;
+        }
+        // Samsung rejects ordinary app launches of its cover home from another app.
+        // The authorized, fixed Shizuku operation resumes the native task without a HOME event.
+        message("正在返回三星卡片…");
+        CoverApp.bridge(this).run("native_home", target, 0, "", () -> owner == screenContext && currentTaskDisplay(target) && prefs.homeAction().equals("cards"), result -> {
+            if (owner != screenContext || !currentTaskDisplay(target) || !prefs.homeAction().equals("cards")) return;
+            if (result.ok) launcherAccepted(); else message(result.message);
+        });
+    }
     private void global(int action) { if (action == GLOBAL_ACTION_LOCK_SCREEN) removeHubImmediately(); else dismissHub(); closePanel(); main.postDelayed(() -> { if (!performGlobalAction(action)) message("系统未接受此操作"); }, 80); }
     void openSettings(String section) { launch(new Intent(this, MainActivity.class).putExtra("section", section)); }
     void launchApp(String id) {
@@ -903,6 +1030,10 @@ public final class CoverService extends AccessibilityService implements DisplayM
         CoverApp.launcher(this).launch(this, prefs, id, target, () -> instance == this && prefs.enabled() && display != null && display.getDisplayId() == target, this::message, accepted -> { if (accepted) launcherAccepted(); });
     }
     void launcherAccepted() { dismissHub(); closePanel(); }
+    boolean launcherAction(String id, int target) {
+        if (!currentTaskDisplay(target) || !prefs.actions("favorites").contains(id) || !ActionCatalog.valid(id)) return false;
+        act(id); return true;
+    }
     void launch(Intent intent) {
         if (!notificationDisplayReady()) { message("所选外屏不可用，请解锁后重试"); return; }
         try { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK), ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle()); dismissHub(); closePanel(); }
@@ -941,9 +1072,12 @@ public final class CoverService extends AccessibilityService implements DisplayM
     public void notificationsChanged() { if (!main.hasCallbacks(updateNotifications)) main.postDelayed(updateNotifications, 200); }
     public void permissionsChanged() { main.removeCallbacks(updatePreferences); main.post(updatePreferences); }
     private void toggleTorch() {
+        setTorch(!Boolean.TRUE.equals(torchOn));
+    }
+    void setTorch(boolean enabled) {
         if (torchCamera == null) { message("未找到可用闪光灯"); return; }
         if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) { openSettings("main"); message("请在设置页授权手电筒所需的相机权限"); return; }
-        try { cameras.setTorchMode(torchCamera, !Boolean.TRUE.equals(torchOn)); message("手电筒请求已提交"); }
+        try { cameras.setTorchMode(torchCamera, enabled); message("手电筒请求已提交"); }
         catch (Exception e) { message("手电筒不可用：" + e.getClass().getSimpleName()); }
     }
     MediaSessions mediaSessions() { if (mediaSessions == null) mediaSessions = new MediaSessions(screenContext); return mediaSessions; }
@@ -998,6 +1132,13 @@ public final class CoverService extends AccessibilityService implements DisplayM
             main.post(() -> message("截图保存失败"));
         } finally { bitmap.recycle(); }
     }
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level != TRIM_MEMORY_UI_HIDDEN && level >= TRIM_MEMORY_RUNNING_LOW) closeTaskGlass();
+        if (level != TRIM_MEMORY_UI_HIDDEN && level >= TRIM_MEMORY_RUNNING_LOW && panelGlass != null) { panelMemoryFallback = true; lastGlassDiagnostics = panelGlass.diagnostics(); panelGlass.close(); panelGlass = null; if (panelHost != null) panelHost.setVisibility(View.VISIBLE); refreshBlurState(); }
+    }
+    @Override public void onLowMemory() { super.onLowMemory(); closeTaskGlass(); }
+    @Override protected void dump(java.io.FileDescriptor descriptor, java.io.PrintWriter writer, String[] arguments) { super.dump(descriptor, writer, arguments); writer.println(blurDiagnostics()); }
     @Override public void onDestroy() {
         stopAutomaticRotation();
         if (systemControlGuard != null) systemControlGuard.close();

@@ -25,7 +25,7 @@ final class ControlGridChecks {
     private Prefs prefs;
     private CoverService owner;
     private int assertions;
-    private static final List<String> ACTIONS = List.of("wifi", "bluetooth", "data", "torch", "dnd", "airplane", "rotation", "media", "screenshot", "lock", "notifications", "apps", "configure");
+    private static final List<String> ACTIONS = List.of("wifi", "bluetooth", "data", "torch", "dnd", "airplane", "rotation", "media", "screenshot", "lock", "notifications", "apps", "configure", "nfc", "hotspot", "home", "back", "recents", "system_recents", "system_controls");
     ControlGridChecks(Instrumentation test) { this.test = test; }
     private void main(Runnable work) { test.runOnMainSync(work); test.waitForIdleSync(); }
     private View tag(String id) { return activity.findViewById(android.R.id.content).findViewWithTag(id); }
@@ -59,11 +59,19 @@ final class ControlGridChecks {
     private void check(boolean layoutOnly) throws Exception {
         View panel = tag("test-panel-surface"); List<String> initial = prefs.actions("panel"); click("control-add"); screenshot("both-grids");
         require(tag("control-selected-grid") != null && tag("control-candidates") != null, "selected and candidates share the screen");
-        require(((ControlEditGrid) tag("control-selected-grid")).columns() == prefs.panelColumns(), "selected grid preserves configured column count");
-        require(((GridView) tag("control-candidate-grid")).getNumColumns() == prefs.panelColumns(), "candidate columns=" + ((GridView) tag("control-candidate-grid")).getNumColumns() + ", configured=" + prefs.panelColumns());
+        ControlEditGrid selectedGrid = (ControlEditGrid) tag("control-selected-grid"); int editorColumns = selectedGrid.columns();
+        require(editorColumns > 5, "cover editor fits more than five columns, actual=" + editorColumns);
+        require(((GridView) tag("control-candidate-grid")).getNumColumns() == editorColumns, "selected and candidate grids share automatic columns");
         require(owner.mediaSessions().observerCount() == 0, "hidden media subscriptions released");
         require(tag("control-selected-scroll").getHeight() >= Ui.dp(activity, 48) && tag("control-candidate-grid").getHeight() >= Ui.dp(activity, 48), "both viewports >=48dp: selected=" + tag("control-selected-scroll").getHeight() + ", candidates=" + tag("control-candidate-grid").getHeight() + ", target=" + Ui.dp(activity, 48) + ", workspace=" + tag("control-editor-workspace").getHeight() + ", columns=" + prefs.panelColumns());
         if (layoutOnly) {
+            int savedWidth = panel.getLayoutParams().width, savedColumns = prefs.panelColumns(); ArrayList<String> savedDraft = draft();
+            for (int[] shape : new int[][]{{180, 4}, {268, 6}, {312, 7}}) {
+                main(() -> { android.view.ViewGroup.LayoutParams size = panel.getLayoutParams(); size.width = Ui.dp(activity, shape[0]) + panel.getPaddingLeft() + panel.getPaddingRight(); panel.setLayoutParams(size); });
+                require(selectedGrid.columns() == shape[1] && ((GridView) tag("control-candidate-grid")).getNumColumns() == shape[1], "both grids reflow at width=" + shape[0]);
+                require(draft().equals(savedDraft) && prefs.panelColumns() == savedColumns, "reflow preserves draft and dashboard column preference");
+            }
+            main(() -> { android.view.ViewGroup.LayoutParams size = panel.getLayoutParams(); size.width = savedWidth; panel.setLayoutParams(size); });
             click("library-tab-apps"); waitApps(); screenshot("apps-layout"); click("control-candidates-search"); main(() -> ((android.widget.EditText) tag("control-candidate-query")).setText("外屏"));
             require(tag("control-editor-done").getGlobalVisibleRect(new Rect()), "save action remains reachable with search"); screenshot("search-layout");
             return;
@@ -80,7 +88,7 @@ final class ControlGridChecks {
         main(() -> ((ScrollView) tag("control-selected-scroll")).scrollTo(0, 0));
         String edgeId = draft().get(0); float[] start = center(tag("control-selected-" + edgeId)); Rect viewport = new Rect(); main(() -> tag("control-selected-scroll").getGlobalVisibleRect(viewport));
         long down = SystemClock.uptimeMillis(); input(down, MotionEvent.ACTION_DOWN, start[0], start[1]); SystemClock.sleep(650); input(down, MotionEvent.ACTION_MOVE, start[0], viewport.bottom - 5); SystemClock.sleep(850);
-        require(((ScrollView) tag("control-selected-scroll")).getScrollY() > 0, "held drag scrolls selected grid near edge"); require(tag("control-selected-scroll").getHeight() == viewport.height(), "drag preview preserves viewport geometry"); screenshot("drag-edge"); input(down, MotionEvent.ACTION_UP, start[0], viewport.bottom - 5); SystemClock.sleep(250); test.waitForIdleSync(); require(draft().indexOf(edgeId) >= prefs.panelColumns(), "edge drop reaches a later row, index=" + draft().indexOf(edgeId)); click("control-editor-undo"); require(draft().equals(beforeCancel), "edge reorder is undoable");
+        require(((ScrollView) tag("control-selected-scroll")).getScrollY() > 0, "held drag scrolls selected grid near edge"); require(tag("control-selected-scroll").getHeight() == viewport.height(), "drag preview preserves viewport geometry"); screenshot("drag-edge"); input(down, MotionEvent.ACTION_UP, start[0], viewport.bottom - 5); SystemClock.sleep(250); test.waitForIdleSync(); require(draft().indexOf(edgeId) >= editorColumns, "edge drop reaches a later row, index=" + draft().indexOf(edgeId)); click("control-editor-undo"); require(draft().equals(beforeCancel), "edge reorder is undoable");
         click("control-candidate-app_dock"); require(draft().contains("app_dock") && tag("control-candidates") != null, "tap add keeps candidates open");
         click("control-candidate-app_dock"); require(draft().size() == initial.size() + 1, "selected candidate never duplicates");
         click("library-tab-tiles"); SystemClock.sleep(200); require(tag("library-tab-tiles").isSelected(), "tile source selected directly");

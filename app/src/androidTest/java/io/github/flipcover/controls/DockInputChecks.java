@@ -30,11 +30,11 @@ final class DockInputChecks {
             test.runOnMainSync(() -> {
                 prefs = new Prefs(activity); prefs.data.edit().clear().putInt("per_page", 5).putBoolean("haptics", false).putBoolean("tap_handles", true).commit();
                 for (edge = 0; edge < 4; edge++) for (String hand : List.of("left", "right")) {
-                    prefs.data.edit().putString("hand_side", hand).commit(); checkButtonTaps(); checkPaging(); checkNoPanels();
+                    prefs.data.edit().putString("hand_side", hand).commit(); checkButtonTaps(); checkPaging(); checkCrossAxisGuard(); checkNoPanels();
                 }
                 prefs.data.edit().putBoolean("gestures_enabled", false).commit(); edge = DockGeometry.BOTTOM; mount(false, 1);
                 drag(point(.25f, .5f), 0, -dp(40), MotionEvent.ACTION_UP);
-                require(begins == 0 && actions.isEmpty() && dock.page() == 2, "disabled panel gestures still allow button paging");
+                require(begins == 0 && actions.isEmpty() && dock.page() == 1, "disabling panel gestures does not turn an inward swipe into paging");
                 prefs.data.edit().putBoolean("gestures_enabled", true).commit();
             });
             for (int side = 0; side < 4; side++) { edge = side; checkHolds(); }
@@ -90,7 +90,7 @@ final class DockInputChecks {
             public void action(String id) { actions.add(id); }
             public void configure() { configurations++; }
             public void toggleVisibility() { toggles++; }
-            public void beginPull(String name, float distance) { begins++; panel = name; }
+            public void beginPull(String name, float distance, float originY) { begins++; panel = name; }
             public void release(String name, float distance, float speed, boolean cancel) { releases++; canceled = cancel; }
         }, compact);
         FrameLayout root = new FrameLayout(activity); root.addView(dock, new FrameLayout.LayoutParams(place.touch().width(), place.touch().height())); activity.setContentView(root);
@@ -129,9 +129,10 @@ final class DockInputChecks {
     private void checkPaging() {
         for (boolean fixed : new boolean[]{false, true}) for (float[] delta : new float[][]{{-40, 0}, {40, 0}, {0, -40}, {0, 40}, {-40, -25}, {25, 40}}) {
             mount(false, 1); float[] start = fixed ? center(dock.findViewWithTag("fixed-action")) : point(.3f, dp(22));
-            float dominant = Math.abs(delta[0]) > Math.abs(delta[1]) ? delta[0] : delta[1]; int expected = dominant < 0 ? 2 : 0;
+            float along = vertical() ? delta[1] : delta[0], across = vertical() ? delta[0] : delta[1];
+            int expected = Math.abs(across) > Math.abs(along) * 1.25f ? 1 : along < 0 ? 2 : 0;
             drag(start, dp(delta[0]), dp(delta[1]), MotionEvent.ACTION_UP);
-            require(dock.page() == expected && begins == 0 && actions.isEmpty(), "non-edge swipe pages including fixed area, direction " + delta[0] + "," + delta[1]);
+            require(dock.page() == expected && begins == 0 && actions.isEmpty(), "only along-axis swipe pages including fixed area, direction " + delta[0] + "," + delta[1]);
         }
         mount(false, 1); float[] start = point(.3f, .5f); long time = SystemClock.uptimeMillis();
         float dx = vertical() ? 0 : -dp(35), dy = vertical() ? -dp(35) : 0;
@@ -144,11 +145,31 @@ final class DockInputChecks {
             require(dock.page() == 1 && begins == 0 && actions.isEmpty(), "cancel and second finger abandon page change");
         }
     }
+    private void checkCrossAxisGuard() {
+        for (int damping = 0; damping < 3; damping++) for (float depth : new float[]{.5f, dp(8), dp(22)}) {
+            prefs.data.edit().putInt("damping", damping).commit(); mount(false, 1);
+            FrameLayout pager = dock.findViewWithTag("paging-area"); View track = pager.getChildAt(0);
+            float baseline = vertical() ? track.getTranslationY() : track.getTranslationX();
+            float[] start = point(.3f, depth); long time = SystemClock.uptimeMillis();
+            float dx = inwardX() * dp(40) + (vertical() ? 0 : dp(3));
+            float dy = inwardY() * dp(40) + (vertical() ? dp(3) : 0);
+            event(time, 0, MotionEvent.ACTION_DOWN, start[0], start[1]);
+            event(time, 60, MotionEvent.ACTION_MOVE, start[0] + dx, start[1] + dy);
+            require((vertical() ? track.getTranslationY() : track.getTranslationX()) == baseline, "inward edge swipe never translates the paging track");
+            // A later sideways movement cannot rescue a gesture rejected on entry.
+            dx += vertical() ? 0 : -dp(70); dy += vertical() ? -dp(70) : 0;
+            event(time, 90, MotionEvent.ACTION_MOVE, start[0] + dx, start[1] + dy);
+            require((vertical() ? track.getTranslationY() : track.getTranslationX()) == baseline, "rejected cross-axis gesture stays still after a turn");
+            event(time, 120, MotionEvent.ACTION_UP, start[0] + dx, start[1] + dy);
+            require(dock.page() == 1 && actions.isEmpty() && configurations == 0 && begins == 0, "inward swipe neither pages nor activates a button");
+        }
+        prefs.data.edit().putInt("damping", 1).commit();
+    }
     private void checkNoPanels() {
         for (boolean compact : new boolean[]{false, true}) for (int terminal : new int[]{MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN}) {
             mount(compact, 1); drag(point(.25f, .5f), inwardX() * dp(45), inwardY() * dp(45), terminal);
             require(begins == 0 && releases == 0 && actions.isEmpty(), "old edge cannot open a panel");
-            if (compact) require(dock.page() == 1, "hidden buttons cannot page");
+            require(dock.page() == 1, "cross-axis pull cannot page visible or hidden buttons");
         }
     }
     private void checkHolds() {

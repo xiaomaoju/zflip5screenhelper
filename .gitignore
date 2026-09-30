@@ -1,7 +1,11 @@
 /Cache/
 /.gradle/
+/.kotlin/
 /**/build/
 /local.properties
+node_modules/
+__pycache__/
+*.py[cod]
 *.jks
 *.keystore
 .DS_Store

@@ -92,7 +92,7 @@ final class AppFolderChecks {
         touch(grid, MotionEvent.ACTION_UP, dockX, dockY); require(prefs.hubPins().equals(List.of(apps.get(0), apps.get(1), apps.get(2), apps.get(3))), "full Dock rejects an addition without replacing an existing reference"); require(dockBefore.equals(prefs.workspace()), "rejected Dock drop leaves workspace ownership unchanged");
         main(() -> grid.compact(true)); main(grid::undo); require(!prefs.workspaceCompact() && dockBefore.equals(prefs.workspace()), "undo automatic packing restores both cells and compact mode");
         main(() -> hub.findViewWithTag("hub-sort").performClick()); click("页面管理"); require(text(root, "查看") != null, "page management shows navigable pages"); main(hub::back); SystemClock.sleep(200);
-        main(() -> hub.findViewWithTag("hub-sort").performClick()); click("桌面密度"); click("易点"); require(grid.getNumColumns() == 3 && dockBefore.equals(prefs.workspace()), "easy density projects to three columns without saving geometry");
+        main(() -> hub.findViewWithTag("hub-sort").performClick()); click("桌面密度"); click("易点"); require(grid.getNumColumns() == 5 && grid.capacity() == 15 && dockBefore.equals(prefs.workspace()), "larger icon preset keeps the fixed five-by-three grid and saved positions");
         main(() -> hub.findViewWithTag("hub-sort").performClick()); click("桌面密度"); click("紧凑");
         main(() -> { prefs.data.edit().putBoolean("hub_workspace_badges", true).apply(); grid.settlePage(0, false); });
         String app = apps.get(9), packageName = ActionCatalog.component(app).getPackageName(); android.app.Notification notification = new android.app.Notification.Builder(activity, "fixture").setContentTitle("通知").setSmallIcon(R.drawable.ic_ms_apps).build();

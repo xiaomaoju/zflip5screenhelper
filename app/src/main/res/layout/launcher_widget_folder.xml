@@ -1,0 +1,9 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/launcher_cell"
+    android:layout_width="1dp" android:layout_height="1dp" android:layout_gravity="top|left" android:focusable="true">
+    <FrameLayout android:id="@+id/launcher_folder_surface" android:layout_width="1dp" android:layout_height="1dp" android:layout_gravity="top|left"
+        android:background="@drawable/launcher_widget_folder" android:importantForAccessibility="no">
+        <ImageView android:id="@id/launcher_icon" android:layout_width="30dp" android:layout_height="30dp" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+        <TextView android:id="@id/launcher_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center"
+            android:singleLine="true" android:ellipsize="end" android:includeFontPadding="false" android:textSize="9dp" android:textColor="#F2F5F8" android:importantForAccessibility="no" />
+    </FrameLayout>
+</FrameLayout>

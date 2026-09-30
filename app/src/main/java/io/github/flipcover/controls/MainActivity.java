@@ -169,7 +169,7 @@ public final class MainActivity extends Activity {
     private record Setting(String group, String page, int icon, String title, String keywords, Supplier<String> value) { }
     private List<Setting> settings() {
         return List.of(
-            new Setting("快捷栏与手势", "dock", R.drawable.ic_ms_tune, "按钮与布局", "数量 固定键 顺序 阻尼 快捷栏", () -> prefs.perPage() + " 个 / 页 · " + ActionCatalog.label(this, prefs.pinnedAction())),
+            new Setting("快捷栏与手势", "dock", R.drawable.ic_ms_tune, "按钮与布局", "数量 固定键 顺序 阻尼 快捷栏 Home 主页 锁屏 应用中心", () -> prefs.perPage() + " 个 / 页 · " + ActionCatalog.label(this, prefs.pinnedAction())),
             new Setting("快捷栏与手势", "visibility", R.drawable.ic_ms_home, "自动显示与收起", "隐藏 桌面 键盘 应用名单", () -> prefs.autoHideDock() ? "按前台应用自动收起" : "手动切换"),
             new Setting("快捷栏与手势", "gestures", R.drawable.ic_ms_swap_vert, "手势与导航避让", "震动 偏移 白条 摄像头 上滑 通知", () -> prefs.data.getBoolean("gestures_enabled", true) ? "白条拖动已开启" : "白条拖动已关闭"),
             new Setting("快捷栏与手势", "hand", R.drawable.ic_ms_accessibility_new, "单手布局", "左手 右手", () -> handLabel()),
@@ -277,7 +277,7 @@ public final class MainActivity extends Activity {
             row.setOnClickListener(v -> { try { save.accept(value); } catch (RuntimeException error) { toast("未保存：" + error.getMessage()); return; } for (int j = 0; j < values.length; j++) { boolean active = values[j].equals(value); indicators.get(j).setText(active ? "●" : "○"); View sibling = (View) indicators.get(j).getParent(); sibling.setSelected(active); sibling.setStateDescription(active ? "已选择" : "未选择"); } }); parent.addView(row);
         }
     }
-    private void backgroundSettings() { begin("面板背景", "background"); toggle(group("background-options"), "背景模糊", "控制中心与应用中心共用；设备不支持时使用黑色背景", "panel_blur", true); note("设置只决定是否请求模糊，实际效果取决于系统与省电状态。"); related("问题诊断", "diagnostics"); }
+    private void backgroundSettings() { begin("面板背景", "background"); toggle(group("background-options"), "背景模糊", "通知、控制中心与多任务使用液态玻璃，应用中心使用背景模糊；关闭后使用基础背景", "panel_blur", true); note("通知、控制中心与多任务在打开时取一帧所选外屏背景，仅存内存，关闭即释放；省电或取样不可用时降低效果。"); related("问题诊断", "diagnostics"); }
     private void gestureSettings() {
         begin("手势与导航避让", "gestures"); LinearLayout illustration = group("gesture-preview"); illustration.addView(new SettingsIllustration(this, SettingsIllustration.GESTURES, prefs)); note("白条默认隐藏，触摸入口保留：0° 在摄像头上方，其他方向在画面右下方。左侧上滑通知、右侧上滑控制中心；打开时白条淡入并保持显示，关闭后先淡到 50%，等 3 秒再淡出。");
         LinearLayout gestures = group("gesture-options"); toggle(gestures, "白条上滑", "白条可见时长按可切换快捷按钮，隐藏时长按无效", "gestures_enabled", true); toggle(gestures, "震动反馈", "遵循系统震动设置", "haptics", true);
@@ -315,8 +315,9 @@ public final class MainActivity extends Activity {
             LinearLayout preview = group("dock-preview-group"); addDockPreview(preview);
             choice(preview, "每页按钮", "dock-count", new String[]{"2 个", "3 个", "4 个", "5 个"}, new Object[]{2, 3, 4, 5}, () -> prefs.perPage(), value -> { prefs.data.edit().putInt("per_page", (int) value).apply(); View old = preview.findViewWithTag("dock-preview"); preview.removeView(old); addDockPreview(preview); });
             LinearLayout options = group("dock-options"); options.addView(SettingsUi.valueRow(this, "固定按钮", ActionCatalog.label(this, prefs.pinnedAction()), () -> { editing = "pinned"; library("builtin", false); }));
+            choice(options, "Home 按钮效果", "dock-home-action", new String[]{"返回锁屏页面（时钟首页）", "返回应用中心（需 Shizuku）"}, new Object[]{"clock", "cards"}, () -> prefs.homeAction(), value -> prefs.data.edit().putString("home_action", (String) value).apply());
             choice(options, "起步阻尼", "dock-damping", new String[]{"轻", "标准", "强"}, new Object[]{0, 1, 2}, () -> prefs.damping(), value -> prefs.data.edit().putInt("damping", (int) value).apply());
-            options.addView(SettingsUi.valueRow(this, "按钮顺序", prefs.scrollingActions().size() + " 个翻页按钮", () -> orderEditor("dock"))); note("每页包含 1 个固定按钮，其余按钮可滑动翻页。"); related("自动显示与收起", "visibility"); return;
+            options.addView(SettingsUi.valueRow(this, "按钮顺序", prefs.scrollingActions().size() + " 个翻页按钮", () -> orderEditor("dock"))); note("每页包含 1 个固定按钮，其余按钮可滑动翻页。"); note("返回锁屏页面：回到三星时钟首页，不主动锁定手机。返回应用中心：需要 Shizuku，返回三星保留的原卡片页；如果已切到其他卡片，会返回那一页。"); related("自动显示与收起", "visibility"); return;
         }
         LinearLayout preview = group("panel-preview-group"); Button toggle = SettingsUi.button(this, panelPreviewExpanded ? "收起布局预览" : "展开布局预览", () -> { panelPreviewExpanded = !panelPreviewExpanded; updatePanelPreview(); }); toggle.setTag("panel-preview-toggle"); preview.addView(toggle); panelPreviewHost = SettingsUi.column(this); preview.addView(panelPreviewHost); updatePanelPreview();
         LinearLayout layout = group("panel-layout-options");
@@ -490,7 +491,7 @@ public final class MainActivity extends Activity {
     private void exportConfiguration() { open(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, "flip-cover-config.json"), 201); }
     private void importConfiguration() { open(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE), 202); }
     JSONObject exportConfigurationData() throws org.json.JSONException {
-        JSONObject config = new JSONObject().put("version", 13).put("rotations", prefs.rotationRules()).put("layout", prefs.layoutSnapshot()).put("avoidKeyboard", prefs.avoidKeyboard()).put("haptics", prefs.haptics()).put("favorites", new JSONArray(prefs.actions("favorites"))).put("hubPinned", prefs.hubPinned()).put("statusEnabled", prefs.statusEnabled()).put("gestures", prefs.data.getBoolean("gestures_enabled", true)).put("pinned", prefs.pinnedAction()).put("blur", prefs.panelBlur()).put("dock", new JSONArray(prefs.actions("dock"))).put("panel", new JSONArray(prefs.actions("panel"))).put("perPage", prefs.perPage()).put("damping", prefs.damping());
+        JSONObject config = new JSONObject().put("version", 14).put("rotations", prefs.rotationRules()).put("layout", prefs.layoutSnapshot()).put("avoidKeyboard", prefs.avoidKeyboard()).put("haptics", prefs.haptics()).put("favorites", new JSONArray(prefs.actions("favorites"))).put("hubPinned", prefs.hubPinned()).put("statusEnabled", prefs.statusEnabled()).put("gestures", prefs.data.getBoolean("gestures_enabled", true)).put("pinned", prefs.pinnedAction()).put("blur", prefs.panelBlur()).put("dock", new JSONArray(prefs.actions("dock"))).put("panel", new JSONArray(prefs.actions("panel"))).put("perPage", prefs.perPage()).put("damping", prefs.damping());
         JSONObject statusItems = new JSONObject();
         for (String item : new String[]{"time", "wifi", "battery", "notifications", "alarm", "speed", "cellular"}) statusItems.put(item, prefs.statusItem(item));
         config.put("statusItems", statusItems);
@@ -508,7 +509,7 @@ public final class MainActivity extends Activity {
             JSONObject items = config.getJSONObject("statusItems");
             for (String item : Prefs.STATUS_ITEMS) if (items.has(item) && !(items.get(item) instanceof Boolean)) throw new IllegalArgumentException("状态栏开关值无效");
         }
-        if (config.getInt("version") < 1 || config.getInt("version") > 13) throw new IllegalArgumentException("不支持的配置版本");
+        if (config.getInt("version") < 1 || config.getInt("version") > 14) throw new IllegalArgumentException("不支持的配置版本");
         java.util.Map<String, List<String>> parsed = new java.util.HashMap<>();
         for (String key : new String[]{"dock", "panel"}) {
             JSONArray array = config.getJSONArray(key); List<String> ids = new ArrayList<>();
@@ -534,7 +535,7 @@ public final class MainActivity extends Activity {
             for (int i = 0; i < compactApps.length(); i++) { String name = compactApps.getString(i); if (!name.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")) throw new IllegalArgumentException("无效应用规则"); names.add(name); }
             update.putStringSet("dock_compact_apps", names);
         }
-        update.putBoolean("dock_auto_hide", config.optBoolean("dockAutoHide", true));
+        update.putBoolean("dock_auto_hide", config.optBoolean("dockAutoHide", true)).putString("home_action", "cards");
         if (favorites != null) update.putString("favorites", new JSONArray(savedFavorites).toString());
         update.putString("pinned_action", pinned).putBoolean("panel_blur", config.optBoolean("blur", true)).putString("dock", new JSONArray(parsed.get("dock")).toString()).putString("panel", new JSONArray(parsed.get("panel")).toString()).putInt("per_page", count).putInt("damping", damping);
         update.putBoolean("avoid_keyboard", config.optBoolean("avoidKeyboard", prefs.avoidKeyboard())).putBoolean("haptics", config.optBoolean("haptics", prefs.haptics()));

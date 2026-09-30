@@ -33,7 +33,10 @@ final class AppHubView extends LinearLayout {
         default void applicationSettings(String id, boolean uninstall) { }
         default void refreshRecents() { }
         default void clearRecents(List<RecentTasks.Task> tasks) { }
+        default void closeTask(RecentTasks.Task task) { clearRecents(List.of(task)); }
         default void openTask(RecentTasks.Task task) { }
+        default void taskPageChanged(RecentTasksView page) { }
+        default boolean managesTaskEntrance() { return false; }
         default void snapshot(RecentTasks.Task task, java.util.function.Consumer<ShizukuBridge.Snapshot> callback) { callback.accept(new ShizukuBridge.Snapshot(null, "预览不可用")); }
     }
     private record ShortcutBinding(String id, String prefix) { }
@@ -87,37 +90,37 @@ final class AppHubView extends LinearLayout {
             postDelayed(this, refreshDelay); // Mounted Dock/catalog/task page only; failures back off.
         }
     };
-    static int railWidth(Context context) { return Ui.dp(context, 44); }
+    static int railWidth(Context context) { return Ui.dp(context, AppLauncherStyle.RAIL_WIDTH); }
     AppHubView(Context context, Prefs prefs, Listener listener) {
-        super(context); this.listener = listener; this.prefs = prefs; cache = CoverApp.catalog(context); rightRail = prefs.handSide().equals("right"); setOrientation(VERTICAL); setFocusableInTouchMode(true);
-        dismissBackdrop = AppDockView.dismissArea(context, "dock-dismiss-backdrop", listener::close); addView(dismissBackdrop, new LayoutParams(-1, 0, 1)); dismissBackdrop.setVisibility(GONE);
-        LinearLayout top = Ui.row(context); appContent = top; top.setGravity(Gravity.TOP); addView(top, new LayoutParams(-1, 0, 1));
-        int railPadding = Math.max(0, Math.min(dp(2), (railWidth(context) - dp(40)) / 2));
-        rail = Ui.column(context); rail.setBackground(Ui.background(context, Ui.SURFACE, 20)); rail.setPadding(railPadding, dp(4), railPadding, dp(4)); rail.setTag("hub-rail"); top.addView(rail, new LayoutParams(railWidth(context), -1));
-        ScrollView favorites = new ScrollView(context); favoriteItems = Ui.column(context); favorites.addView(favoriteItems); renderFavorites();
+        super(AppLauncherStyle.fixedFontContext(context)); Context uiContext = getContext(); this.listener = listener; this.prefs = prefs; cache = CoverApp.catalog(uiContext); rightRail = prefs.handSide().equals("right"); setOrientation(VERTICAL); setFocusableInTouchMode(true);
+        dismissBackdrop = AppDockView.dismissArea(uiContext, "dock-dismiss-backdrop", listener::close); addView(dismissBackdrop, new LayoutParams(-1, 0, 1)); dismissBackdrop.setVisibility(GONE);
+        LinearLayout top = Ui.row(uiContext); appContent = top; top.setGravity(Gravity.TOP); addView(top, new LayoutParams(-1, 0, 1));
+        int railPadding = dp(AppLauncherStyle.RAIL_FRAME_PADDING);
+        rail = Ui.column(uiContext); rail.setBackground(Ui.background(uiContext, Ui.SURFACE, AppLauncherStyle.panelRadius(uiContext))); rail.setPadding(railPadding, railPadding, railPadding, railPadding); rail.setTag("hub-rail"); top.addView(rail, new LayoutParams(railWidth(uiContext), -1));
+        ScrollView favorites = new ScrollView(uiContext); favoriteItems = Ui.column(uiContext); favorites.addView(favoriteItems); renderFavorites();
         rail.addView(favorites, new LayoutParams(-1, 0, 1));
-        LinearLayout tools = Ui.row(context); tools.setTag("hub-tools");
+        LinearLayout tools = Ui.row(uiContext); tools.setTag("hub-tools");
         ImageButton edit = compactButton(R.drawable.ic_ms_edit, "侧栏编辑与设置", () -> { }); edit.setTag("hub-edit");
         edit.setOnClickListener(v -> {
-            PopupMenu menu = new PopupMenu(context, edit);
+            PopupMenu menu = new PopupMenu(uiContext, edit);
             menu.getMenu().add("编辑侧栏").setOnMenuItemClickListener(item -> { listener.editFavorites(); return true; });
             menu.getMenu().add("设置底部常用（最多" + AppDockPlacement.LIMIT + "个）").setOnMenuItemClickListener(item -> { listener.editPinned(); return true; });
             menu.getMenu().add("助手设置").setOnMenuItemClickListener(item -> { listener.settings(); return true; }); menu.show();
         });
         expand = compactButton(R.drawable.ic_app_dock, "收起全部应用，保留 Dock", this::toggle); expand.setTag("hub-expand");
         tools.addView(edit, new LayoutParams(0, dp(28), 1)); tools.addView(expand, new LayoutParams(0, dp(28), 1)); rail.addView(tools, new LayoutParams(-1, -2));
-        catalog = Ui.column(context); catalog.setBackground(Ui.background(context, Ui.SURFACE, 20)); catalog.setPadding(dp(5), dp(4), dp(5), dp(3));
-        LayoutParams catalogParams = new LayoutParams(0, -1, 1); catalogParams.leftMargin = dp(4); top.addView(catalog, catalogParams);
-        if (rightRail) { top.removeView(catalog); catalogParams.leftMargin = 0; catalogParams.rightMargin = dp(4); top.addView(catalog, 0, catalogParams); }
-        LinearLayout header = Ui.row(context), field = Ui.row(context); field.setBackground(Ui.background(context, 0xFF292D34, 13));
-        search = new EditText(context); search.setTag("hub-search"); search.setTextSize(11); search.setTextColor(Ui.TEXT); search.setHintTextColor(Ui.MUTED); search.setHint("搜索应用"); search.setSingleLine(); search.setBackgroundColor(android.graphics.Color.TRANSPARENT); search.setPadding(dp(6), dp(2), dp(2), dp(2)); search.setMinimumHeight(dp(30)); search.setContentDescription("搜索全部应用"); field.addView(search, new LayoutParams(0, -2, 1));
-        sort = Ui.text(context, sortLabel(), 9, Ui.TEXT); sort.setTag("hub-sort"); sort.setGravity(Gravity.CENTER); sort.setMinHeight(dp(30)); sort.setMinWidth(dp(50)); sort.setPadding(dp(4), dp(2), dp(4), dp(2)); sort.setContentDescription("应用排序"); sort.setBackground(Ui.ripple(context, android.graphics.Color.TRANSPARENT, 10)); sort.setOnClickListener(v -> showSort()); field.addView(sort, new LayoutParams(-2, -2)); header.addView(field, new LayoutParams(0, -2, 1));
+        catalog = Ui.column(uiContext); catalog.setBackground(Ui.background(uiContext, Ui.SURFACE, AppLauncherStyle.panelRadius(uiContext))); catalog.setPadding(dp(AppLauncherStyle.PANEL_PADDING_X), dp(AppLauncherStyle.PANEL_PADDING_Y), dp(AppLauncherStyle.PANEL_PADDING_X), dp(AppLauncherStyle.PANEL_PADDING_Y));
+        LayoutParams catalogParams = new LayoutParams(0, -1, 1); catalogParams.leftMargin = dp(AppLauncherStyle.RAIL_GAP); top.addView(catalog, catalogParams);
+        if (rightRail) { top.removeView(catalog); catalogParams.leftMargin = 0; catalogParams.rightMargin = dp(AppLauncherStyle.RAIL_GAP); top.addView(catalog, 0, catalogParams); }
+        LinearLayout header = Ui.row(uiContext), field = Ui.row(uiContext); field.setBackground(Ui.background(uiContext, 0xFF292D34, 13));
+        search = new EditText(uiContext); search.setTag("hub-search"); search.setTextSize(11); search.setTextColor(Ui.TEXT); search.setHintTextColor(Ui.MUTED); search.setHint("搜索应用"); search.setSingleLine(); search.setBackgroundColor(android.graphics.Color.TRANSPARENT); search.setPadding(dp(6), dp(2), dp(2), dp(2)); search.setMinimumHeight(dp(30)); search.setContentDescription("搜索全部应用"); field.addView(search, new LayoutParams(0, -2, 1));
+        sort = Ui.text(uiContext, sortLabel(), 9, Ui.TEXT); sort.setTag("hub-sort"); sort.setGravity(Gravity.CENTER); sort.setMinHeight(dp(30)); sort.setMinWidth(dp(50)); sort.setPadding(dp(4), dp(2), dp(4), dp(2)); sort.setContentDescription("应用排序"); sort.setBackground(Ui.ripple(uiContext, android.graphics.Color.TRANSPARENT, 10)); sort.setOnClickListener(v -> showSort()); field.addView(sort, new LayoutParams(-2, -2)); header.addView(field, new LayoutParams(0, -2, 1));
         View taskButton = compactButton(R.drawable.ic_ms_view_carousel, "外屏多任务", () -> showTasks(true)); taskButton.setTag("hub-tasks"); taskButton.setPadding(dp(6), dp(6), dp(6), dp(6)); header.addView(taskButton, new LayoutParams(dp(28), dp(30)));
         View close = compactButton(R.drawable.ic_ms_close, "关闭应用中心", listener::close); close.setTag("hub-close"); close.setPadding(dp(5), dp(5), dp(5), dp(5)); header.addView(close, new LayoutParams(dp(24), dp(30))); catalog.addView(header);
-        summaryRow = Ui.row(context); summaryRow.setTag("hub-summary"); catalog.addView(summaryRow);
-        information = Ui.text(context, "正在读取应用…", 9, Ui.MUTED); information.setPadding(dp(2), dp(1), 0, dp(1)); information.setSingleLine(); information.setEllipsize(android.text.TextUtils.TruncateAt.END); summaryRow.addView(information, new LayoutParams(0, -2, 1));
-        recentStatus = Ui.text(context, "最近任务需连接 Shizuku", 8, Ui.MUTED); recentStatus.setTag("hub-recent-status"); recentStatus.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); recentStatus.setMinimumHeight(dp(14)); recentStatus.setPadding(dp(4), dp(1), dp(2), dp(1)); recentStatus.setSingleLine(); recentStatus.setEllipsize(android.text.TextUtils.TruncateAt.END); recentStatus.setOnClickListener(v -> { if (!recentBusy) listener.refreshRecents(); }); summaryRow.addView(recentStatus, new LayoutParams(0, -2, 1));
-        grid = new AppWorkspaceView(context, prefs, adapter, new AppWorkspaceView.Listener() {
+        summaryRow = Ui.row(uiContext); summaryRow.setTag("hub-summary"); catalog.addView(summaryRow);
+        information = Ui.text(uiContext, "正在读取应用…", 9, Ui.MUTED); information.setPadding(dp(2), dp(1), 0, dp(1)); information.setSingleLine(); information.setEllipsize(android.text.TextUtils.TruncateAt.END); summaryRow.addView(information, new LayoutParams(0, -2, 1));
+        recentStatus = Ui.text(uiContext, "最近任务需连接 Shizuku", 8, Ui.MUTED); recentStatus.setTag("hub-recent-status"); recentStatus.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); recentStatus.setMinimumHeight(dp(14)); recentStatus.setPadding(dp(4), dp(1), dp(2), dp(1)); recentStatus.setSingleLine(); recentStatus.setEllipsize(android.text.TextUtils.TruncateAt.END); recentStatus.setOnClickListener(v -> { if (!recentBusy) listener.refreshRecents(); }); summaryRow.addView(recentStatus, new LayoutParams(0, -2, 1));
+        grid = new AppWorkspaceView(uiContext, prefs, adapter, new AppWorkspaceView.Listener() {
             public void launch(String id) { if (grid.layoutSnapshot().folder(id) != null) workspaceTools.folder(id); else listener.action(id); }
             public void menu(View anchor, String id) { appMenu(anchor, id); }
             public void changed() { if (workspaceTools != null) workspaceTools.changed(); clearDockDrop(); }
@@ -132,7 +135,7 @@ final class AppHubView extends LinearLayout {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { filter(); }
             @Override public void afterTextChanged(Editable editable) { }
         });
-        dockHost = new AppDockView(context, prefs, new AppDockView.Listener() {
+        dockHost = new AppDockView(uiContext, prefs, new AppDockView.Listener() {
             public View application(String id, int width, String prefix, Runnable action) { return dockApp(id, width, prefix, action); }
             public void launch(String id) { listener.action(id); }
             public void openTask(RecentTasks.Task task) { listener.openTask(task); }
@@ -147,6 +150,11 @@ final class AppHubView extends LinearLayout {
     }
     void prepareEntrance() { if (ValueAnimator.areAnimatorsEnabled()) revealProgress(0); }
     void enter() { removeCallbacks(enter); postOnAnimation(enter); }
+    void prepareTaskEntrance() { removeCallbacks(enter); cancelReveal(); prepareEntrance(); }
+    void revealTasks(RecentTasksView page) {
+        if (taskPage != page || closing || disposed) return;
+        prepareTaskEntrance(); page.previewsVisible(); enter();
+    }
     boolean closing() { return closing; }
     void reopen() {
         if (disposed) return; closing = false; setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_AUTO);
@@ -164,21 +172,25 @@ final class AppHubView extends LinearLayout {
     private void cancelReveal() {
         if (revealAnimation == null) return; ValueAnimator current = revealAnimation; revealAnimation = null; current.removeAllListeners(); current.removeAllUpdateListeners(); current.cancel();
     }
-    private void revealProgress(float value) { revealProgress = value; setTranslationY(dp(52) * (1 - value)); setAlpha(Math.max(0, Math.min(1, value))); }
+    private void revealProgress(float value) {
+        revealProgress = value;
+        float travel = showingTasks() ? Math.max(1, getHeight() > 0 ? getHeight() : getResources().getDisplayMetrics().heightPixels) : dp(52);
+        setTranslationY(travel * (1 - value)); setAlpha(showingTasks() ? 1 : Math.max(0, Math.min(1, value)));
+    }
     private void animateReveal(boolean showing, Runnable finished) {
         if (disposed) return; cancelReveal();
         float target = showing ? 1 : 0;
         if (!isAttachedToWindow() || !ValueAnimator.areAnimatorsEnabled() || Math.abs(revealProgress - target) < .001f) { revealProgress(target); if (finished != null) finished.run(); return; }
         revealAnimation = ValueAnimator.ofFloat(revealProgress, target);
-        revealAnimation.setDuration(showing ? 340 : 180);
-        revealAnimation.setInterpolator(showing ? new android.view.animation.OvershootInterpolator(1.1f) : new android.view.animation.AccelerateInterpolator());
+        revealAnimation.setDuration(showing ? showingTasks() ? 500 : 340 : 180);
+        revealAnimation.setInterpolator(showing ? showingTasks() ? new android.view.animation.PathInterpolator(.2f, 0, .2f, 1) : new android.view.animation.OvershootInterpolator(1.1f) : new android.view.animation.AccelerateInterpolator());
         revealAnimation.addUpdateListener(animation -> revealProgress((float) animation.getAnimatedValue()));
         revealAnimation.addListener(new AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(Animator animation) { if (revealAnimation != animation) return; revealAnimation = null; revealProgress(target); if (finished != null) finished.run(); }
         }); revealAnimation.start();
     }
     private boolean multiplePointers;
-    @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) { super.onSizeChanged(w, h, oldw, oldh); if (grid != null && (w != oldw || h != oldh)) { dockHeld = null; dockMoving = false; grid.cancelInteraction(); if (workspaceTools != null) workspaceTools.resize(); } }
+    @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) { super.onSizeChanged(w, h, oldw, oldh); if (showingTasks()) revealProgress(revealProgress); if (grid != null && (w != oldw || h != oldh)) { dockHeld = null; dockMoving = false; grid.cancelInteraction(); if (workspaceTools != null) workspaceTools.resize(); } }
     @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
         super.dispatchDraw(canvas);
         if (grid.dragging()) { int[] source = new int[2], origin = new int[2]; grid.getLocationOnScreen(source); getLocationOnScreen(origin); int saved = canvas.save(); canvas.translate(source[0] - origin[0], source[1] - origin[1]); grid.drawDragVisual(canvas); canvas.restoreToCount(saved); }
@@ -203,7 +215,7 @@ final class AppHubView extends LinearLayout {
     }
     void setBackdropBlur(boolean enabled) {
         if (backdropBlur != null && backdropBlur == enabled) return; backdropBlur = enabled;
-        rail.setBackground(Ui.background(getContext(), enabled ? 0xD916181C : Ui.SURFACE, 20)); catalog.setBackground(Ui.background(getContext(), enabled ? 0xD916181C : Ui.SURFACE, 20));
+        rail.setBackground(Ui.background(getContext(), enabled ? 0xD916181C : Ui.SURFACE, AppLauncherStyle.panelRadius(getContext()))); catalog.setBackground(Ui.background(getContext(), enabled ? 0xD916181C : Ui.SURFACE, AppLauncherStyle.panelRadius(getContext())));
         dockHost.backdrop(enabled);
     }
     String label(String id) { return AppLauncherModel.label(id, aliases, cache); }
@@ -248,8 +260,9 @@ final class AppHubView extends LinearLayout {
     private void renderFavorites() {
         favoriteItems.removeAllViews();
         for (String id : prefs.actions("favorites")) {
-            LinearLayout cell = (LinearLayout) shortcut(id, label(id), 22, 8, () -> listener.action(id));
-            ((TextView) cell.getChildAt(1)).setTextSize(6.4f); favoriteItems.addView(cell);
+            LinearLayout cell = (LinearLayout) shortcut(id, label(id), AppLauncherStyle.RAIL_ICON, 8, () -> listener.action(id));
+            cell.setMinimumHeight(dp(AppLauncherStyle.RAIL_CELL)); cell.setPadding(dp(AppLauncherStyle.RAIL_PADDING), dp(AppLauncherStyle.RAIL_PADDING), dp(AppLauncherStyle.RAIL_PADDING), dp(AppLauncherStyle.RAIL_PADDING));
+            TextView label = (TextView) cell.getChildAt(1); label.setTextSize(AppLauncherStyle.RAIL_LABEL_SP); label.setIncludeFontPadding(false); label.setPadding(0, dp(AppLauncherStyle.RAIL_LABEL_GAP), 0, 0); favoriteItems.addView(cell);
         }
         if (prefs.actions("favorites").isEmpty()) favoriteItems.addView(Ui.text(getContext(), "添加常用", 8, Ui.MUTED));
     }
@@ -294,9 +307,9 @@ final class AppHubView extends LinearLayout {
     private void toast(String text) { android.widget.Toast.makeText(getContext(), text, android.widget.Toast.LENGTH_SHORT).show(); }
     private ImageButton compactButton(int icon, String label, Runnable action) { ImageButton button = RuntimeVisuals.button(getContext(), icon, label, action); int pad = dp(5); button.setPadding(pad, pad, pad, pad); return button; }
     View shortcut(String id, String label, int iconSize, int textSize, Runnable action) {
-        LinearLayout cell = new RuntimeVisuals.Cell(getContext()); cell.setTag(new ShortcutBinding(id, "")); cell.setGravity(Gravity.CENTER); cell.setPadding(dp(1), dp(2), dp(1), dp(2));
+        LinearLayout cell = new RuntimeVisuals.Cell(getContext()); cell.setTag(new ShortcutBinding(id, "")); cell.setGravity(Gravity.CENTER); cell.setPadding(dp(AppLauncherStyle.APP_PADDING), dp(AppLauncherStyle.APP_PADDING), dp(AppLauncherStyle.APP_PADDING), dp(AppLauncherStyle.APP_PADDING));
         ImageView image = new ImageView(getContext()); cell.addView(image, new LayoutParams(dp(iconSize), dp(iconSize))); bindIcon(image, id);
-        if (textSize > 0) { TextView title = Ui.text(getContext(), label, textSize, Ui.TEXT); title.setGravity(Gravity.CENTER); title.setSingleLine(); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setPadding(0, dp(2), 0, 0); cell.addView(title, new LayoutParams(-1, -2)); }
+        if (textSize > 0) { TextView title = Ui.text(getContext(), label, textSize, Ui.TEXT); title.setGravity(Gravity.CENTER); title.setSingleLine(); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setPadding(0, dp(AppLauncherStyle.APP_LABEL_GAP), 0, 0); cell.addView(title, new LayoutParams(-1, -2)); }
         cell.setMinimumHeight(dp(42)); cell.setBackground(Ui.ripple(getContext(), android.graphics.Color.TRANSPARENT, 12)); cell.setFocusable(true); cell.setContentDescription(label); cell.setOnClickListener(v -> action.run()); return cell;
     }
     void bindIcon(ImageView image, String id) {
@@ -323,14 +336,14 @@ final class AppHubView extends LinearLayout {
         if (disposed) return; shownPins = List.copyOf(prefs.hubPins()); dockHost.data(tasks, recentKnown, recentBusy, canOpen, canClear, recentFailed);
     }
     private View dockApp(String id, int width, String prefix, Runnable action) {
-        String name = label(id); View item = shortcut(id, name, Math.min(28, Math.max(16, Math.round(width / getResources().getDisplayMetrics().density) - 4)), 0, action); item.setTag(new ShortcutBinding(id, prefix)); item.setMinimumHeight(0); item.setContentDescription(prefix + name);
+        String name = label(id); View item = shortcut(id, name, AppLauncherStyle.dockIconSize(width / getResources().getDisplayMetrics().density), 0, action); item.setTag(new ShortcutBinding(id, prefix)); item.setMinimumHeight(0); item.setContentDescription(prefix + name);
         item.setOnLongClickListener(v -> { if (expanded && grid.draggable() && prefs.hubPins().contains(id) && cache.ready() && search.length() == 0) { dockHeld = id; dockMoving = false; dockDownX = pointerX; dockDownY = pointerY; getParent().requestDisallowInterceptTouchEvent(true); } else appMenu(v, id); return true; }); return item;
     }
     void recentBusy(boolean busy) { recentBusy = busy; renderDock(); syncTaskPage(); }
     boolean recentBusy() { return recentBusy; }
     void recentCapabilities(boolean open, boolean clear, boolean snapshot) { canOpen = open; canClear = clear; canSnapshot = snapshot; }
     void recentResult(List<RecentTasks.Task> result, String message) {
-        CoverApp.launcherWidgets(getContext()).recent(result);
+        CoverApp.launcherWidgets(getContext()).recent(result, canOpen, canClear);
         recentBusy = false; recentFailed = false; refreshDelay = 3000; boolean changed = !tasks.equals(result) || !shownPins.equals(prefs.hubPins()); recentKnown = true; tasks = List.copyOf(result); String status = message == null ? "常用 " + prefs.hubPins().size() + " · 最近任务 " + RecentTasks.apps(tasks, pinnedPackages()).size() : message; if (!status.contentEquals(recentStatus.getText())) recentStatus.setText(status);
         taskMessage = message != null ? message : !canOpen ? "系统不支持返回原任务" : !canClear ? "可切换，系统未开放关闭权限" : canSnapshot ? "左右切换 · 点击返回原窗口" : "图标模式 · 点击返回原窗口";
         recentStatus.setContentDescription(recentStatus.getText());
@@ -338,7 +351,7 @@ final class AppHubView extends LinearLayout {
         syncTaskPage();
         if (pendingSelection != null && taskPage != null) { taskPage.select(pendingSelection); pendingSelection = null; }
     }
-    void recentFailure(String reason) { recentBusy = false; recentKnown = false; recentFailed = true; refreshDelay = 15000; taskMessage = reason; String status = tasks.isEmpty() ? "最近任务不可用 · 点击重试" : "同步失败 · 上次结果不可操作"; if (!status.contentEquals(recentStatus.getText())) recentStatus.setText(status); recentStatus.setContentDescription(reason); recentBusy(false); }
+    void recentFailure(String reason) { CoverApp.launcherWidgets(getContext()).recentFailure(reason); recentBusy = false; recentKnown = false; recentFailed = true; refreshDelay = 15000; taskMessage = reason; String status = tasks.isEmpty() ? "最近任务不可用 · 点击重试" : "同步失败 · 上次结果不可操作"; if (!status.contentEquals(recentStatus.getText())) recentStatus.setText(status); recentStatus.setContentDescription(reason); recentBusy(false); }
     private void syncTaskPage() { if (taskPage != null) taskPage.data(tasks, recentKnown, recentBusy, canOpen, canClear, canSnapshot, taskMessage); }
     void dockEdge(int edge) { dockEdge = edge; }
     boolean showingTasks() { return taskPage != null; }
@@ -355,6 +368,7 @@ final class AppHubView extends LinearLayout {
             taskPage = new RecentTasksView(getContext(), prefs, dockEdge, new RecentTasksView.Listener() {
                 public void open(RecentTasks.Task task) { listener.openTask(task); }
                 public void clear(List<RecentTasks.Task> tasks) { listener.clearRecents(tasks); }
+                public void closeTask(RecentTasks.Task task) { listener.closeTask(task); }
                 public void refresh() { listener.refreshRecents(); }
                 public void apps() { showTasks(false); }
                 public void close() { listener.close(); }
@@ -363,6 +377,8 @@ final class AppHubView extends LinearLayout {
             });
             appContent.setVisibility(GONE); dockHost.setVisibility(GONE); addView(taskPage, 0, new LayoutParams(-1, 0, 1)); syncTaskPage();
         } else { taskPage.dispose(); removeView(taskPage); taskPage = null; appContent.setVisibility(VISIBLE); dockHost.setVisibility(VISIBLE); recentBusy(recentBusy); }
+        listener.taskPageChanged(taskPage);
+        if (taskPage != null && !listener.managesTaskEntrance()) revealTasks(taskPage);
     }
     void toggle() {
         setExpanded(!expanded);
@@ -408,7 +424,7 @@ final class AppHubView extends LinearLayout {
         if (summaryRow.getVisibility() != visibility) { summaryRow.setVisibility(visibility); super.onMeasure(widthSpec, heightSpec); }
     }
     @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); if (disposed) return; cache.observe(catalogListener); catalogListener.catalogChanged(); notificationsChanged(); removeCallbacks(refresh); post(refresh); }
-    @Override protected void onDetachedFromWindow() { dockHeld = null; dockMoving = false; grid.cancelInteraction(); workspaceTools.close(); removeCallbacks(refreshPins); removeCallbacks(enter); cancelReveal(); cancelContentAnimation(); contentProgress(expanded ? 1 : 0); finishContent(); cache.unobserve(catalogListener); removeCallbacks(refresh); super.onDetachedFromWindow(); }
+    @Override protected void onDetachedFromWindow() { listener.taskPageChanged(null); dockHeld = null; dockMoving = false; grid.cancelInteraction(); workspaceTools.close(); removeCallbacks(refreshPins); removeCallbacks(enter); cancelReveal(); cancelContentAnimation(); contentProgress(expanded ? 1 : 0); finishContent(); cache.unobserve(catalogListener); removeCallbacks(refresh); super.onDetachedFromWindow(); }
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event) { if (closing) return true; if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK) { if (event.getAction() == android.view.KeyEvent.ACTION_UP) back(); return true; } return super.dispatchKeyEvent(event); }
     private void filter() {
         aliases = prefs.workspaceAliases(); String query = search.getText().toString().trim().toLowerCase(Locale.ROOT), order = prefs.hubSort();
@@ -420,13 +436,13 @@ final class AppHubView extends LinearLayout {
         else grid.refresh();
     }
     private final class AppAdapter extends AppWorkspaceView.CellAdapter {
-        private int iconSize() { return AppLauncherStyle.iconSize(prefs.workspaceDensity()); }
+        private int iconSize(int width) { return AppLauncherStyle.iconSize(prefs.workspaceDensity(), width / getResources().getDisplayMetrics().density); }
         private TextView measuredLabel;
         @Override int minimumHeight(int width) {
-            if (measuredLabel == null) { measuredLabel = Ui.text(getContext(), "应用 Ag", 9, Ui.TEXT); measuredLabel.setSingleLine(); measuredLabel.setPadding(0, dp(2), 0, 0); }
+            if (measuredLabel == null) { measuredLabel = Ui.text(getContext(), "应用 Ag", AppLauncherStyle.LABEL_SP, Ui.TEXT); measuredLabel.setSingleLine(); measuredLabel.setPadding(0, dp(AppLauncherStyle.APP_LABEL_GAP), 0, 0); }
             // TextView includes font padding and Android's nonlinear sp scaling; Paint spacing does not.
             measuredLabel.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-            return dp(iconSize()) + 2 * dp(2) + (prefs.workspaceLabels() ? measuredLabel.getMeasuredHeight() : 0);
+            return dp(iconSize(width)) + 2 * dp(AppLauncherStyle.APP_PADDING) + (prefs.workspaceLabels() ? measuredLabel.getMeasuredHeight() : 0);
         }
         @Override public int getCount() { return filtered.size(); }
         @Override public Object getItem(int position) { return filtered.get(position); }
@@ -437,9 +453,9 @@ final class AppHubView extends LinearLayout {
         @Override View bind(AppCatalogCache.Entry entry, View reusable, ViewGroup parent) {
             LinearLayout cell;
             if (reusable instanceof LinearLayout) cell = (LinearLayout) reusable;
-            else { cell = new RuntimeVisuals.Cell(getContext()); RuntimeVisuals.surface(cell, android.graphics.Color.TRANSPARENT, 12); cell.setGravity(Gravity.CENTER); cell.setPadding(0, dp(2), 0, dp(2)); cell.addView(new ImageView(getContext()), new LayoutParams(dp(30), dp(30))); TextView title = Ui.text(getContext(), "", 9, Ui.TEXT); title.setGravity(Gravity.CENTER); title.setSingleLine(); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setPadding(0, dp(2), 0, 0); cell.addView(title, new LayoutParams(-1, -2)); }
+            else { cell = new RuntimeVisuals.Cell(getContext()); RuntimeVisuals.surface(cell, android.graphics.Color.TRANSPARENT, 12); cell.setGravity(Gravity.CENTER); cell.setPadding(dp(AppLauncherStyle.APP_PADDING), dp(AppLauncherStyle.APP_PADDING), dp(AppLauncherStyle.APP_PADDING), dp(AppLauncherStyle.APP_PADDING)); cell.addView(new ImageView(getContext()), new LayoutParams(dp(30), dp(30))); TextView title = Ui.text(getContext(), "", AppLauncherStyle.LABEL_SP, Ui.TEXT); title.setGravity(Gravity.CENTER); title.setSingleLine(); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setPadding(0, dp(AppLauncherStyle.APP_LABEL_GAP), 0, 0); cell.addView(title, new LayoutParams(-1, -2)); }
             int count = badge(entry.id()); String name = label(entry.id()); String parentId = grid.layoutSnapshot().parent(entry.id());
-            TextView title = (TextView) cell.getChildAt(1); title.setText(name + (count > 0 ? " · " + count : "")); title.setVisibility(prefs.workspaceLabels() ? VISIBLE : GONE); cell.getChildAt(0).setLayoutParams(new LayoutParams(dp(iconSize()), dp(iconSize())));
+            TextView title = (TextView) cell.getChildAt(1); title.setText(name + (count > 0 ? " · " + count : "")); title.setVisibility(prefs.workspaceLabels() ? VISIBLE : GONE); int size = dp(iconSize(parent.getMeasuredWidth() / AppLauncherStyle.GRID_COLUMNS)); cell.getChildAt(0).setLayoutParams(new LayoutParams(size, size));
             cell.setContentDescription(name + (parentId == null ? "" : "，位于：" + grid.layoutSnapshot().folder(parentId).name()) + (count > 0 ? "，" + count + "条活动通知" : "")); cell.setTooltipText(parentId == null ? name : "位于：" + grid.layoutSnapshot().folder(parentId).name()); cell.setForeground(count > 0 ? new AppNotificationBadge(getContext(), count) : null); bindIcon((ImageView) cell.getChildAt(0), entry.id()); return cell;
         }
         @Override View folder(AppWorkspaceLayout.Folder folder, View reusable, ViewGroup parent) { AppFolderTile tile = reusable instanceof AppFolderTile ? (AppFolderTile) reusable : new AppFolderTile(getContext()); int count = 0; Set<String> packages = new java.util.HashSet<>(); for (String id : folder.members()) { ComponentName component = ActionCatalog.component(id); if (component != null && packages.add(component.getPackageName())) count += badge(id); } tile.bind(folder, AppHubView.this::bindIcon, count, grid.capacity() / grid.getNumColumns() < 2); return tile; }

@@ -7,6 +7,6 @@
 
 图片来自 720×748、340dpi Android 36 模拟器，用本地通知样例驱动真实的 `CoverService.buildPanelContent()` / `NotificationCenterView`；不是三星真机截图。原图位于 `Cache/tests/notification-center/screens-340/`。
 
-原图等比放入标准屏幕开孔，按圆角和异形边界裁剪；最上层仅叠加一次 `dist/device-frames/zflip5-cover-overlay.svg`。外框、双摄和闪光灯均保留，未镜像或拉伸轮廓。PNG 为 720×748。
+原图等比放入标准屏幕开孔，按圆角和异形边界裁剪；最上层仅叠加一次 `dist/device-frames/zflip5-cover-overlay.svg`。外框、双摄和闪光灯均保留，未镜像或拉伸轮廓。PNG 为 836×992；此次外框更新不改变历史原生验证结论。
 
 可见内容、字体和交互另在 440dpi、440dpi/1.3 倍字体下检查。测试范围见 `../VALIDATION-0.7.2.md`。

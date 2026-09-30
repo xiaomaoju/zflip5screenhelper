@@ -22,7 +22,7 @@ public final class DockGeometry {
         for (Box cut : cutouts) if (cut.bottom() >= height && cut.height() < height / 3 && (bottomCamera == null || cut.width() > bottomCamera.width())) bottomCamera = cut;
         Box safe = panelContent(dock, width, height, cutouts), v = anchor.visual();
         int right = safe.right() - margin, left = Math.max(safe.x() + margin, right - Math.round(safe.width() * .38f));
-        int bottom = Math.min(safe.bottom(), height - Math.max(0, homeInset)) - margin;
+        int bottom = Math.min(safe.bottom(), height - Math.max(0, homeInset));
         if (bottomCamera != null) {
             left = Math.max(safe.x() + margin, bottomCamera.x() + margin);
             right = Math.min(right, bottomCamera.right() - margin);
@@ -44,12 +44,15 @@ public final class DockGeometry {
         return new Placement(strip, strip, panelContent(entry, width, height, cutouts), BOTTOM, entry.measured());
     }
     /** View-local drawing bounds. The physical edge touch target stays unchanged. */
-    public static Chrome chrome(Placement p, float density) {
+    public static Chrome chrome(Placement p, float density) { return chrome(p, density, 5); }
+    /** The dedicated entry sits one dp inside its cutout/Home-safe edge. */
+    public static Chrome panelEntryChrome(Placement p, float density) { return chrome(p, density, 1); }
+    private static Chrome chrome(Placement p, float density, int edgeInsetDp) {
         Box v = p.visual(), t = p.touch(); boolean vertical = p.vertical();
         int x = v.x() - t.x(), y = v.y() - t.y();
         int length = vertical ? v.height() : v.width(), cross = vertical ? t.width() : t.height();
         int stroke = Math.max(1, Math.min(cross, Math.round(2 * density)));
-        int edgeInset = Math.min(Math.max(0, cross - stroke), Math.round(5 * density));
+        int edgeInset = Math.min(Math.max(0, cross - stroke), Math.round(edgeInsetDp * density));
         int endInset = Math.min(length / 6, Math.max(Math.round(10 * density), Math.round(length * .1f)));
         int first = (vertical ? y : x) + endInset, second = (vertical ? y : x) + length / 2 + endInset;
         int handleLength = Math.max(1, length / 2 - 2 * endInset);

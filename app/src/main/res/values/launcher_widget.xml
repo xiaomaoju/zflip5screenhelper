@@ -1,6 +1,13 @@
 <resources>
     <string name="launcher_widget_label">应用启动器 · 外屏卡片</string>
-    <string name="launcher_widget_description">与浮窗启动器共用应用、文件夹和固定项；编辑请到浮窗启动器。</string>
+    <string name="launcher_widget_description">与浮窗启动器共用应用、文件夹、侧栏和 Dock；编辑请到浮窗启动器。</string>
+    <dimen name="launcher_panel_radius">20dp</dimen>
+    <dimen name="launcher_folder_radius">14dp</dimen>
+    <dimen name="launcher_dock_radius">16dp</dimen>
+    <dimen name="launcher_header_height">24dp</dimen>
+    <dimen name="launcher_header_text">12dp</dimen>
+    <dimen name="launcher_page_height">18dp</dimen>
+    <dimen name="launcher_page_text">8dp</dimen>
     <style name="LauncherWidgetEntryTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>

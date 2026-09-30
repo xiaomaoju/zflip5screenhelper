@@ -57,12 +57,12 @@ final class NotificationCenterView extends LinearLayout {
     NotificationCenterView(Context context, Actions actions) {
         super(context); this.actions = actions; setOrientation(VERTICAL); setTag("notification-center");
         empty = Ui.text(context, "", 13, Ui.MUTED); empty.setPadding(dp(8), dp(12), dp(8), dp(12)); Ui.add(this, empty);
-        permission = Ui.button(context, "前往授权", actions::permission); Ui.add(this, permission);
+        permission = PanelUi.button(context, "前往授权", actions::permission); Ui.add(this, permission);
         list = Ui.column(context); list.setTag("notification-list"); addView(list, new LayoutParams(-1, -2));
-        more = Ui.button(context, "显示更多", () -> { limit += 30; update(ready, latest); }); Ui.add(this, more);
+        more = PanelUi.button(context, "显示更多", () -> { limit += 30; update(ready, latest); }); Ui.add(this, more);
         status = Ui.text(context, "", 10, Ui.MUTED); status.setGravity(Gravity.CENTER); status.setPadding(0, dp(4), 0, dp(4)); Ui.add(this, status);
-        newNotice = Ui.button(context, "", () -> { if (scroll != null) scroll.scrollTo(0, 0); update(ready, latest); }); newNotice.setTag("notification-new"); newNotice.setTextSize(10); newNotice.setMinHeight(dp(30)); newNotice.setMinimumHeight(dp(30)); newNotice.setVisibility(GONE);
-        clearAll = Ui.button(context, "0", () -> clear(latest)); clearAll.setTag("notification-clear-all"); clearAll.setSingleLine();
+        newNotice = PanelUi.button(context, "", () -> { if (scroll != null) scroll.scrollTo(0, 0); update(ready, latest); }); newNotice.setTag("notification-new"); newNotice.setTextSize(10); newNotice.setMinHeight(dp(30)); newNotice.setMinimumHeight(dp(30)); newNotice.setVisibility(GONE);
+        clearAll = PanelUi.button(context, "0", () -> clear(latest)); clearAll.setTag("notification-clear-all"); clearAll.setSingleLine();
         clearAll.setTextSize(12); clearAll.setMinHeight(dp(36)); clearAll.setMinimumHeight(dp(36)); clearAll.setMinWidth(dp(50)); clearAll.setMinimumWidth(dp(50)); clearAll.setPadding(dp(9), 0, dp(9), 0); clearAll.setFontFeatureSettings("tnum");
         android.graphics.drawable.Drawable trash = Ui.icon(context, R.drawable.ic_ms_delete, Ui.TEXT); trash.setBounds(0, 0, dp(18), dp(18)); clearAll.setCompoundDrawables(trash, null, null, null); clearAll.setCompoundDrawablePadding(dp(5)); clearAll.setGravity(Gravity.CENTER);
         update(false, List.of());
@@ -214,7 +214,7 @@ final class NotificationCenterView extends LinearLayout {
             time = Ui.text(context, "", 9, Ui.MUTED); time.setSingleLine(); time.setGravity(Gravity.RIGHT); time.setTag("notification-time"); LayoutParams clock = new LayoutParams(-2, -2); clock.leftMargin = dp(5); clock.topMargin = dp(2); heading.addView(time, clock); words.addView(heading);
             detail = Ui.text(context, "", 11, Ui.MUTED); detail.setMaxLines(2); detail.setEllipsize(TextUtils.TruncateAt.END); detail.setPadding(0, dp(4), 0, 0); words.addView(detail);
             meta = Ui.text(context, "", 9, Ui.MUTED); meta.setPadding(0, dp(4), 0, 0); meta.setVisibility(GONE); words.addView(meta); content.addView(words, new LayoutParams(0, -2, 1));
-            expand = Ui.iconButton(context, R.drawable.ic_ms_keyboard_arrow_down, "展开通知", () -> { if (groupToggle != null) groupToggle.run(); else toggleText(); }); expand.setTag("notification-expand"); expand.setPadding(dp(4), dp(4), dp(4), dp(4)); content.addView(expand, new LayoutParams(dp(26), dp(40))); surface.addView(content);
+            expand = PanelUi.icon(context, R.drawable.ic_ms_keyboard_arrow_down, "展开通知", () -> { if (groupToggle != null) groupToggle.run(); else toggleText(); }); expand.setTag("notification-expand"); content.addView(expand,new LayoutParams(dp(PanelUi.SLOT),dp(PanelUi.SLOT))); surface.addView(content);
             rail = Ui.row(context); rail.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
             View settings = action(R.drawable.ic_ms_settings, "设置", "应用通知设置", () -> { if (current != null) actions.settings(current); }); settings.setTag("notification-settings"); LayoutParams settingSize = new LayoutParams(dp(44), dp(44)); settingSize.setMargins(dp(2), 0, dp(2), 0); rail.addView(settings, settingSize);
             clear = action(R.drawable.ic_ms_delete, "清除", "清除此通知", dismiss); clear.setTag("notification-clear"); clearLabel = (TextView) ((ViewGroup) clear).getChildAt(1); LayoutParams clearSize = new LayoutParams(dp(44), dp(44)); clearSize.setMargins(dp(2), 0, dp(2), 0); rail.addView(clear, clearSize);
@@ -224,8 +224,9 @@ final class NotificationCenterView extends LinearLayout {
         }
         private void revealActions() { reveal(swipe); }
         private View action(int resource, String label, String description, Runnable callback) {
-            LinearLayout button = Ui.column(getContext()); button.setGravity(Gravity.CENTER); button.setBackground(Ui.ripple(getContext(), label.equals("清除") ? 0xFF51282D : Ui.SURFACE, 24)); button.setContentDescription(description); button.setFocusable(true); button.setOnClickListener(v -> { closeActions(); callback.run(); });
-            ImageView image = new ImageView(getContext()); image.setImageDrawable(Ui.icon(getContext(), resource, label.equals("清除") ? 0xFFFFB4AB : Ui.TEXT)); image.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); button.addView(image, new LayoutParams(dp(19), dp(19)));
+            LinearLayout button = Ui.column(getContext()); button.setGravity(Gravity.CENTER); button.setBackground(Ui.ripple(getContext(),0,8)); button.setContentDescription(description); button.setFocusable(true); button.setOnClickListener(v -> { closeActions(); callback.run(); });
+            FrameLayout face=new FrameLayout(getContext()); face.setTag("notification-action-face"); face.setDuplicateParentStateEnabled(true); face.setBackground(Ui.background(getContext(),label.equals("清除") ? 0xFF51282D : Ui.SURFACE,1000)); face.setScaleX(.9f); face.setScaleY(.9f); button.addView(face,new LayoutParams(dp(32),dp(32)));
+            ImageView image = new ImageView(getContext()); image.setImageDrawable(Ui.icon(getContext(), resource, label.equals("清除") ? 0xFFFFB4AB : Ui.TEXT)); image.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); face.addView(image,new FrameLayout.LayoutParams(dp(18),dp(18),Gravity.CENTER));
             TextView text = Ui.text(getContext(), label, 9, Ui.TEXT); text.setGravity(Gravity.CENTER); text.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); text.setPadding(0, dp(2), 0, 0); button.addView(text); return button;
         }
         void update(StatusBarNotification item, int count, boolean groupExpanded, boolean canClear) {

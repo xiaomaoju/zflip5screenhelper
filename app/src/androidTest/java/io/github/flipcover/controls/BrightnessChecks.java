@@ -210,6 +210,7 @@ final class BrightnessChecks {
     }
     private static final class Reply { final String operation; final CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1); Reply(String operation) { this.operation = operation; } }
     private static final class FakeService extends IShellService.Stub {
+        @Override public void watchConnectivity(IConnectivityListener listener) { }
         private final List<Integer> writes = new ArrayList<>();
         private final List<String> calls = new ArrayList<>();
         private final List<Reply> allReplies = new ArrayList<>();

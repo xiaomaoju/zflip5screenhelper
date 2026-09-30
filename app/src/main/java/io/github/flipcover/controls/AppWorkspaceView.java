@@ -44,7 +44,7 @@ final class AppWorkspaceView extends ViewGroup {
     private long mergeStarted;
     private boolean mergeReady, dockDrop, undoCompact, dockOnly, dockSource;
     private final Runnable mergeTick = this::advanceMerge;
-    private int columns = 5, rows = 1, page, manualSlot, pendingSlot = -1, target = -1, bindingGeneration;
+    private int columns = AppLauncherStyle.GRID_COLUMNS, rows = AppLauncherStyle.GRID_ROWS, page, manualSlot, pendingSlot = -1, target = -1, bindingGeneration;
     private int measuredWidth, measuredGridHeight;
     private boolean manual, compact, deferred, disposed, dirty = true, editing;
     boolean editing() { return editing; }
@@ -125,17 +125,16 @@ final class AppWorkspaceView extends ViewGroup {
         change(projected().move(id, slot, compact)); page = projected().slot(id) / capacity(); dirty = true; requestLayout(); invalidate(); announceForAccessibility("已移动");
     }
     private AppWorkspaceLayout visibleLayout() { return preview == null ? displayed : preview; }
-    private int columnWidth() { return Math.max(1, getMeasuredWidth() / columns); }
-    private int rowHeight() { return Math.max(1, gridHeight() / rows); }
+    private int columnWidth() { return AppLauncherStyle.cellWidth(getMeasuredWidth(), columns); }
+    private int rowHeight() { return AppLauncherStyle.cellHeight(gridHeight(), rows); }
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         int width = MeasureSpec.getSize(widthSpec), height = MeasureSpec.getSize(heightSpec);
         // Nested weighted rows make several EXACTLY probes too. Only onLayout owns geometry.
         setMeasuredDimension(width, height);
     }
     private void layoutGeometry(int width, int height) {
-        int nextColumns = AppLauncherStyle.columns(width / getResources().getDisplayMetrics().density, prefs.workspaceDensity());
-        int minimumRow = adapter.minimumHeight(Math.max(1, width / nextColumns));
-        int nextRows = Math.max(1, Math.min(6, (height - dp(8)) / Math.max(1, minimumRow)));
+        // Stable page/row/column identity takes priority over fitting extra rows into free space.
+        int nextColumns = AppLauncherStyle.GRID_COLUMNS, nextRows = AppLauncherStyle.GRID_ROWS;
         if (width != measuredWidth || height - dp(8) != measuredGridHeight || nextColumns != columns || nextRows != rows) {
             cancelInteraction(); int anchor = page * capacity(); columns = nextColumns; rows = nextRows;
             measuredWidth = width; measuredGridHeight = height - dp(8); page = anchor / capacity(); dirty = true;
@@ -165,10 +164,10 @@ final class AppWorkspaceView extends ViewGroup {
         layoutGeometry(right - left, bottom - top);
         AppWorkspaceLayout layout = visibleLayout();
         for (Map.Entry<String, View> item : cells.entrySet()) {
-            int slot = layout.slot(item.getKey()), local = slot % capacity(); View cell = item.getValue();
-            int x = (slot / capacity() - page) * getWidth() + local % columns * columnWidth(), y = local / columns * rowHeight();
+            int slot = layout.slot(item.getKey()); View cell = item.getValue();
+            android.graphics.Rect box = AppLauncherStyle.gridCell(getWidth(), gridHeight(), columns, rows, slot, layout.span(item.getKey()), page); int x = box.left, y = box.top;
             float oldX = cell.getX(), oldY = cell.getY(); boolean animate = dragging() && mergeTarget == null && cell.isLaidOut() && Math.abs(x - cell.getLeft()) < getWidth();
-            cell.animate().cancel(); int span = layout.span(item.getKey()); cell.layout(x, y, x + columnWidth() * span, y + rowHeight() * span);
+            cell.animate().cancel(); cell.layout(box.left, box.top, box.right, box.bottom);
             if (animate && ValueAnimator.areAnimatorsEnabled()) { cell.setTranslationX(oldX - x); cell.setTranslationY(oldY - y); cell.animate().translationX(0).translationY(0).setDuration(150).start(); }
             else { cell.setTranslationX(0); cell.setTranslationY(0); }
         }

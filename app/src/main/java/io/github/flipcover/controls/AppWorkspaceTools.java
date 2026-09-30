@@ -75,7 +75,7 @@ final class AppWorkspaceTools {
         DetailSheet current = show(folder.name() + " · " + folder.members().size() + "/9", null); opened = id; current.setTag("folder-sheet");
         current.title.setSingleLine(); current.title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         View more = Ui.iconButton(context, R.drawable.ic_ms_edit, "文件夹管理", () -> menu(sheet.title, id)); current.folderStyle(folder.name(), folder.members().size(), more);
-        members = new AppFolderGrid(context, folder.members(), !prefs.workspaceLocked(), app -> { View cell = hub.shortcut(app, hub.label(app), 30, 9, () -> hub.launchApplication(app)); cell.setMinimumHeight(Ui.dp(context, 52)); return cell; }, new AppFolderGrid.Listener() {
+        members = new AppFolderGrid(context, folder.members(), !prefs.workspaceLocked(), app -> { View cell = hub.shortcut(app, hub.label(app), AppLauncherStyle.FOLDER_MEMBER_ICON, AppLauncherStyle.LABEL_SP, () -> hub.launchApplication(app)); cell.setMinimumHeight(Ui.dp(context, AppLauncherStyle.FOLDER_MEMBER_HEIGHT)); return cell; }, new AppFolderGrid.Listener() {
             public void launch(String app) { hub.launchApplication(app); }
             public void menu(View anchor, String app) { memberMenu(anchor, id, app); }
             public void reorder(List<String> order) { attempt(() -> grid.change(grid.projected().reorder(id, order))); }

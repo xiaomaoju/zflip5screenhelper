@@ -135,9 +135,10 @@ final class NotificationCenterChecks {
         main(() -> {
             LinearLayout header = surface.findViewWithTag("panel-header"); View settings = header.findViewWithTag("notification-center-settings");
             require(settings != null && settings.hasOnClickListeners() && settings.isEnabled(), "header has an enabled notification-center settings action");
-            require(center.clearAll.getParent() == header && center.clearAll.getText().toString().equals("6"), "clear action belongs to header and displays count only");
+            View clearTarget=center.clearAll.getParent() instanceof PanelActionSlot slot ? slot : center.clearAll,settingsTarget=settings.getParent() instanceof PanelActionSlot slot ? slot : settings;
+            require(clearTarget.getParent() == header && center.clearAll.getText().toString().equals("6"), "clear action belongs to header and displays count only");
             require(center.clearAll.getCompoundDrawables()[0] != null && center.clearAll.getContentDescription().toString().contains("6条"), "clear icon and accessible full description remain available");
-            require(settings.getRight() <= center.clearAll.getLeft() && center.clearAll.getRight() <= header.getChildAt(header.getChildCount() - 1).getLeft(), "settings, clear and close targets do not overlap");
+            require(settingsTarget.getRight() <= clearTarget.getLeft() && clearTarget.getRight() <= header.getChildAt(header.getChildCount() - 1).getLeft(), "settings, clear and close targets do not overlap");
             View titleArea = header.getChildAt(0); require(titleArea.getWidth() >= Ui.dp(activity, 74) && header.getHeight() <= Ui.dp(activity, 40), "header reserves readable title width without a second row");
             View content = surface.getChildAt(surface.getChildCount() - 2); require(content instanceof ScrollView && surface.indexOfChild(header) + 1 == surface.indexOfChild(content), "notification list fills remaining surface with no clear footer");
             center.update(true, List.of()); require(center.clearAll.getText().toString().equals("0") && !center.clearAll.isEnabled() && center.clearAll.getVisibility() == View.VISIBLE, "empty header keeps a disabled zero count instead of shifting controls");

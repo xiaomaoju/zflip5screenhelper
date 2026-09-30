@@ -121,12 +121,14 @@ final class AppCatalogCache {
     }
     private final Runnable refreshCatalog = this::warm;
     Drawable cachedIcon(Context target, String id) { Bitmap bitmap = icons.get(id); return bitmap == null ? null : new BitmapDrawable(target.getResources(), bitmap); }
-    void requestIcon(String id) {
+    boolean requestIcon(String id) {
         int requested; String pendingKey;
         synchronized (stateLock) {
             requested = iconGeneration;
             pendingKey = requested + ":" + id;
-            if (icons.get(id) != null || failedIcons.get(id) != null || pendingIcons.size() >= 96 || !pendingIcons.add(pendingKey)) return;
+            if (icons.get(id) != null || failedIcons.get(id) != null || pendingIcons.contains(pendingKey)) return true;
+            if (pendingIcons.size() >= 96) return false;
+            pendingIcons.add(pendingKey);
         }
         worker.execute(() -> {
             Bitmap bitmap = null; String name = null;
@@ -147,6 +149,7 @@ final class AppCatalogCache {
                 if (!main.hasCallbacks(deliverIcons)) main.postDelayed(deliverIcons, 16);
             }
         });
+        return true;
     }
     void trimMemory() { synchronized (stateLock) { iconGeneration++; icons.evictAll(); } }
     int scanCount() { return scans; }

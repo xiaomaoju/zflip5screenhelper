@@ -37,6 +37,14 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         Bundle result = new Bundle();
         try {
             if (!android.os.Build.HARDWARE.equals("ranchu") && !android.os.Build.HARDWARE.equals("goldfish")) throw new IllegalStateException("Run only on a disposable Android emulator");
+            if (scenario.equals("home-return")) { result.putString("result", new HomeReturnChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("panel-glass")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("panel-glass-tabs")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runOriginalTabs()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("recent-tasks-glass")) { result.putString("result", new RecentTasksGlassChecks(this,expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("detail-motion")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runMotionChecks()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("detail-content")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runContentChecks()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("panel-glass-capture")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runCaptureChecks()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("connectivity")) { result.putString("result", new ConnectivityChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("configuration")) { result.putString("result", new ConfigurationChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("runtime-geometry")) { result.putString("result", new RuntimeGeometryChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("runtime-feedback")) { result.putString("result", new RuntimeFeedbackChecks(this).run()); finish(Activity.RESULT_OK, result); return; }

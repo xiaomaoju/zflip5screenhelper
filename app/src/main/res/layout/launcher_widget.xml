@@ -1,23 +1,28 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent">
-    <LinearLayout android:id="@+id/launcher_panel" android:layout_width="match_parent" android:layout_height="match_parent" android:layout_gravity="top|left" android:orientation="vertical" android:paddingLeft="5dp" android:paddingRight="5dp" android:paddingTop="4dp" android:paddingBottom="3dp" android:background="@drawable/launcher_widget_panel">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="38dp" android:gravity="center_vertical">
-            <TextView android:id="@+id/launcher_back" android:layout_width="38dp" android:layout_height="match_parent" android:gravity="center" android:text="‹" android:textColor="#F2F5F8" android:textSize="22sp" android:contentDescription="返回应用列表" android:visibility="gone" android:focusable="true" />
-            <TextView android:id="@+id/launcher_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="应用启动器" android:textSize="13sp" android:textColor="#F2F5F8" android:maxLines="1" android:ellipsize="end" />
-            <ImageButton android:id="@+id/launcher_edit" android:layout_width="38dp" android:layout_height="38dp" android:padding="9dp" android:src="@drawable/ic_ms_edit" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="编辑说明" />
-        </LinearLayout>
+    <LinearLayout android:id="@+id/launcher_panel" android:layout_width="match_parent" android:layout_height="match_parent" android:layout_gravity="top|left" android:orientation="vertical" android:paddingLeft="5dp" android:paddingRight="5dp" android:paddingTop="2dp" android:paddingBottom="2dp" android:background="@drawable/launcher_widget_panel">
+        <FrameLayout android:id="@+id/launcher_header" android:layout_width="match_parent" android:layout_height="@dimen/launcher_header_height">
+            <TextView android:id="@+id/launcher_title" android:layout_width="match_parent" android:layout_height="match_parent" android:layout_marginLeft="48dp" android:layout_marginRight="48dp" android:gravity="center" android:text="应用启动器" android:textSize="@dimen/launcher_header_text" android:textColor="#F2F5F8" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/launcher_back" android:layout_width="28dp" android:layout_height="match_parent" android:layout_gravity="left|center_vertical" android:gravity="center" android:text="‹" android:textColor="#F2F5F8" android:textSize="18dp" android:includeFontPadding="false" android:contentDescription="返回应用列表" android:visibility="gone" android:focusable="true" />
+            <LinearLayout android:layout_width="48dp" android:layout_height="24dp" android:layout_gravity="right|center_vertical">
+                <FrameLayout android:layout_width="24dp" android:layout_height="24dp">
+                    <ImageButton android:id="@+id/launcher_refresh" android:layout_width="match_parent" android:layout_height="match_parent" android:padding="5dp" android:scaleType="fitCenter" android:src="@drawable/ic_ms_refresh" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="刷新最近应用" />
+                    <TextView android:id="@+id/launcher_refresh_status" android:layout_width="8dp" android:layout_height="10dp" android:layout_gravity="right|top" android:gravity="center" android:text="·" android:textSize="8dp" android:textColor="#B3B9C3" android:includeFontPadding="false" android:importantForAccessibility="no" android:clickable="false" android:focusable="false" />
+                </FrameLayout>
+                <ImageButton android:id="@+id/launcher_edit" android:layout_width="24dp" android:layout_height="24dp" android:padding="5dp" android:scaleType="fitCenter" android:src="@drawable/ic_ms_edit" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="编辑说明" />
+            </LinearLayout>
+        </FrameLayout>
         <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
             <FrameLayout android:id="@+id/launcher_grid" android:layout_width="match_parent" android:layout_height="match_parent" />
-            <TextView android:id="@+id/launcher_empty" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:padding="12dp" android:text="正在读取应用…" android:textSize="13sp" android:textColor="#B3B9C3" />
+            <TextView android:id="@+id/launcher_empty" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:padding="12dp" android:text="正在读取应用…" android:textSize="13dp" android:textColor="#B3B9C3" />
+            <ListView android:id="@+id/launcher_rail" android:layout_width="44dp" android:layout_height="match_parent" android:divider="@null" android:dividerHeight="0dp" android:scrollbars="none" android:overScrollMode="never" android:background="@drawable/launcher_widget_panel" android:visibility="gone" android:contentDescription="常用侧栏，上下滑动查看更多" />
         </FrameLayout>
-        <LinearLayout android:id="@+id/launcher_pager" android:layout_width="match_parent" android:layout_height="32dp" android:gravity="center_vertical">
-            <TextView android:id="@+id/launcher_previous" android:layout_width="44dp" android:layout_height="match_parent" android:gravity="center" android:text="‹" android:textSize="22sp" android:textColor="#F2F5F8" android:contentDescription="上一页应用" android:focusable="true" />
-            <TextView android:id="@+id/launcher_page" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:gravity="center" android:textSize="10sp" android:textColor="#B3B9C3" android:maxLines="2" />
-            <TextView android:id="@+id/launcher_next" android:layout_width="44dp" android:layout_height="match_parent" android:gravity="center" android:text="›" android:textSize="22sp" android:textColor="#F2F5F8" android:contentDescription="下一页应用" android:focusable="true" />
+        <LinearLayout android:id="@+id/launcher_pager" android:layout_width="match_parent" android:layout_height="@dimen/launcher_page_height" android:gravity="center">
+            <ImageButton android:id="@+id/launcher_previous" android:layout_width="44dp" android:layout_height="match_parent" android:padding="0dp" android:scaleType="fitCenter" android:src="@drawable/launcher_page_previous" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="上一页应用" android:focusable="true" />
+            <TextView android:id="@+id/launcher_page" android:layout_width="34dp" android:layout_height="wrap_content" android:gravity="center" android:textSize="@dimen/launcher_page_text" android:textColor="#B3B9C3" android:includeFontPadding="false" android:singleLine="true" android:ellipsize="end" />
+            <ImageButton android:id="@+id/launcher_next" android:layout_width="44dp" android:layout_height="match_parent" android:padding="0dp" android:scaleType="fitCenter" android:src="@drawable/launcher_page_next" android:tint="#F2F5F8" android:background="@android:color/transparent" android:contentDescription="下一页应用" android:focusable="true" />
         </LinearLayout>
-        <FrameLayout android:id="@+id/launcher_pins" android:layout_width="match_parent" android:layout_height="44dp" android:visibility="gone" />
-    </LinearLayout>
-    <LinearLayout android:id="@+id/launcher_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center" android:orientation="vertical" android:padding="16dp" android:background="@drawable/launcher_widget_folder" android:visibility="gone">
-        <TextView android:id="@+id/launcher_hint_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="14sp" android:textColor="#F2F5F8" />
-        <TextView android:id="@+id/launcher_hint_close" android:layout_width="match_parent" android:layout_height="44dp" android:gravity="center" android:text="知道了" android:textSize="14sp" android:textColor="#AFCDEB" android:focusable="true" />
+        <FrameLayout android:id="@+id/launcher_pins" android:layout_width="match_parent" android:layout_height="wrap_content" android:visibility="gone">
+            <FrameLayout android:id="@+id/launcher_dock_row" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/launcher_widget_dock" />
+        </FrameLayout>
     </LinearLayout>
 </FrameLayout>

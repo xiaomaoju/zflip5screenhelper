@@ -61,7 +61,7 @@ final class AppDockView extends FrameLayout {
         }
         // Keep the acquisition region and centers stable while the preview makes room.
         if (!dropBounds.contains(x, y)) { clearDrop(); return -1; }
-        if (pins.size() == AppDockPlacement.LIMIT && !pins.contains(id)) { row.setForeground(Ui.background(getContext(), 0x44E5A77D, 16)); return -2; }
+        if (pins.size() == AppDockPlacement.LIMIT && !pins.contains(id)) { row.setForeground(Ui.background(getContext(), 0x44E5A77D, AppLauncherStyle.dockRadius(getContext()))); return -2; }
         int index = 0; for (String pin : dropBase) if (!pin.equals(id) && x >= dropCenters.get(pin)) index++;
         List<String> next = AppDockPlacement.insert(dropBase, id, index);
         if (!next.equals(previewPins)) { previewPins = next; render(getWidth()); requestLayout(); }
@@ -70,11 +70,11 @@ final class AppDockView extends FrameLayout {
 
     AppDockView(Context context, Prefs prefs, Listener listener) {
         super(context); this.prefs = prefs; this.listener = listener;
-        area = Ui.column(context); area.setTag("hub-dock-area"); area.setGravity(Gravity.CENTER_HORIZONTAL); area.setPadding(0, dp(2), 0, 0); addView(area, new LayoutParams(-1, -2));
-        row = Ui.row(context); row.setTag("hub-dock"); row.setGravity(Gravity.CENTER); row.setPadding(dp(3), 0, dp(2), 0); backdrop(false); area.addView(row, new LinearLayout.LayoutParams(-2, dp(34)));
+        area = Ui.column(context); area.setTag("hub-dock-area"); area.setGravity(Gravity.CENTER_HORIZONTAL); area.setPadding(0, dp(AppLauncherStyle.DOCK_TOP), 0, 0); addView(area, new LayoutParams(-1, -2));
+        row = Ui.row(context); row.setTag("hub-dock"); row.setGravity(Gravity.CENTER); row.setPadding(dp(AppLauncherStyle.DOCK_EDGE), 0, dp(AppLauncherStyle.DOCK_EDGE), 0); backdrop(false); area.addView(row, new LinearLayout.LayoutParams(-2, dp(AppLauncherStyle.DOCK_ROW)));
         appsCell = new FrameLayout(context);
-        apps = RuntimeVisuals.button(context, R.drawable.ic_ms_apps, "展开全部应用", listener::toggleApps); apps.setTag("hub-apps"); apps.setPadding(dp(5), dp(5), dp(5), dp(5)); appsCell.addView(apps, new LayoutParams(-1, -1));
-        warning = Ui.text(context, "!", 9, Ui.MUTED); warning.setTag("dock-warning"); warning.setGravity(Gravity.CENTER); warning.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); appsCell.addView(warning, new LayoutParams(dp(10), dp(12), Gravity.TOP | Gravity.RIGHT)); warning.setVisibility(INVISIBLE);
+        apps = RuntimeVisuals.button(context, R.drawable.ic_ms_apps, "展开全部应用", listener::toggleApps); apps.setTag("hub-apps"); apps.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER); int appsXPadding = dp((AppLauncherStyle.DOCK_TOOL_WIDTH - AppLauncherStyle.DOCK_APPS_ICON) / 2f), appsYPadding = dp((AppLauncherStyle.DOCK_ROW - AppLauncherStyle.DOCK_APPS_ICON) / 2f); apps.setPadding(appsXPadding, appsYPadding, appsXPadding, appsYPadding); appsCell.addView(apps, new LayoutParams(-1, -1));
+        warning = Ui.text(context, "!", AppLauncherStyle.LABEL_SP, Ui.MUTED); warning.setTag("dock-warning"); warning.setGravity(Gravity.CENTER); warning.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); appsCell.addView(warning, new LayoutParams(dp(10), dp(12), Gravity.TOP | Gravity.RIGHT)); warning.setVisibility(INVISIBLE);
         apps.setOnLongClickListener(v -> { listener.menu(); return true; });
         dismissLeft = dismissArea(context, "hub-dismiss-left", listener::close); dismissRight = dismissArea(context, "hub-dismiss-right", listener::close);
         addView(dismissLeft, new LayoutParams(0, 0)); addView(dismissRight, new LayoutParams(0, 0));
@@ -101,42 +101,37 @@ final class AppDockView extends FrameLayout {
     }
     void catalogChanged() { signature = ""; requestLayout(); }
     void expanded(boolean expanded) { apps.setSelected(expanded); apps.setContentDescription(expanded ? "收起全部应用，保留 Dock" : "展开全部应用"); apps.setTooltipText(expanded ? "收起全部应用" : "全部应用（长按编辑或刷新）"); }
-    void backdrop(boolean blur) { row.setBackground(Ui.background(getContext(), blur ? 0xD922272F : 0xFF22272F, 16)); }
+    void backdrop(boolean blur) { row.setBackground(Ui.background(getContext(), blur ? (AppLauncherStyle.DOCK_COLOR & 0x00FFFFFF) | 0xD9000000 : AppLauncherStyle.DOCK_COLOR, AppLauncherStyle.dockRadius(getContext()))); }
     private int dp(float value) { return Ui.dp(getContext(), value); }
     private Set<String> pinnedPackages() { Set<String> result = new HashSet<>(); for (String id : prefs.hubPins()) { ComponentName name = ActionCatalog.component(id); if (name != null) result.add(name.getPackageName()); } return result; }
     private List<RecentTasks.Task> clearTargets() {
-        Set<String> shown = new HashSet<>(); for (RecentTasks.Task task : shownRecent) shown.add(task.packageName());
-        List<RecentTasks.Task> targets = new ArrayList<>(); for (RecentTasks.Task task : RecentTasks.backgroundTargets(tasks, pinnedPackages())) if (shown.contains(task.packageName())) targets.add(task);
-        return CoverApp.taskLocks(getContext()).unlocked(targets);
+        return AppDockLayout.clearTargets(tasks, prefs.hubPins(), shownRecent, CoverApp.taskLocks(getContext()));
     }
     private void render(int width) {
         List<String> pins = previewPins == null ? prefs.hubPins() : previewPins; List<RecentTasks.Task> recent = RecentTasks.apps(tasks, pinnedPackages());
-        int fixedChrome = row.getPaddingLeft() + row.getPaddingRight() + dp(34);
-        int separatorWidth = Math.max(1, dp(.5f)), separatorMargin = dp(1);
-        int recentChrome = recent.isEmpty() ? 0 : dp(22) + (pins.isEmpty() ? 0 : separatorWidth + 2 * separatorMargin);
-        int capacity = Math.max(0, (width - fixedChrome - recentChrome) / Math.max(1, dp(28)) - pins.size());
-        shownRecent = List.copyOf(recent.subList(0, Math.min(recent.size(), capacity)));
-        boolean both = !pins.isEmpty() && !shownRecent.isEmpty(); int total = pins.size() + shownRecent.size();
-        int chrome = fixedChrome + (both ? separatorWidth + 2 * separatorMargin : 0) + (shownRecent.isEmpty() ? 0 : dp(22));
-        int cell = RecentTasks.dockCell(width, total, dp(34), chrome);
+        AppDockLayout.Geometry geometry = AppDockLayout.fit(width, pins.size(), recent.size(), getResources().getDisplayMetrics().density);
+        int separatorWidth = geometry.separator(), separatorMargin = geometry.margin();
+        shownRecent = List.copyOf(recent.subList(0, geometry.recentCount()));
+        boolean both = !pins.isEmpty() && !shownRecent.isEmpty();
+        int cell = geometry.cell();
         List<String> keys = new ArrayList<>(); for (RecentTasks.Task task : shownRecent) keys.add(RecentTasks.key(task));
         String next = cell + ":" + pins + ":" + keys + ":" + (previewPins == null ? "" : dropId);
         if (next.equals(signature)) { updateState(); return; } signature = next;
         oldPinX.clear(); for (int i = 0; i < renderedPins.size() && i + 1 < row.getChildCount(); i++) { View item = row.getChildAt(i + 1); oldPinX.put(renderedPins.get(i), row.getLeft() + item.getX()); item.animate().cancel(); }
-        row.removeAllViews(); clear = null; row.addView(appsCell, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        row.removeAllViews(); clear = null; row.addView(appsCell, new LinearLayout.LayoutParams(dp(AppLauncherStyle.DOCK_TOOL_WIDTH), dp(AppLauncherStyle.DOCK_ROW)));
         renderedPins = List.copyOf(pins);
         for (String id : pins) {
             View item = listener.application(id, cell, "常用：", () -> listener.launch(id));
             if (previewPins != null && id.equals(dropId)) { item.setAlpha(.25f); item.setBackground(Ui.background(getContext(), 0x668FC8EC, 10)); item.setContentDescription("松手固定到此位置"); }
-            row.addView(item, new LinearLayout.LayoutParams(cell, dp(34)));
+            row.addView(item, new LinearLayout.LayoutParams(cell, dp(AppLauncherStyle.DOCK_ROW)));
         }
-        if (both) { View separator = new View(getContext()); separator.setTag("dock-separator"); separator.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); separator.setBackgroundColor(0xFF65717D); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(separatorWidth, dp(18)); p.setMargins(separatorMargin, 0, separatorMargin, 0); row.addView(separator, p); }
+        if (both) { View separator = new View(getContext()); separator.setTag("dock-separator"); separator.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); separator.setBackgroundColor(AppLauncherStyle.DOCK_SEPARATOR); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(separatorWidth, dp(AppLauncherStyle.DOCK_SEPARATOR_HEIGHT)); p.setMargins(separatorMargin, 0, separatorMargin, 0); row.addView(separator, p); }
         for (RecentTasks.Task task : shownRecent) {
             String launcher = CoverApp.catalog(getContext()).launcher(task.packageName()), id = launcher == null ? "app:" + task.component() : launcher;
-            View item = listener.application(id, cell, "最近任务：", () -> { if (known && canOpen && !busy) listener.openTask(task); }); item.setTag(R.id.dock_recent_task, task); row.addView(item, new LinearLayout.LayoutParams(cell, dp(34)));
+            View item = listener.application(id, cell, "最近任务：", () -> { if (known && canOpen && !busy) listener.openTask(task); }); item.setTag(R.id.dock_recent_task, task); row.addView(item, new LinearLayout.LayoutParams(cell, dp(AppLauncherStyle.DOCK_ROW)));
         }
         if (!shownRecent.isEmpty()) {
-            clear = RuntimeVisuals.button(getContext(), R.drawable.ic_hub_clean, "清理可见最近应用的外屏后台任务，保留可见、固定和锁定任务", () -> listener.clear(clearTargets())); clear.setTag("hub-clear"); clear.setPadding(0, dp(8), 0, dp(8)); row.addView(clear, new LinearLayout.LayoutParams(dp(22), dp(34)));
+            clear = RuntimeVisuals.button(getContext(), R.drawable.ic_hub_clean, "清理可见最近应用的外屏后台任务，保留可见、固定和锁定任务", () -> listener.clear(clearTargets())); clear.setTag("hub-clear"); clear.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER); int xPadding = dp((AppLauncherStyle.DOCK_TOOL_WIDTH - AppLauncherStyle.DOCK_CLEAR_ICON) / 2f), yPadding = dp((AppLauncherStyle.DOCK_ROW - AppLauncherStyle.DOCK_CLEAR_ICON) / 2f); clear.setPadding(xPadding, yPadding, xPadding, yPadding); row.addView(clear, new LinearLayout.LayoutParams(dp(AppLauncherStyle.DOCK_TOOL_WIDTH), dp(AppLauncherStyle.DOCK_ROW)));
         }
         updateState();
     }

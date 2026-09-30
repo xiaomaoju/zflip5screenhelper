@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -23,7 +25,7 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
         <activity android:name=".SystemOutputActivity" android:exported="false" android:resizeableActivity="true" />
-        <activity android:name=".LauncherWidgetActivity" android:exported="false" android:resizeableActivity="true" android:excludeFromRecents="true" android:taskAffinity="" android:theme="@style/LauncherWidgetEntryTheme" />
+        <activity android:name=".LauncherWidgetActivity" android:exported="false" android:resizeableActivity="true" android:excludeFromRecents="true" android:taskAffinity="" android:configChanges="orientation|screenSize|smallestScreenSize" android:theme="@style/LauncherWidgetEntryTheme" />
         <receiver android:name=".LauncherWidgetProvider" android:exported="false" android:label="@string/launcher_widget_label">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/launcher_widget" />

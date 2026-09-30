@@ -30,11 +30,14 @@ final class ControlEditorView extends FrameLayout {
     private Bundle candidateState;
     private final TextView title, count;
     private final Button undoButton, expand;
+    private final PanelActionSlot expandSlot;
     private final Workspace workspace;
     private final ScrollView selectedScroll;
     private final ControlEditGrid selected;
     private ControlCandidatesView candidates;
     private DetailSheet modal;
+    private PanelGlassSession glass;
+    void glass(PanelGlassSession session) { glass=session; }
     private boolean expanded;
     private DragSession drag;
     private float dragX, dragY;
@@ -54,13 +57,15 @@ final class ControlEditorView extends FrameLayout {
         original = restored == null ? new ArrayList<>(prefs.actions("panel")) : restored.getStringArrayList("original"); draft = restored == null ? new ArrayList<>(original) : restored.getStringArrayList("draft"); undo = restored == null ? null : restored.getStringArrayList("undo");
         candidateState = restored == null ? new Bundle() : bundle(restored, "candidates"); expanded = restored == null || restored.getBoolean("expanded", true);
         LinearLayout page = SettingsUi.column(c); addView(page, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout header = SettingsUi.row(c); header.addView(SettingsUi.iconButton(c, R.drawable.ic_ms_arrow_back, "返回", this::back));
-        LinearLayout heading = SettingsUi.column(c); title = SettingsUi.heading(c, "自定义", 18); title.setAccessibilityHeading(true); title.setSingleLine(); title.setEllipsize(android.text.TextUtils.TruncateAt.END); heading.addView(title); count = Ui.text(c, "", 12, SettingsUi.MUTED); count.setSingleLine(); heading.addView(count); if (getResources().getConfiguration().fontScale > 1.15f) { title.setText("编辑"); count.setVisibility(GONE); } header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        undoButton = SettingsUi.button(c, "撤销", this::undo); undoButton.setTag("control-editor-undo"); undoButton.setPadding(Ui.dp(c, 8), 0, Ui.dp(c, 8), 0); undoButton.setBackground(Ui.ripple(c, 0, 12)); header.addView(undoButton);
-        Button done = SettingsUi.button(c, "完成", this::save); done.setTag("control-editor-done"); done.setPadding(Ui.dp(c, 8), 0, Ui.dp(c, 8), 0); done.setBackground(Ui.ripple(c, 0, 12)); header.addView(done); page.addView(header);
+        LinearLayout header = SettingsUi.row(c); header.setTag("control-editor-header"); View back = PanelUi.icon(c, R.drawable.ic_ms_arrow_back, "返回", this::back); back.setPadding(Ui.dp(c, 7), Ui.dp(c, 7), Ui.dp(c, 7), Ui.dp(c, 7)); header.addView(back, new LinearLayout.LayoutParams(Ui.dp(c, 30), Ui.dp(c, 30)));
+        LinearLayout heading = SettingsUi.row(c); title = PanelUi.title(c, "自定义"); title.setTextSize(13); title.setAccessibilityHeading(true); title.setSingleLine(); title.setEllipsize(android.text.TextUtils.TruncateAt.END); heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1)); count = Ui.text(c, "", 9, Ui.MUTED); count.setSingleLine(); count.setPadding(Ui.dp(c, 3), 0, Ui.dp(c, 3), 0); heading.addView(count); if (getResources().getConfiguration().fontScale > 1.15f) { title.setText("编辑"); count.setVisibility(GONE); } header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        undoButton = PanelUi.button(c, "撤销", this::undo); undoButton.setTag("control-editor-undo"); undoButton.setPadding(Ui.dp(c, 8), 0, Ui.dp(c, 8), 0); undoButton.setBackground(Ui.ripple(c, 0, 12)); header.addView(undoButton);
+        Button done = PanelUi.button(c, "完成", this::save); done.setTag("control-editor-done"); done.setPadding(Ui.dp(c, 8), 0, Ui.dp(c, 8), 0); done.setBackground(Ui.ripple(c, 0, 12)); header.addView(done); page.addView(header);
+        for (Button action : new Button[]{undoButton, done}) { action.setTextSize(11); action.setMinHeight(Ui.dp(c, 30)); action.setMinimumHeight(Ui.dp(c, 30)); action.setIncludeFontPadding(false); }
         selectedScroll = new ScrollView(c); selectedScroll.setTag("control-selected-scroll"); selectedScroll.setFillViewport(false); selectedScroll.setClipToPadding(false);
-        selected = new ControlEditGrid(c, prefs.panelColumns(), this::options, (id, view) -> startDrag(id, true, view)); selected.items(draft); selectedScroll.addView(selected);
-        expand = SettingsUi.button(c, "+ 添加按钮", this::showPicker); expand.setTag("control-editor-add");
+        selected = new ControlEditGrid(c, this::options, (id, view) -> startDrag(id, true, view)); selected.items(draft); selectedScroll.addView(selected);
+        expand = PanelUi.button(c, "+ 添加按钮", this::showPicker); expand.setTag("control-editor-add");
+        expandSlot=new PanelActionSlot(expand);
         workspace = new Workspace(c); workspace.addView(selectedScroll); page.addView(workspace, new LinearLayout.LayoutParams(-1, 0, 1)); attachCandidates();
         if (restored != null) selectedScroll.post(() -> selectedScroll.scrollTo(0, restored.getInt("selected-y")));
         setOnDragListener((view, event) -> dragEvent(event)); update(); setAccessibilityPaneTitle("控制中心自定义"); requestFocus();
@@ -75,26 +80,26 @@ final class ControlEditorView extends FrameLayout {
         if (candidates != null && candidates.closeSearch()) return;
         if (expanded) { collapseCandidates(); return; }
         if (draft.equals(original)) { finish.run(); return; }
-        DetailSheet sheet = sheet("放弃这次编辑？"); sheet.content.addView(SettingsUi.settingRow(getContext(), 0, "尚未保存", "返回后保留原来的按钮和顺序。", null)); Button discard = SettingsUi.button(getContext(), "放弃更改", finish); discard.setTag("control-editor-discard"); sheet.content.addView(discard); sheet.content.addView(SettingsUi.button(getContext(), "继续编辑", this::dismissModal));
+        DetailSheet sheet = sheet("放弃这次编辑？"); sheet.content.addView(PanelUi.row(getContext(), 0, "尚未保存", "返回后保留原来的按钮和顺序。", null)); Button discard = PanelUi.button(getContext(), "放弃更改", finish); discard.setTag("control-editor-discard"); sheet.content.addView(discard); sheet.content.addView(PanelUi.button(getContext(), "继续编辑", this::dismissModal));
     }
     private void save() {
         cancelDrag();
-        if (!prefs.actions("panel").equals(original)) { DetailSheet sheet = sheet("配置已在别处更新"); sheet.content.addView(SettingsUi.settingRow(getContext(), 0, "本次草稿未保存", "请返回控制中心后重新编辑，以保留新的配置。", null)); sheet.content.addView(SettingsUi.button(getContext(), "返回控制中心", finish)); return; }
+        if (!prefs.actions("panel").equals(original)) { DetailSheet sheet = sheet("配置已在别处更新"); sheet.content.addView(PanelUi.row(getContext(), 0, "本次草稿未保存", "请返回控制中心后重新编辑，以保留新的配置。", null)); sheet.content.addView(PanelUi.button(getContext(), "返回控制中心", finish)); return; }
         prefs.saveActions("panel", draft); finish.run();
     }
     void showPicker() { if (expanded) return; cancelDrag(); expanded = true; attachCandidates(); }
     private void collapseCandidates() { cancelDrag(); expanded = false; attachCandidates(); }
     private void attachCandidates() {
         if (candidates != null) { candidateState = candidates.snapshot(); getContext().getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(getWindowToken(), 0); workspace.removeView(candidates); candidates = null; }
-        workspace.removeView(expand);
-        if (expanded) { candidates = new ControlCandidatesView(getContext(), prefs.panelColumns(), draft, candidateState, this::chooseCandidate, (id, view) -> startDrag(id, false, view), this::collapseCandidates); workspace.addView(candidates); }
-        else workspace.addView(expand);
+        workspace.removeView(expandSlot);
+        if (expanded) { candidates = new ControlCandidatesView(getContext(), draft, candidateState, this::chooseCandidate, (id, view) -> startDrag(id, false, view), this::collapseCandidates); workspace.addView(candidates); }
+        else workspace.addView(expandSlot);
         workspace.requestLayout();
     }
     private void chooseCandidate(String id) {
         if (draft.contains(id)) { reveal(id); return; }
         if (id.startsWith("tile:")) {
-            DetailSheet sheet = sheet(ActionCatalog.label(getContext(), id)); sheet.content.addView(SettingsUi.settingRow(getContext(), R.drawable.ic_ms_info, "实验性应用磁贴", "添加不自动注册或授权，实际执行能力由系统与原应用决定。", null));
+            DetailSheet sheet = sheet(ActionCatalog.label(getContext(), id)); sheet.content.addView(PanelUi.row(getContext(), R.drawable.ic_ms_info, "实验性应用磁贴", "添加不自动注册或授权，实际执行能力由系统与原应用决定。", null));
             option(sheet, "添加到控制中心", R.drawable.ic_ms_add, "control-tile-add", () -> insert(id, draft.size())); option(sheet, "注册到系统快捷设置", R.drawable.ic_ms_settings, "control-tile-register", () -> registerTile.accept(id));
         } else insert(id, draft.size());
     }
@@ -116,9 +121,9 @@ final class ControlEditorView extends FrameLayout {
         option(sheet, "移除按钮", R.drawable.ic_ms_close, "order-menu-remove", () -> remove(id));
         if (id.startsWith("tile:")) option(sheet, "注册到系统快捷设置", R.drawable.ic_ms_settings, "control-tile-register", () -> registerTile.accept(id));
     }
-    private void option(DetailSheet sheet, String label, int icon, String tag, Runnable action) { View row = SettingsUi.settingRow(getContext(), icon, label, "", () -> { dismissModal(); action.run(); }); row.setTag(tag); sheet.content.addView(row); }
-    private DetailSheet sheet(String label) { cancelDrag(); dismissModal(); modal = new DetailSheet(getContext(), label, this::dismissModal); modal.settingsStyle(); addView(modal, new FrameLayout.LayoutParams(-1, -1)); modal.enter(null); return modal; }
-    private void dismissModal() { if (modal != null) removeView(modal); modal = null; }
+    private void option(DetailSheet sheet, String label, int icon, String tag, Runnable action) { View row = PanelUi.row(getContext(), icon, label, "", () -> { dismissModal(); action.run(); }); row.setTag(tag); sheet.content.addView(row); }
+    private DetailSheet sheet(String label) { cancelDrag(); dismissModal(); if (glass != null) glass.beginModal(this); modal = new DetailSheet(getContext(), label, this::dismissModal); modal.panelStyle(); addView(modal, new FrameLayout.LayoutParams(-1, -1)); modal.enter(null, glass); return modal; }
+    private void dismissModal() { if (modal != null) { removeView(modal); if (glass != null) glass.endModal(); } modal = null; }
 
     private boolean startDrag(String id, boolean fromSelected, View origin) {
         if (drag != null || modal != null || !fromSelected && draft.contains(id)) return false;
@@ -147,7 +152,7 @@ final class ControlEditorView extends FrameLayout {
     private Rect rect(View view) { int[] origin = new int[2], location = new int[2]; getLocationOnScreen(origin); view.getLocationOnScreen(location); return new Rect(location[0] - origin[0], location[1] - origin[1], location[0] - origin[0] + view.getWidth(), location[1] - origin[1] + view.getHeight()); }
     private void locateDrag() {
         if (drag == null) return; int before = target; Rect selectedArea = rect(selectedScroll); boolean overSelected = selectedArea.contains((int) dragX, (int) dragY);
-        removeTarget = drag.selected() && rect(candidates == null ? expand : candidates).contains((int) dragX, (int) dragY); target = -1; scrollStep = 0;
+        removeTarget = drag.selected() && rect(candidates == null ? expandSlot : candidates).contains((int) dragX, (int) dragY); target = -1; scrollStep = 0;
         if (overSelected && (drag.selected() || draft.size() < 30)) {
             Rect gridArea = rect(selected); target = selected.slot(dragX - gridArea.left, dragY - gridArea.top); selected.preview(drag.id(), target);
             int edge = Math.min(Ui.dp(getContext(), 24), selectedScroll.getHeight() / 3); scrollStep = dragY < selectedArea.top + edge ? -Ui.dp(getContext(), 5) : dragY > selectedArea.bottom - edge ? Ui.dp(getContext(), 5) : 0;
@@ -158,22 +163,25 @@ final class ControlEditorView extends FrameLayout {
     void cancelDrag() { if (drag != null) drag.origin().cancelDragAndDrop(); clearDrag(); }
     private void clearDrag() { removeCallbacks(edgeScroll); if (drag != null) drag.origin().setAlpha(1); drag = null; target = -1; removeTarget = false; scrollStep = 0; selected.clearPreview(); expand.setText("+ 添加按钮"); workspace.invalidate(); }
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) { super.onSizeChanged(w, h, oldw, oldh); if (oldw > 0 && oldh > 0 && (w != oldw || h != oldh)) cancelDrag(); }
-    @Override protected void onDetachedFromWindow() { cancelDrag(); super.onDetachedFromWindow(); }
+    @Override protected void onDetachedFromWindow() { cancelDrag(); dismissModal(); super.onDetachedFromWindow(); }
 
     private final class Workspace extends ViewGroup {
         private final Paint highlight = new Paint(Paint.ANTI_ALIAS_FLAG);
         private int selectedHeight;
-        Workspace(Context c) { super(c); setTag("control-editor-workspace"); highlight.setColor(SettingsUi.DANGER); }
+        Workspace(Context c) { super(c); setTag("control-editor-workspace"); setClipChildren(false); setClipToPadding(false); highlight.setColor(SettingsUi.DANGER); }
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
             int width = MeasureSpec.getSize(widthSpec), height = MeasureSpec.getSize(heightSpec), exactWidth = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY);
             if (expanded) {
-                int minimum = Ui.dp(getContext(), 48), candidateChrome = candidates.chromeHeight(exactWidth);
+                selected.measure(exactWidth, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+                int minimum = selected.getChildCount() == 0 ? Ui.dp(getContext(), ControlEditGrid.CELL_HEIGHT) : selected.getChildAt(0).getMeasuredHeight(), candidateChrome = candidates.chromeHeight(exactWidth);
                 selectedHeight = Math.max(minimum, Math.min(Math.round((height - candidateChrome) * .44f), height - candidateChrome - minimum)); selectedHeight = Math.max(0, Math.min(height, selectedHeight));
+                // Spend leftover height on candidates instead of showing a clipped selected row.
+                if (selectedHeight >= minimum) selectedHeight = selectedHeight / minimum * minimum;
                 candidates.measure(exactWidth, MeasureSpec.makeMeasureSpec(Math.max(0, height - selectedHeight), MeasureSpec.EXACTLY));
-            } else { expand.measure(exactWidth, MeasureSpec.makeMeasureSpec(height, MeasureSpec.AT_MOST)); selectedHeight = Math.max(0, height - expand.getMeasuredHeight()); }
+            } else { expandSlot.measure(exactWidth, MeasureSpec.makeMeasureSpec(height, MeasureSpec.AT_MOST)); selectedHeight = Math.max(0, height - expandSlot.getMeasuredHeight()); }
             selectedScroll.measure(exactWidth, MeasureSpec.makeMeasureSpec(selectedHeight, MeasureSpec.EXACTLY)); setMeasuredDimension(width, height);
         }
-        @Override protected void onLayout(boolean changed, int l, int t, int r, int b) { selectedScroll.layout(0, 0, getWidth(), selectedHeight); View lower = expanded ? candidates : expand; lower.layout(0, selectedHeight, getWidth(), getHeight()); }
+        @Override protected void onLayout(boolean changed, int l, int t, int r, int b) { selectedScroll.layout(0, 0, getWidth(), selectedHeight); View lower = expanded ? candidates : expandSlot; lower.layout(0, selectedHeight, getWidth(), getHeight()); }
         @Override protected void dispatchDraw(Canvas canvas) {
             super.dispatchDraw(canvas);
             if (removeTarget) { highlight.setStyle(Paint.Style.FILL); highlight.setColor(0xCC301817); canvas.drawRoundRect(1, selectedHeight + 1, getWidth() - 1, getHeight() - 1, Ui.dp(getContext(), 20), Ui.dp(getContext(), 20), highlight); highlight.setColor(SettingsUi.DANGER); highlight.setTextSize(Ui.dp(getContext(), 16)); highlight.setTextAlign(Paint.Align.CENTER); canvas.drawText("松手移除 · 可撤销", getWidth() / 2f, selectedHeight + (getHeight() - selectedHeight) / 2f, highlight); }

@@ -34,13 +34,13 @@ final class AppFolderGrid extends ViewGroup {
         for (String id : members) { View view = bind.apply(id); view.setTag("folder-member:" + id); view.setOnClickListener(v -> listener.launch(id)); view.setOnLongClickListener(v -> { listener.menu(v, id); return true; }); addView(view); }
     }
     @Override protected void onMeasure(int w, int h) {
-        int width = Math.max(1, MeasureSpec.getSize(w)), row = Ui.dp(getContext(), 48), cell = width / 3;
+        int width = Math.max(1, MeasureSpec.getSize(w)), row = Ui.dp(getContext(), AppLauncherStyle.FOLDER_MEMBER_HEIGHT), cell = AppLauncherStyle.cellWidth(width, AppLauncherStyle.FOLDER_COLUMNS);
         for (int i = 0; i < getChildCount(); i++) { View view = getChildAt(i); view.measure(MeasureSpec.makeMeasureSpec(cell, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)); row = Math.max(row, view.getMeasuredHeight()); }
         for (int i = 0; i < getChildCount(); i++) getChildAt(i).measure(MeasureSpec.makeMeasureSpec(cell, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(row, MeasureSpec.EXACTLY));
-        setMeasuredDimension(width, row * ((members.size() + 2) / 3));
+        setMeasuredDimension(width, row * ((members.size() + AppLauncherStyle.FOLDER_COLUMNS - 1) / AppLauncherStyle.FOLDER_COLUMNS));
     }
-    @Override protected void onLayout(boolean changed, int l, int t, int r, int b) { for (int i = 0; i < members.size(); i++) { View view = getChildAt(i); int index = order.indexOf(members.get(i)), x = index % 3 * getWidth() / 3, y = index / 3 * view.getMeasuredHeight(); view.layout(x, y, x + view.getMeasuredWidth(), y + view.getMeasuredHeight()); } }
-    private int hit(float x, float y) { if (x < 0 || y < 0 || x >= getWidth() || y >= getHeight()) return -1; int index = (int) y / Math.max(1, getChildAt(0).getHeight()) * 3 + Math.min(2, (int) (x * 3 / getWidth())); return index < order.size() ? index : -1; }
+    @Override protected void onLayout(boolean changed, int l, int t, int r, int b) { for (int i = 0; i < members.size(); i++) { View view = getChildAt(i); int index = order.indexOf(members.get(i)), x = index % AppLauncherStyle.FOLDER_COLUMNS * AppLauncherStyle.cellWidth(getWidth(), AppLauncherStyle.FOLDER_COLUMNS), y = index / AppLauncherStyle.FOLDER_COLUMNS * view.getMeasuredHeight(); view.layout(x, y, x + view.getMeasuredWidth(), y + view.getMeasuredHeight()); } }
+    private int hit(float x, float y) { if (x < 0 || y < 0 || x >= getWidth() || y >= getHeight()) return -1; int index = (int) y / Math.max(1, getChildAt(0).getHeight()) * AppLauncherStyle.FOLDER_COLUMNS + Math.min(AppLauncherStyle.FOLDER_COLUMNS - 1, (int) (x * AppLauncherStyle.FOLDER_COLUMNS / getWidth())); return index < order.size() ? index : -1; }
     @Override protected void dispatchDraw(Canvas canvas) { super.dispatchDraw(canvas); if (held && !external && pressed != null) { View cell = getChildAt(members.indexOf(pressed)); paint.setColor(0xCC9BD5F5); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Ui.dp(getContext(), 2)); canvas.drawRoundRect(cell.getLeft() + 2, cell.getTop() + 2, cell.getRight() - 2, cell.getBottom() - 2, Ui.dp(getContext(), 10), Ui.dp(getContext(), 10), paint); } }
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked(); x = event.getX(); y = event.getY(); rawX = event.getRawX(); rawY = event.getRawY();

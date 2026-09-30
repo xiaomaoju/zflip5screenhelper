@@ -23,6 +23,8 @@ final class LevelSlider extends View {
     private final int minimum, maximum;
     private final IntConsumer commit;
     private int value, startValue;
+    private GlassSurface glass;
+    void glass(GlassSurface surface) { glass = surface; invalidate(); }
     private float downX, downY;
     private boolean tracking, moving, held, canceled;
     private final RuntimeVisuals.Press emphasis = new RuntimeVisuals.Press(this);
@@ -38,14 +40,15 @@ final class LevelSlider extends View {
         super.onDraw(canvas);
         float labelSpace = Ui.dp(getContext(), 18), bottom = getHeight() - labelSpace;
         bounds.set(0, 0, getWidth(), bottom); float radius = Math.min(Math.min(getWidth(), bottom) / 2f, Ui.dp(getContext(), Ui.CONTROL_CORNER_DP));
-        paint.setStyle(Paint.Style.FILL); paint.setColor(RuntimeVisuals.blend(0xE6262A31, 0xFF363E49, emphasis.value)); canvas.drawRoundRect(bounds, radius, radius, paint);
+        if (glass != null) { glass.setState(getDrawableState()); glass.setBounds(0,0,getWidth(),Math.round(bottom)); glass.draw(canvas,bounds); radius = Math.min(getWidth(),bottom)/2f; }
+        else { paint.setStyle(Paint.Style.FILL); paint.setColor(RuntimeVisuals.blend(0xE6262A31, 0xFF363E49, emphasis.value)); canvas.drawRoundRect(bounds, radius, radius, paint); }
         if (isEnabled()) {
             outline.reset(); outline.addRoundRect(bounds, radius, radius, Path.Direction.CW);
             canvas.save(); canvas.clipPath(outline); paint.setColor(Ui.TEXT);
             canvas.drawRect(0, bottom * (1 - value / (float) maximum), getWidth(), bottom, paint); canvas.restore();
         }
         float stroke = Math.max(1, getResources().getDisplayMetrics().density * .5f); bounds.inset(stroke / 2, stroke / 2);
-        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke); paint.setColor(isActivated() ? 0xFFAFD3FF : RuntimeVisuals.blend(0x24FFFFFF, 0xCCDBEAFF, emphasis.value)); canvas.drawRoundRect(bounds, radius, radius, paint); paint.setStyle(Paint.Style.FILL);
+        if (glass == null) { paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke); paint.setColor(isActivated() ? 0xFFAFD3FF : RuntimeVisuals.blend(0x24FFFFFF, 0xCCDBEAFF, emphasis.value)); canvas.drawRoundRect(bounds, radius, radius, paint); paint.setStyle(Paint.Style.FILL); }
         int size = Ui.dp(getContext(), 21), x = (getWidth() - size) / 2, y = Math.round(bottom) - size - Ui.dp(getContext(), 13);
         icon.setTint(Ui.TEXT); icon.setAlpha(isEnabled() ? 255 : 95); icon.setBounds(x, y, x + size, y + size); icon.draw(canvas);
         // Short tracks can put the fill boundary through the icon; tint each covered portion.

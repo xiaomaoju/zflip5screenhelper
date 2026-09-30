@@ -26,11 +26,13 @@ public class DockGeometryTest {
             assertTrue(strip.right() <= cut.x() || strip.x() >= cut.right() || strip.bottom() <= cut.y() || strip.y() >= cut.bottom());
             assertTrue(strip.right() <= dock.touch().x() || strip.x() >= dock.touch().right() || strip.bottom() <= dock.touch().y() || strip.y() >= dock.touch().bottom());
             assertEquals(strip.y(), entry.panel().bottom());
-            assertEquals(Math.min(rotation == 0 ? cut.y() : height, height - home) - margin, strip.bottom());
+            assertEquals(Math.min(rotation == 0 ? cut.y() : height, height - home), strip.bottom());
             if (rotation == 0) assertTrue(strip.x() > cut.x());
-            DockGeometry.Chrome chrome = DockGeometry.chrome(entry, density);
+            DockGeometry.Chrome chrome = DockGeometry.panelEntryChrome(entry, density);
             assertEquals(chrome.firstHandle().y(), chrome.secondHandle().y());
             assertTrue(chrome.firstHandle().width() > chrome.firstHandle().height());
+            assertEquals(Math.round(density), strip.height() - chrome.firstHandle().bottom());
+            assertEquals(Math.round(density), strip.height() - chrome.secondHandle().bottom());
         }
     }
     @Test public void missingCutoutStillKeepsBottomUpwardEntryWithCalibratedNormalPosture() {

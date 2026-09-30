@@ -114,7 +114,7 @@ final class AppWorkspaceChecks {
             main(() -> grid.compact(true)); require(prefs.workspaceCompact() && prefs.workspace().equals(prefs.workspace().compact()), "automatic packing removes gaps but retains order");
             main(() -> grid.moveTo(second, 0)); require(prefs.workspace().slot(second) == 0 && prefs.workspace().size() == apps.size(), "accessible movement inserts without losing an app");
             main(() -> grid.compact(false)); JSONObject exported = ((MainActivity) activity).exportConfigurationData();
-            require(exported.getInt("version") == 12 && exported.getJSONObject("layout").getInt("version") == 9, "new configuration version contains workspace");
+            require(exported.getInt("version") == 13 && exported.getJSONObject("layout").getInt("version") == 9, "current configuration envelope contains the workspace layout");
             AppWorkspaceLayout exportedLayout = prefs.workspace(); main(() -> prefs.saveWorkspace(new AppWorkspaceLayout(), false));
             main(() -> { try { ((MainActivity) activity).applyConfigurationData(exported); } catch (Exception error) { throw new AssertionError(error); } }); require(exportedLayout.equals(prefs.workspace()), "configuration round-trip preserves every placement");
             for (Object invalid : new Object[]{-1, 4096, 1.5, "1"}) {

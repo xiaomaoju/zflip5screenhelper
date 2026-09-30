@@ -116,6 +116,8 @@ public final class Prefs {
     public boolean tapHandles() { return false; }
     public boolean statusEnabled() { return data.getBoolean("status_enabled", true); }
     public boolean autoHideDock() { return data.getBoolean("dock_auto_hide", true); }
+    public String homeAction() { String value = data.getString("home_action", "cards"); return validHomeAction(value) ? value : "cards"; }
+    static boolean validHomeAction(String value) { return "clock".equals(value) || "cards".equals(value); }
     public boolean avoidKeyboard() { return data.getBoolean("avoid_keyboard", true); }
     public boolean haptics() { return data.getBoolean("haptics", true); }
     public String handSide() { String value = data.getString("hand_side", "auto"); return validHand(value) ? value : "auto"; }
@@ -241,9 +243,10 @@ public final class Prefs {
     public float heightRatio() { return Math.max(.05f, Math.min(.22f, data.getFloat("dock_height", .088f))); }
     JSONObject layoutSnapshot() throws JSONException {
         JSONObject panelOptions = panelSnapshot(); panelOptions.remove("columns");
-        JSONObject layout = new JSONObject().put("version", 9).put("workspace", workspaceJson(workspace())).put("workspaceColumns", workspace().columns()).put("workspaceRows", workspace().rows()).put("workspaceLocked", workspaceLocked()).put("workspaceLabels", workspaceLabels()).put("workspaceBadges", workspaceBadges()).put("workspaceDensity", workspaceDensity()).put("workspaceAliases", workspaceAliases()).put("workspaceCompact", workspaceCompact()).put("panelColumns", panelColumns()).put("panelOptions", panelOptions).put("hubPins", new JSONArray(hubPins())).put("hubSort", hubSort()).put("chrome", chromeStyle()).put("statusScale", statusScale()).put("statusSafeLeft", statusSafeLeft()).put("statusSafeRight", statusSafeRight()).put("batteryPercent", batteryPercent()).put("avoidNavigation", avoidNavigation()).put("navigationGap", navigationGap()).put("tapHandles", tapHandles()).put("hand", handSide()).put("perPage", perPage()).put("pinned", pinnedAction()).put("hubPinned", hubPinned()).put("damping", damping())
+        JSONObject layout = new JSONObject().put("version", 10).put("workspace", workspaceJson(workspace())).put("workspaceColumns", workspace().columns()).put("workspaceRows", workspace().rows()).put("workspaceLocked", workspaceLocked()).put("workspaceLabels", workspaceLabels()).put("workspaceBadges", workspaceBadges()).put("workspaceDensity", workspaceDensity()).put("workspaceAliases", workspaceAliases()).put("workspaceCompact", workspaceCompact()).put("panelColumns", panelColumns()).put("panelOptions", panelOptions).put("hubPins", new JSONArray(hubPins())).put("hubSort", hubSort()).put("chrome", chromeStyle()).put("statusScale", statusScale()).put("statusSafeLeft", statusSafeLeft()).put("statusSafeRight", statusSafeRight()).put("batteryPercent", batteryPercent()).put("avoidNavigation", avoidNavigation()).put("navigationGap", navigationGap()).put("tapHandles", tapHandles()).put("hand", handSide()).put("perPage", perPage()).put("pinned", pinnedAction()).put("hubPinned", hubPinned()).put("damping", damping())
             .put("dock", new JSONArray(actions("dock"))).put("panel", new JSONArray(actions("panel"))).put("favorites", new JSONArray(actions("favorites")))
             .put("automatic", data.getBoolean("auto_placement", true)).put("width", widthRatio()).put("height", heightRatio()).put("blur", panelBlur()).put("statusEnabled", statusEnabled());
+        layout.put("homeAction", homeAction());
         JSONArray corners = new JSONArray(); for (int rotation = 0; rotation < 4; rotation++) corners.put(corner(rotation)); layout.put("corners", corners);
         JSONObject status = new JSONObject(); for (String item : STATUS_ITEMS) status.put(item, statusItem(item)); return layout.put("statusItems", status);
     }
@@ -252,7 +255,10 @@ public final class Prefs {
         for (String key : new String[]{"version", "perPage", "damping"}) workspaceInteger(layout.get(key));
         for (String key : new String[]{"automatic", "blur", "statusEnabled", "batteryPercent", "avoidNavigation", "tapHandles"}) if (layout.has(key) && !(layout.get(key) instanceof Boolean)) throw new IllegalArgumentException("布局开关值无效");
         for (String key : new String[]{"width", "height"}) if (!(layout.get(key) instanceof Number)) throw new IllegalArgumentException("布局尺寸无效");
-        int version = layout.getInt("version"); if (version < 1 || version > 9) throw new IllegalArgumentException("不支持的布局版本");
+        int version = layout.getInt("version"); if (version < 1 || version > 10) throw new IllegalArgumentException("不支持的布局版本");
+        Object home = version >= 10 ? layout.get("homeAction") : "cards";
+        if (!(home instanceof String action) || !validHomeAction(action)) throw new IllegalArgumentException("Home 按钮效果无效");
+        update.putString("home_action", (String) home);
         AppWorkspaceLayout workspace = version >= 8 ? readWorkspace(layout.getJSONArray("workspace"), version >= 9 ? workspaceInteger(layout.get("workspaceColumns")) : 5, version >= 9 ? workspaceInteger(layout.get("workspaceRows")) : 3, version >= 9) : new AppWorkspaceLayout();
         Object compact = version >= 8 ? layout.get("workspaceCompact") : false;
         if (!(compact instanceof Boolean)) throw new IllegalArgumentException("自动补位设置无效");
@@ -308,6 +314,7 @@ public final class Prefs {
     }
     void resetLayout() throws JSONException {
         SharedPreferences.Editor update = data.edit().putString("layout_undo", layoutSnapshot().toString());
+        update.remove("home_action");
         update.remove("hub_workspace").remove("hub_workspace_compact").remove("hub_workspace_locked").remove("hub_workspace_labels").remove("hub_workspace_badges").remove("hub_workspace_density").remove("hub_workspace_aliases");
         for (String key : new String[]{"panel_columns", "panel_density", "panel_labels", "panel_label_size", "panel_tools_position", "panel_brightness", "panel_volume", "panel_media", "panel_media_idle", "panel_undo", "hub_pins", "hub_sort", "chrome_style", "status_scale", "status_safe_left", "status_safe_right", "battery_percent", "avoid_navigation", "navigation_gap", "tap_handles", "hand_side", "per_page", "damping", "pinned_action", "hub_pinned", "dock", "panel", "favorites", "auto_placement", "dock_width", "dock_height", "panel_blur", "status_enabled"}) update.remove(key);
         for (int rotation = 0; rotation < 4; rotation++) update.remove("corner_" + rotation);

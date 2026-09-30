@@ -20,7 +20,8 @@ import java.util.function.Consumer;
 
 /** At most 30 selected controls. Preview slots never mutate the owning editor's draft. */
 final class ControlEditGrid extends ViewGroup {
-    private final int columns;
+    static final int CELL_HEIGHT = 40;
+    private int columns = 1;
     private final Consumer<String> click;
     private final BiPredicate<String, View> drag;
     private final ArrayList<String> items = new ArrayList<>(), positions = new ArrayList<>();
@@ -28,8 +29,8 @@ final class ControlEditGrid extends ViewGroup {
     private int cellHeight, marker = -1;
     private String moving;
 
-    ControlEditGrid(Context c, int columns, Consumer<String> click, BiPredicate<String, View> drag) {
-        super(c); this.columns = columns; this.click = click; this.drag = drag; setTag("control-selected-grid"); setClipChildren(false);
+    ControlEditGrid(Context c, Consumer<String> click, BiPredicate<String, View> drag) {
+        super(c); this.click = click; this.drag = drag; setTag("control-selected-grid"); setClipChildren(false);
         outline.setColor(SettingsUi.ACCENT); outline.setStyle(Paint.Style.STROKE); outline.setStrokeWidth(Ui.dp(c, 2));
     }
     void items(List<String> values) {
@@ -46,6 +47,7 @@ final class ControlEditGrid extends ViewGroup {
         requestLayout(); invalidate();
     }
     int columns() { return columns; }
+    static int columnsForWidth(Context c, int width) { return Math.max(1, Math.min(30, width / Math.max(1, Ui.dp(c, 44)))); }
     int slot(float x, float y) { return Math.min(items.size(), Math.max(0, (int) (y / Math.max(1, cellHeight))) * columns + Math.min(columns - 1, Math.max(0, (int) (x * columns / Math.max(1, getWidth()))))); }
     void preview(String id, int target) {
         if (target == marker && id.equals(moving)) return;
@@ -54,7 +56,8 @@ final class ControlEditGrid extends ViewGroup {
     }
     void clearPreview() { if (moving == null && marker == -1) return; moving = null; marker = -1; positions.clear(); positions.addAll(items); requestLayout(); invalidate(); }
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
-        int width = MeasureSpec.getSize(widthSpec), cellWidth = Math.max(1, width / columns); cellHeight = Ui.dp(getContext(), 72);
+        int width = MeasureSpec.getSize(widthSpec); columns = columnsForWidth(getContext(), width);
+        int cellWidth = Math.max(1, width / columns); cellHeight = Ui.dp(getContext(), CELL_HEIGHT);
         for (int i = 0; i < getChildCount(); i++) { View child = getChildAt(i); child.measure(MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)); cellHeight = Math.max(cellHeight, child.getMeasuredHeight()); }
         for (int i = 0; i < getChildCount(); i++) getChildAt(i).measure(MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(cellHeight, MeasureSpec.EXACTLY));
         setMeasuredDimension(width, Math.max(1, (positions.size() + columns - 1) / columns) * cellHeight);
@@ -81,13 +84,18 @@ final class ControlEditGrid extends ViewGroup {
         final ImageView icon;
         private final FrameLayout face;
         private final TextView label, badge;
+        private PanelGlassSession glass;
         Cell(Context c) {
-            super(c); setOrientation(VERTICAL); setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL); setPadding(Ui.dp(c, 2), Ui.dp(c, 5), Ui.dp(c, 2), Ui.dp(c, 5)); setMinimumHeight(Ui.dp(c, 72)); setBackground(Ui.ripple(c, 0, 12));
-            face = SettingsUi.shortcutIcon(c, null); icon = face.findViewWithTag("app-icon"); addView(face, new LinearLayout.LayoutParams(Ui.dp(c, 40), Ui.dp(c, 40)));
+            super(c); setOrientation(VERTICAL); setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL); setPadding(Ui.dp(c, 2), Ui.dp(c, 1), Ui.dp(c, 2), Ui.dp(c, 1)); setMinimumHeight(Ui.dp(c, CELL_HEIGHT)); setBackground(Ui.ripple(c, 0, 12));
+            face = SettingsUi.shortcutIcon(c, null); icon = face.findViewWithTag("app-icon"); icon.setLayoutParams(new FrameLayout.LayoutParams(Ui.dp(c, 21), Ui.dp(c, 21), Gravity.CENTER)); addView(face, new LinearLayout.LayoutParams(Ui.dp(c, 28), Ui.dp(c, 28)));
             badge = Ui.text(c, "", 10, SettingsUi.ACCENT); badge.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, Ui.dp(c, 10)); badge.setGravity(Gravity.CENTER); badge.setIncludeFontPadding(false); badge.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            face.addView(badge, new FrameLayout.LayoutParams(Ui.dp(c, 14), Ui.dp(c, 14), Gravity.TOP | Gravity.RIGHT));
-            label = Ui.text(c, "", 12, SettingsUi.TEXT); label.setGravity(Gravity.CENTER); label.setMaxLines(2); label.setEllipsize(TextUtils.TruncateAt.END); label.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); LinearLayout.LayoutParams words = new LinearLayout.LayoutParams(-1, -2); words.topMargin = Ui.dp(c, 4); addView(label, words); setFocusable(true);
+            face.addView(badge, new FrameLayout.LayoutParams(Ui.dp(c, 10), Ui.dp(c, 10), Gravity.TOP | Gravity.RIGHT));
+            label = Ui.text(c, "", 8, Ui.TEXT); label.setGravity(Gravity.CENTER); label.setSingleLine(); label.setIncludeFontPadding(false); label.setEllipsize(TextUtils.TruncateAt.END); label.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); LinearLayout.LayoutParams words = new LinearLayout.LayoutParams(-1, -2); addView(label, words); setFocusable(true);
         }
+        void glass(PanelGlassSession session) { glass=session; restoreGlass(); }
+        private void restoreGlass() { if (glass!=null && glass.active()) { face.setDuplicateParentStateEnabled(true); glass.bind(face,GlassSurface.Role.PICKER); } else glass=null; }
+        @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); restoreGlass(); }
+        @Override public void onFinishTemporaryDetach() { super.onFinishTemporaryDetach(); restoreGlass(); }
         void bind(String id, String name, Drawable drawable, boolean added, boolean editable) {
             setAlpha(1); icon.setImageDrawable(drawable == null ? Ui.icon(getContext(), R.drawable.ic_ms_apps, SettingsUi.TEXT) : drawable); label.setText(name); badge.setText(editable ? "⋮" : added ? "✓" : "+"); setSelected(added);
             setContentDescription(name); setStateDescription(editable ? "点按管理，长按拖动" : added ? "已添加" : "点按添加，也可拖入上方"); setTooltipText(name);

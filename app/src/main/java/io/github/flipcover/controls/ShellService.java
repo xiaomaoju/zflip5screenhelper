@@ -16,6 +16,9 @@ public final class ShellService extends IShellService.Stub {
     private final Context ownerContext;
     private final SystemControlCenter systemControlCenter = new SystemControlCenter();
     private long lastWifiScan;
+    private SystemConnectivity connectivity;
+    private SystemConnectivity connectivity() { if (connectivity == null) connectivity = new SystemConnectivity(ownerContext); return connectivity; }
+    @Override public synchronized void watchConnectivity(IConnectivityListener listener) { checkCaller(); connectivity().watch(listener); }
     public ShellService() { ownerUid = -1; ownerContext = null; }
     public ShellService(Context context) { ownerUid = context.getApplicationInfo().uid; ownerContext = context; }
     private void checkCaller() {
@@ -31,11 +34,13 @@ public final class ShellService extends IShellService.Stub {
                 case "states" -> states();
                 case "system_controls" -> systemControls(value);
                 case "wifi_details" -> wifiDetails(value);
+                case "connectivity_states", "nfc_details", "hotspot_details", "nfc", "hotspot", "nfc_secure", "hotspot_config" -> connectivity().execute(operation, displayId, value, component);
                 case "wifi", "bluetooth", "data", "airplane", "dnd" -> switchSetting(operation, value);
                 case "tile_add", "tile_click" -> tile(operation, component);
                 case "diagnostics" -> diagnostics(displayId);
                 case "recent_tasks", "recent_clear" -> recentTasks(displayId, component, operation.equals("recent_clear"));
                 case "recent_open" -> reply(true, "任务恢复结果", new SystemRecentTasks(ownerContext, ownerUid).open(displayId, component).toString());
+                case "native_home" -> nativeHome(displayId);
                 default -> reply(false, "不支持的操作", "");
             };
         } catch (Exception e) {
@@ -67,7 +72,7 @@ public final class ShellService extends IShellService.Stub {
         return reply(verified, verified ? automatic ? "外屏旋转已交回系统" : "系统已确认锁定 " + (rotation * 90) + "°" : "已提交旋转，但无法确认结果", read.text);
     }
     private String brightness(int display, int value, boolean write) throws Exception {
-        brightnessDisplay(display);
+        activeSecondaryDisplay(display);
         Class<?> type = Class.forName("android.hardware.display.DisplayManagerGlobal");
         Object manager = type.getMethod("getInstance").invoke(null);
         if (write) {
@@ -76,26 +81,34 @@ public final class ShellService extends IShellService.Stub {
             java.lang.reflect.Method persist = type.getMethod("setBrightness", int.class, float.class);
             // Match SystemUI's display-scoped slider: immediate brightness, then saved setting.
             temporary.invoke(manager, display, value / 100f);
-            try { brightnessDisplay(display); persist.invoke(manager, display, value / 100f); }
+            try { activeSecondaryDisplay(display); persist.invoke(manager, display, value / 100f); }
             catch (Exception error) {
                 try { temporary.invoke(manager, display, Float.NaN); } catch (Exception ignored) { }
                 throw error;
             }
         }
         java.lang.reflect.Method read = type.getMethod("getBrightness", int.class);
-        brightnessDisplay(display);
+        activeSecondaryDisplay(display);
         float actual = (float) read.invoke(manager, display);
         // DPC applies updates asynchronously; this bounded confirmation is only for this request.
         for (int attempt = 0; write && attempt < 4 && (!Float.isFinite(actual) || Math.abs(actual - value / 100f) > .02f); attempt++) {
-            android.os.SystemClock.sleep(60); brightnessDisplay(display); actual = (float) read.invoke(manager, display);
+            android.os.SystemClock.sleep(60); activeSecondaryDisplay(display); actual = (float) read.invoke(manager, display);
         }
         if (!Float.isFinite(actual) || actual < 0 || actual > 1) return reply(false, "此显示器没有返回可用亮度", "");
         boolean confirmed = !write || Math.abs(actual - value / 100f) <= .02f;
         return reply(confirmed, !write ? "外屏亮度" : confirmed ? "已提交外屏亮度，系统设置返回 " + Math.round(actual * 100) + "%" : "请求 " + value + "% 后系统仍返回 " + Math.round(actual * 100) + "%，请检查系统自动亮度或显示限制", String.valueOf(actual));
     }
-    private void brightnessDisplay(int id) {
+    private String nativeHome(int display) throws Exception {
+        activeSecondaryDisplay(display);
+        // Fixed component and owner user only; callers cannot supply an intent or shell command.
+        Output result = run("am", "start", "-W", "--user", String.valueOf(ownerUid / 100000), "--display", String.valueOf(display), "-n", "com.android.systemui/.subscreen.SubHomeActivity", "-f", "0x10000000");
+        activeSecondaryDisplay(display);
+        boolean accepted = result.ok() && result.text.contains("Status: ok") && result.text.contains("Activity: com.android.systemui/.subscreen.SubHomeActivity");
+        return reply(accepted, accepted ? "已返回三星原生卡片" : "三星未确认返回原生卡片，请重试", result.text);
+    }
+    private void activeSecondaryDisplay(int id) {
         secondary(id);
-        if (ownerContext == null) throw new IllegalStateException("亮度服务未就绪");
+        if (ownerContext == null) throw new IllegalStateException("外屏服务未就绪");
         android.view.Display target = ownerContext.getSystemService(android.hardware.display.DisplayManager.class).getDisplay(id);
         if (target == null || !target.isValid() || target.getState() != android.view.Display.STATE_ON || ownerContext.getSystemService(android.app.KeyguardManager.class).isKeyguardLocked()) throw new IllegalStateException("目标外屏已改变、息屏或锁定");
     }
@@ -110,6 +123,7 @@ public final class ShellService extends IShellService.Stub {
             values.put(pair[0], read.ok() && value.matches("[0-3]") ? Integer.parseInt(value) : -1);
         }
         values.put("system_controls", systemControlsState());
+        values.put("nfc", connectivity().state("nfc")).put("hotspot", connectivity().state("hotspot"));
         return reply(true, "已读取系统状态", values.toString());
     }
     private int systemControlsState() throws Exception {

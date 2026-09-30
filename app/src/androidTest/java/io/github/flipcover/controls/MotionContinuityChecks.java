@@ -29,6 +29,8 @@ final class MotionContinuityChecks {
                     checkSurface(edge, MotionEvent.ACTION_POINTER_DOWN);
                     checkPanelPull(edge, false);
                     checkPanelPull(edge, true);
+                    checkFreshPanelPull(edge, "notifications");
+                    checkFreshPanelPull(edge, "controls");
                 }
             });
             return "PASS: " + assertions + " motion continuity assertions; native component gestures, not Samsung overlay routing or frame-rate validation";
@@ -107,7 +109,7 @@ final class MotionContinuityChecks {
         DockGeometry.Placement entryPlace = placement(DockGeometry.BOTTOM);
         PanelEntryView dock = new PanelEntryView(activity, prefs, entryPlace, new DockView.Listener() {
             public void action(String id) { } public void configure() { }
-            public void beginPull(String page, float distance) { invoke(owner, "beginPanelPull", new Class<?>[]{String.class, float.class}, page, distance); }
+            public void beginPull(String page, float distance, float originY) { invoke(owner, "beginPanelPull", new Class<?>[]{String.class, float.class, float.class}, page, distance, originY); }
             public void pull(String page, float distance) { invoke(owner, "pullPanel", new Class<?>[]{String.class, float.class}, page, distance); }
             public void release(String page, float distance, float speed, boolean canceled) { invoke(owner, "releasePanel", new Class<?>[]{float.class, float.class, boolean.class}, distance, speed, canceled); }
         });
@@ -126,6 +128,57 @@ final class MotionContinuityChecks {
             event(dock, time, 160, MotionEvent.ACTION_CANCEL, x, y);
             require((boolean) field(owner, "panelTargetOpen") == previousTargetOpen && !(boolean) field(owner, "panelPulling"), "service cancellation restores prior target on edge " + edge);
         } finally { owner.closePanel(); }
+    }
+    private void checkFreshPanelPull(int rotation, String page) {
+        int width = rotation % 2 == 0 ? 720 : 748, height = rotation % 2 == 0 ? 748 : 720;
+        DockGeometry.Box[] cuts = {new DockGeometry.Box(351, 682, 369, 66), new DockGeometry.Box(0, 351, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(682, 0, 66, 369)};
+        float density = activity.getResources().getDisplayMetrics().density;
+        DockGeometry.Placement dockPlace = DockGeometry.resolve(width, height, java.util.List.of(cuts[rotation]), density, (rotation + 3) % 4, .46f, .088f, true);
+        DockGeometry.Placement entryPlace = DockGeometry.panelEntry(dockPlace, dockPlace, width, height, java.util.List.of(cuts[rotation]), density, 24);
+        CoverService owner = new CoverService(); owner.screenContext = activity; owner.prefs = prefs; owner.placement = dockPlace;
+        try { Method attach = android.content.ContextWrapper.class.getDeclaredMethod("attachBaseContext", android.content.Context.class); attach.setAccessible(true); attach.invoke(owner, activity); }
+        catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+        prefs.data.edit().putBoolean("panel_blur", false).commit();
+        FrameLayout host = new FrameLayout(activity); host.setLayoutParams(new android.view.WindowManager.LayoutParams(width, height));
+        android.view.WindowManager windows = (android.view.WindowManager) java.lang.reflect.Proxy.newProxyInstance(android.view.WindowManager.class.getClassLoader(), new Class<?>[]{android.view.WindowManager.class}, (proxy, method, args) -> {
+            if (method.getName().equals("updateViewLayout") && args[0] == host) host.setLayoutParams((android.view.ViewGroup.LayoutParams) args[1]);
+            if (method.getName().equals("isCrossWindowBlurEnabled")) return false;
+            return null;
+        });
+        DockView dock = new DockView(activity, prefs, dockPlace, 0, new DockView.Listener() { public void action(String id) { } public void configure() { } }, true);
+        field(owner, "windows", windows); field(owner, "dock", dock); field(owner, "panelHost", host); field(owner, "panelFrame", new DockGeometry.Box(0, 0, width, height));
+        PanelEntryView entry = new PanelEntryView(activity, prefs, entryPlace, new DockView.Listener() {
+            public void action(String id) { } public void configure() { }
+            public void beginPull(String name, float distance, float originY) { invoke(owner, "beginPanelPull", new Class<?>[]{String.class, float.class, float.class}, name, distance, originY); }
+            public void pull(String name, float distance) { invoke(owner, "pullPanel", new Class<?>[]{String.class, float.class}, name, distance); }
+            public void release(String name, float distance, float speed, boolean canceled) { invoke(owner, "releasePanel", new Class<?>[]{float.class, float.class, boolean.class}, distance, speed, canceled); }
+        });
+        mount(entry, entryPlace.touch().width(), entryPlace.touch().height());
+        float x = entry.getWidth() * (page.equals("notifications") ? .25f : .75f), y = entry.getHeight() / 2f;
+        try {
+            for (float finishDistance : new float[]{0, 20, 180}) {
+                owner.closePanel(); long time = SystemClock.uptimeMillis();
+                entryEvent(entry, entryPlace.touch(), time, 0, MotionEvent.ACTION_DOWN, x, y);
+                for (int i = 0; i < 3; i++) {
+                    float traveled = i == 0 ? 40 : i == 1 ? 180 : finishDistance;
+                    entryEvent(entry, entryPlace.touch(), time, 100 + i * 100, MotionEvent.ACTION_MOVE, x, y - traveled);
+                    View panel = (View) field(owner, "panel");
+                    require(panel != null && Math.abs(panel.getTranslationY() - (entryPlace.touch().y() + y - traveled)) < .01f, "fresh " + page + " top tracks the screen-space finger at rotation " + rotation);
+                    require(page.equals(field(owner, "panelPage")), "screen offset preserves left/right routing");
+                }
+                entryEvent(entry, entryPlace.touch(), time, 1000, MotionEvent.ACTION_UP, x, y - finishDistance);
+                require((boolean) field(owner, "panelTargetOpen") == (finishDistance == 180), "cutout compensation never commits a short/reversed pull: " + page + " / " + rotation);
+            }
+            owner.closePanel(); long time = SystemClock.uptimeMillis();
+            entryEvent(entry, entryPlace.touch(), time, 0, MotionEvent.ACTION_DOWN, x, y);
+            entryEvent(entry, entryPlace.touch(), time, 100, MotionEvent.ACTION_MOVE, x, y - 180);
+            entryEvent(entry, entryPlace.touch(), time, 200, MotionEvent.ACTION_CANCEL, x, y - 180);
+            require(!(boolean) field(owner, "panelTargetOpen") && !(boolean) field(owner, "panelPulling"), "fresh pull cancellation closes at rotation " + rotation);
+        } finally { owner.closePanel(); }
+    }
+    private void entryEvent(View entry, DockGeometry.Box box, long down, int offset, int action, float x, float y) {
+        MotionEvent event = MotionEvent.obtain(down, down + offset, action, box.x() + x, box.y() + y, 0);
+        event.setLocation(x, y); entry.dispatchTouchEvent(event); event.recycle();
     }
     private void event(View target, long down, int offset, int action, float x, float y) {
         MotionEvent event;

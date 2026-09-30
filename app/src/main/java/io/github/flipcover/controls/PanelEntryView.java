@@ -32,7 +32,7 @@ final class PanelEntryView extends View {
     };
     PanelEntryView(Context context, Prefs prefs, DockGeometry.Placement placement, DockView.Listener listener) {
         super(context); this.listener = listener; this.prefs = prefs;
-        chrome = DockGeometry.chrome(new DockGeometry.Placement(placement.visual(), placement.touch(), placement.panel(), DockGeometry.BOTTOM, placement.measured()), getResources().getDisplayMetrics().density);
+        chrome = DockGeometry.panelEntryChrome(new DockGeometry.Placement(placement.visual(), placement.touch(), placement.panel(), DockGeometry.BOTTOM, placement.measured()), getResources().getDisplayMetrics().density);
         hold = () -> { if (pending && getAlpha() > 0) { revealHandles(); reset(); performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); listener.toggleVisibility(); settleHandles(); } };
         gesturesEnabled = prefs.data.getBoolean("gestures_enabled", true); slop = ViewConfiguration.get(context).getScaledTouchSlop();
         setLayerType(LAYER_TYPE_SOFTWARE, null); setHapticFeedbackEnabled(prefs.haptics()); setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
@@ -48,8 +48,8 @@ final class PanelEntryView extends View {
     @Override public boolean onTouchEvent(MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN -> {
-                cancel(); removeCallbacks(hideHandles); if (!panelOpen) animate().cancel(); pending = true; startX = event.getX(); startY = event.getY(); distance = 0;
-                page = startX < getWidth() / 2f ? "notifications" : "controls";
+                cancel(); removeCallbacks(hideHandles); if (!panelOpen) animate().cancel(); pending = true; startX = event.getRawX(); startY = event.getRawY(); distance = 0;
+                page = event.getX() < getWidth() / 2f ? "notifications" : "controls";
                 velocity = VelocityTracker.obtain(); velocity.addMovement(event);
                 if (getAlpha() > 0) postDelayed(hold, ViewConfiguration.getLongPressTimeout());
             }
@@ -69,13 +69,13 @@ final class PanelEntryView extends View {
     private void move(MotionEvent event) {
         if (velocity == null) return;
         velocity.addMovement(event);
-        float dx = event.getX() - startX, dy = event.getY() - startY, inward = -dy;
+        float dx = event.getRawX() - startX, dy = event.getRawY() - startY, inward = -dy;
         if (pending && Math.hypot(dx, dy) > slop) {
             removeCallbacks(hold);
             if (gesturesEnabled && inward > slop && inward >= Math.abs(dx) * .75f) {
                 pending = false; pulling = true; distance = inward;
                 revealHandles();
-                listener.beginPull(page, distance); performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                listener.beginPull(page, distance, startY); performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
             } else if (inward < -slop * 2) { reset(); return; }
         }
         if (pulling) { distance = inward; listener.pull(page, distance); }
@@ -112,7 +112,7 @@ final class PanelEntryView extends View {
     private void hideImmediately() { removeCallbacks(hideHandles); animate().cancel(); setAlpha(0); revealed = false; }
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh); cancel(); if (!panelOpen) hideImmediately();
-        DockGeometry.Box box = new DockGeometry.Box(0, 0, w, h); chrome = DockGeometry.chrome(new DockGeometry.Placement(box, box, box, DockGeometry.BOTTOM, true), getResources().getDisplayMetrics().density);
+        DockGeometry.Box box = new DockGeometry.Box(0, 0, w, h); chrome = DockGeometry.panelEntryChrome(new DockGeometry.Placement(box, box, box, DockGeometry.BOTTOM, true), getResources().getDisplayMetrics().density);
     }
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();

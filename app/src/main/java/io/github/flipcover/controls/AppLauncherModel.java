@@ -11,7 +11,8 @@ import org.json.JSONObject;
 
 /** Shared launcher rules; neither renderer owns a second app/folder configuration. */
 final class AppLauncherModel {
-    static final String EDIT_HINT = "如需编辑应用、文件夹或调整排序，请到浮窗启动器内操作。";
+    static final String EDIT_HINT = "如需编辑，请到浮窗启动器内操作。";
+    static long itemId(String id) { long hash = 0xcbf29ce484222325L; for (int i = 0; i < id.length(); i++) { hash ^= id.charAt(i); hash *= 0x100000001b3L; } return hash; }
     static List<AppCatalogCache.Entry> select(List<AppCatalogCache.Entry> catalog, List<String> pins, JSONObject aliases, String query, String order, List<RecentTasks.Task> tasks, AppSearchIndex index) {
         List<AppCatalogCache.Entry> result = new ArrayList<>();
         for (AppCatalogCache.Entry app : catalog) if ((!query.isEmpty() || !pins.contains(app.id())) && index.matches(app, aliases.optString(app.id(), ""), query)) result.add(app);

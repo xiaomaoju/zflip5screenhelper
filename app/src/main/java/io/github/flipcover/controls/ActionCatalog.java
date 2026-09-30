@@ -27,6 +27,8 @@ public final class ActionCatalog {
         new Action("wifi", "Wi-Fi", R.drawable.ic_ms_wifi),
         new Action("bluetooth", "蓝牙", R.drawable.ic_ms_bluetooth),
         new Action("data", "移动数据", R.drawable.ic_ms_swap_vert),
+        new Action("nfc", "NFC", R.drawable.ic_nfc),
+        new Action("hotspot", "移动热点", R.drawable.ic_hotspot),
         new Action("torch", "手电筒", R.drawable.ic_ms_flashlight_on),
         new Action("dnd", "勿扰", R.drawable.ic_ms_do_not_disturb_on),
         new Action("airplane", "飞行模式", R.drawable.ic_ms_flight),
@@ -60,7 +62,13 @@ public final class ActionCatalog {
     }
     static Drawable loadIcon(Context context, String id) {
         try {
-            if (id.startsWith("tile:")) return context.getPackageManager().getServiceInfo(component(id), 0).loadIcon(context.getPackageManager());
+            if (id.startsWith("tile:")) {
+                android.content.pm.ServiceInfo service = context.getPackageManager().getServiceInfo(component(id), 0);
+                Drawable icon = service.loadIcon(context.getPackageManager()).mutate();
+                // Tile glyphs are masks intended for host tinting; app-icon fallbacks retain their colors.
+                if (service.icon != 0) icon.setTint(Ui.TEXT);
+                return icon;
+            }
             if (id.startsWith("app:")) return context.getPackageManager().getActivityIcon(component(id));
         } catch (Exception ignored) { }
         int resource = R.drawable.ic_ms_help;

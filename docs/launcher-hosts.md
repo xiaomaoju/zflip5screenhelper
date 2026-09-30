@@ -1,0 +1,39 @@
+# 应用启动器的两个宿主
+
+浮窗和三星原生卡片分别拥有窗口与生命周期，共享内容、配置、动作规则与设计参数。更新公共功能时先修改共享层，再检查两个展示适配器；原生卡片不得另存一份启动器配置。
+
+快捷栏的 Home 可在「快捷栏与手势 → 按钮与布局 → Home 按钮效果」选择，唯一偏好为 `Prefs.homeAction`（`home_action`）。默认 `cards`“返回应用中心”：`CoverService.returnHome` 请求已授权的 Shizuku，通过 `ShellService` 的固定 `native_home` 操作恢复所选外屏上的三星卡片宿主，保留其当前卡片页。普通应用直接启动该宿主会被三星拦截并提示展开手机，因此此模式需要 Shizuku，不回退到普通应用启动。从原生应用中心打开应用后可返回原页，但不保证从其他卡片或宿主重建后定位到应用中心；不打开独立卡片展开页、不自动滑动、不回退主屏或全局 Home。
+
+`clock`“返回锁屏页面”沿用原有全局 Home，回到三星时钟首页，不执行锁定设备动作，也不需要 Shizuku。两种模式执行前均检查所选外屏亮起且未锁定；延时或排队请求和回调再次检查窗口身份、目标屏及模式，防止切换模式后旧请求生效。`native_home` 服务执行前后还会核验屏幕与锁屏状态。选项立即保存，不在设置中执行 Home；配置和布局备份均包含此项，旧备份缺少该项时默认 `cards`。
+
+| 内容 | 唯一公共实现 | 浮窗适配 | 卡片适配 |
+|---|---|---|---|
+| 应用、文件夹、固定项、侧栏、别名与显示偏好 | `Prefs`、`AppWorkspaceLayout` | `AppHubView`、`AppWorkspaceView` | `LauncherWidgetViews` |
+| 筛选、排序、别名、角标和布局目录校验 | `AppLauncherModel`、`AppSearchIndex` | `AppHubView` | `LauncherWidgetViews` |
+| 网格格位、图标与标签、文件夹方形表面和预览、侧栏、Dock 尺寸 | `AppLauncherStyle`；圆角资源位于 `res/values/launcher_widget.xml` | `AppHubView`、`AppWorkspaceView`、`AppFolderTile`、`AppFolderGrid`、`AppDockView` | `LauncherWidgetViews`、原生布局资源 |
+| Dock 容量、最近应用分组、清理范围 | `AppDockLayout`、`RecentTasks`、`RecentTasks.Locks` | `AppDockView` | `LauncherWidgetViews` |
+| 系统任务读取、恢复与清理 | `AppRecentTasks` → 既有受限 `ShizukuBridge`/`SystemRecentTasks` | `CoverService` | `LauncherWidgetBridge`、`LauncherWidgetActivity` |
+| 应用启动、所选外屏与单次方向规则 | `AppLauncher` | `CoverService` | `LauncherWidgetActivity` |
+| 图标及目录缓存 | `AppCatalogCache` | 挂载时订阅 | 卡片存在且外屏亮屏时订阅 |
+
+卡片页码、展开文件夹和 Dock 展开状态仅保存在每个卡片实例的内存中，侧栏滚动位置由原生 ListView 保存，不能写回桌面格位。浮窗完成编辑后，由共享偏好监听刷新卡片；侧栏位置沿用左右手偏好，固定项与侧栏常用项保持独立。卡片分页箭头居中放在页码两侧，使用粗线矢量图标；保持18dp分页栏及44dp按钮宽度，不向应用列表借用高度或移动其格位，首尾不可翻页方向半透明显示。
+
+两个宿主的 Dock 端部动作共用24dp宽度和2dp外边距，九宫格与清理按钮中心关于 Dock 中心对称；图标尺寸保持不变。横向压缩工具留白，不改变 Dock 高度、应用网格起点或格位。
+
+## 必须保留的宿主差异
+
+- 卡片使用标准 RemoteViews；应用页使用紧凑按钮翻页，侧栏通过 ListView 竖向滚动，左右滑动由三星宿主切卡。不能用本地模拟器宣称三星宿主支持内层横向手势。侧栏采用 RemoteCollectionItems 和显式 Activity PendingIntent 模板，按稳定项目 ID 更新；fill-in 点击执行前检查项目仍在当前侧栏中。
+- 卡片不提供编辑或拖放，编辑入口只调用 Android 文本 Toast。不存在自制提示弹窗或确认按钮。
+- RemoteViews 不承载浮窗的 EditText、拖拽和自定义任务快照手势。当前卡片直接承载应用/文件夹、侧栏及 Dock；搜索输入、完整任务页等浮窗交互并未变成卡片内部原生交互。侧栏中的系统工具通过已有浮窗服务执行，要求服务可用且外屏已解锁。
+- 三星卡片没有标准的“当前可见页”通知，不能为仿照浮窗的刷新频率在后台轮询任务。用户点击右上角刷新；浮窗取得的新任务结果同步到卡片。未知或失败状态明确展示且禁用旧任务操作。
+- 恢复任务必须再核对显示器、用户、任务身份与请求会话；关闭入口后迟到的结果不能影响新窗口。清理只针对点击时可见最近分组的后台任务，并重新排除固定/锁定项；重新过滤后为空只提示，不使有效列表失效。
+
+## 后续修改的双宿主检查
+
+公共布局参数只在 `AppLauncherStyle` 修改，两个宿主不得分别保存一组同义尺寸。`gridCell` 统一应用和文件夹占位的像素坐标；`folderGeometry` 统一方形背景、预览和标题位置，`folderIconBounds` 统一3×3预览图标。文件夹保留2×2逻辑占位，实际背景取占位宽高中较小的一边并居中，不能随非正方形网格拉长。应用图标保持等宽高。侧栏的宽度、条目高度、内边距和图文间距，以及 Dock 行高、图标、分隔线和左右留白，均引用同一组参数。打开文件夹后的成员列数、行高基准和图标大小也从该类读取。宿主各自只保留窗口、事件和 RemoteViews/View 的布局适配。
+
+应用列表固定横5竖3、每页15格，两宿主共用同一常量；可用高度变大、变小或调整图标规格时均不自动改变行列数，保留页内应用和文件夹格位。文件夹打开后仍使用既有3列成员网格。紧凑卡片顶栏24dp、页码栏18dp、Dock容器36dp。侧栏条目共用20dp图标、6.4sp标签与32dp基准高度，超出容器竖向滚动，不截断已配置项目。两种启动器整体使用固定字号，不提供随系统大字号缩放或重排的模式。浮窗通过 `AppLauncherStyle.fixedFontContext` 仅将自己的 `fontScale` 固定为1；RemoteViews 字号按dp设置，防止三星宿主按系统字号二次缩放。显示密度、语言和系统字号配置保持原值，其他界面继续使用各自配置。
+
+更新公共启动器行为时，运行 `LauncherWidgetChecks`（`launcher-widget`）及对应浮窗场景。涉及格位或 Dock 时检查 `app-folders`、`workspace-dock-menu`；涉及任务时检查 `recent-tasks`；涉及目录和图标时检查 `hub-performance`。卡片专项覆盖真实 AppWidgetHost 和 PendingIntent、编辑 Toast、两实例导航隔离、配置同步、Dock 容量与清理保护、取消后的迟到回调、错误外屏拒绝。改变可用宽高，必须验证两宿主仍保持5列3行及相同格位；切换系统字号只用于验证启动器文字和布局不变，不作为另一套适配模式。
+
+这些检查保护共享行为，不能自动证明新 UI 同时支持两个宿主；新增 UI 必须实现对应适配，并在发行说明中明确剩余限制。三星收录、锁屏、实际目标屏、侧栏系统动作及 Shizuku 恢复/清理仍需物理真机验证。

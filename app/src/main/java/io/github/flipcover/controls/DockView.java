@@ -19,7 +19,7 @@ import java.util.List;
 public final class DockView extends FrameLayout {
     public interface Listener {
         void action(String id); void configure();
-        default void beginPull(String page, float distance) { }
+        default void beginPull(String page, float distance, float originY) { }
         default void pull(String page, float distance) { }
         default void release(String page, float distance, float velocity, boolean canceled) { }
         default void toggleVisibility() { }
@@ -41,7 +41,7 @@ public final class DockView extends FrameLayout {
     private float startX, startY, startTranslation;
     private enum TouchMode { PENDING, PAGING, CONSUMED }
     private TouchMode touchMode = TouchMode.CONSUMED;
-    private boolean pagingAcross, previouslyArmed, touchMoved;
+    private boolean previouslyArmed, touchMoved;
     private View pressedButton;
     private final Runnable hold;
     public DockView(Context context, Prefs prefs, DockGeometry.Placement placement, int initialPage, Listener listener) {
@@ -161,10 +161,10 @@ public final class DockView extends FrameLayout {
         if (touchMode == TouchMode.PENDING) {
             if (Math.hypot(dx, dy) <= touchSlop) return;
             touchMoved = true; removeCallbacks(hold); if (pressedButton != null) pressedButton.setPressed(false);
-            touchMode = TouchMode.PAGING; pagingAcross = Math.abs(across) > Math.abs(along);
+            touchMode = TouchMode.PAGING;
         }
         if (touchMode != TouchMode.PAGING || compact) return;
-        float offset = gesture.move(pagingAcross ? across : along, 0);
+        float offset = gesture.move(along, across);
         if (gesture.armed() && !previouslyArmed) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
         previouslyArmed = gesture.armed();
         if ((startTranslation >= 0 && offset > 0) || (startTranslation <= -(pages.size() - 1) * extent && offset < 0)) offset *= .3f;

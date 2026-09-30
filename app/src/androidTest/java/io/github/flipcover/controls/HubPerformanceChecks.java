@@ -88,7 +88,7 @@ final class HubPerformanceChecks {
                 FrameLayout root = new FrameLayout(activity); root.addView(hub[0], new FrameLayout.LayoutParams(-1, -1)); activity.setContentView(root);
                 grid[0] = hub[0].findViewWithTag("hub-grid"); dock[0] = hub[0].findViewWithTag("hub-dock"); grid[0].getAdapter().registerDataSetObserver(observer);
                 construction[0] = SystemClock.elapsedRealtimeNanos() - start;
-                require(hub[0].expanded() && grid[0].getCount() == entries.size(), "warm open immediately shows all applications");
+                require(hub[0].expanded() && grid[0].getCount() == entries.size() - prefs.hubPins().size(), "warm open shows desktop apps without duplicating fixed Dock apps");
                 require(!find(hub[0], EditText.class).hasFocus(), "open does not summon the keyboard");
             });
             instrumentation.waitForIdleSync(); View[] firstPin = {null}; main(() -> firstPin[0] = dock[0].getChildAt(0));
@@ -99,7 +99,7 @@ final class HubPerformanceChecks {
                 require(find(grid[0].getChildAt(0), ImageView.class).getDrawable() instanceof android.graphics.drawable.BitmapDrawable, "visible grid icon resolves from bitmap cache");
                 hub[0].recentResult(List.of(), null); hub[0].recentResult(List.of(), null); hub[0].recentFailure("offline"); hub[0].recentFailure("offline");
                 require(firstPin[0] == dock[0].getChildAt(0) && changes[0] == 0, "unchanged or unavailable recents do not rebuild installed apps or Dock");
-                EditText search = find(hub[0], EditText.class); search.setText("__missing__"); require(grid[0].getCount() == 0, "search filters cached metadata"); search.setText(""); require(grid[0].getCount() == entries.size(), "search restores cached metadata");
+                EditText search = find(hub[0], EditText.class); search.setText("__missing__"); require(grid[0].getCount() == 0, "search filters cached metadata"); search.setText(entries.get(0).label()); require(grid[0].getCount() > 0, "explicit search includes pinned applications"); search.setText(""); require(grid[0].getCount() == entries.size() - prefs.hubPins().size(), "clearing search restores the desktop ownership rule");
                 grid[0].getAdapter().unregisterDataSetObserver(observer); hub[0].dispose(); activity.setContentView(new FrameLayout(activity)); require(cache.observerCount() == 0, "disposed hub releases cache subscription");
             });
             require(cache.scanCount() == scans && cache.labelReadCount() == reads, "reopening and searching perform no package scan or label read");

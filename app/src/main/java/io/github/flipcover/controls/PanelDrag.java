@@ -18,6 +18,10 @@ final class PanelDrag {
     static float progress(float start, float distance, float extent) {
         return Math.max(0, Math.min(1, start + distance / Math.max(1, extent)));
     }
+    /** Align a fresh panel's top with the actual DOWN in display coordinates. */
+    static float entryStart(float originY, float frameTop, float extent) {
+        return progress(0, frameTop + extent - originY, extent);
+    }
     static float inward(int edge, float dx, float dy) {
         return switch (edge) { case DockGeometry.BOTTOM -> -dy; case DockGeometry.TOP -> dy; case DockGeometry.LEFT -> dx; default -> -dx; };
     }

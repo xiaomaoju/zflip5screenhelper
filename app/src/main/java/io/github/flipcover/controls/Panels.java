@@ -38,7 +38,7 @@ final class Panels {
         }
         return body;
     }
-    private final class Tile extends RuntimeVisuals.Cell {
+    final class Tile extends RuntimeVisuals.Cell {
         final ImageView icon;
         final TextView label, detail;
         final FrameLayout face;
@@ -81,6 +81,14 @@ final class Panels {
     void working(String id, boolean value) { Tile tile = buttons.get(id); if (tile != null) tile.working(value); }
     private void controls() {
         List<String> actions = owner.prefs.actions("panel");
+        if (!preview && (actions.contains("nfc") || actions.contains("hotspot"))) {
+            Runnable read = () -> { if (body.isAttachedToWindow()) owner.refreshConnectivityStates(); };
+            Runnable changed = () -> { owner.main.removeCallbacks(read); owner.main.postDelayed(read, 160); };
+            body.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+                @Override public void onViewAttachedToWindow(View view) { CoverApp.bridge(context).addConnectivityObserver(changed, actions.contains("hotspot")); changed.run(); }
+                @Override public void onViewDetachedFromWindow(View view) { owner.main.removeCallbacks(read); CoverApp.bridge(context).removeConnectivityObserver(changed); }
+            });
+        }
         ControlDashboard dashboard = new ControlDashboard(); dashboard.setTag("control-dashboard");
         for (String id : actions) {
             Tile tile = new Tile(id, () -> { if (id.equals("rotation")) owner.toggleRotation(); else owner.act(id); }, true);
@@ -186,7 +194,7 @@ final class Panels {
         for (Map.Entry<String, Tile> entry : buttons.entrySet()) {
             String id = entry.getKey();
             if (preview) { entry.getValue().state(null); continue; }
-            if (List.of("wifi", "bluetooth", "data", "torch", "dnd", "airplane", "system_controls").contains(id)) entry.getValue().state(owner.on(id));
+            if (List.of("wifi", "bluetooth", "data", "torch", "dnd", "airplane", "system_controls", "nfc", "hotspot").contains(id)) entry.getValue().state(owner.on(id));
             if (id.equals("system_controls")) { Boolean state = owner.on(id); entry.getValue().icon.setImageDrawable(Ui.icon(context, Boolean.FALSE.equals(state) ? R.drawable.ic_ms_toggle_off : R.drawable.ic_ms_toggle_on, Boolean.TRUE.equals(state) ? Ui.ON_ACTIVE : Ui.TEXT)); }
             if (id.equals("rotation")) { entry.getValue().state(owner.rotationAutomatic()); entry.getValue().label.setText(owner.rotationAutomatic() ? "自动旋转" : "旋转锁定"); }
         }
@@ -215,13 +223,7 @@ final class Panels {
         }
     }
     void chooseState(String id) {
-        body.removeAllViews(); buttons.clear(); brightness = null;
-        Ui.add(body, Ui.heading(context, ActionCatalog.label(context, id), 20));
-        Ui.add(body, Ui.text(context, "当前状态未知，请选择操作。此开关影响整个手机。", 12, Ui.MUTED));
-        LinearLayout options = Ui.row(context);
-        options.addView(Ui.iconButton(context, R.drawable.ic_ms_toggle_on, "开启" + ActionCatalog.label(context, id), () -> owner.shell(id, 1, "", result -> { if (result.ok) owner.showPanel("controls"); })));
-        options.addView(Ui.iconButton(context, R.drawable.ic_ms_toggle_off, "关闭" + ActionCatalog.label(context, id), () -> owner.shell(id, 0, "", result -> { if (result.ok) owner.showPanel("controls"); })));
-        Ui.add(body, options);
+        owner.showDetails(id,null);
     }
     private void rotation() {
         String[] names = {"正向", "向右", "倒置", "向左"};

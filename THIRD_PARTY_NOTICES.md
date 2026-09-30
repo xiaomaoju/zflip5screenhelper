@@ -9,3 +9,9 @@
 - Google Material Symbols Rounded (24px, unfilled, default weight), Apache License 2.0: <https://github.com/google/material-design-icons/tree/master/symbols/web>. Selected SVG paths are included as `ic_ms_*.xml` Android vector drawables with a translated viewport; shape paths are unchanged. The license text is packaged in `assets/licenses/material-symbols.txt`. Usage guidance: <https://developers.google.com/fonts/docs/material_symbols>.
 
 The reference APKs supplied by the user are not included in the generated APK or redistributed as part of this project.
+
+- Liquid Glass (Backdrop) 2.0.1, Kyant / Kyant0, Apache License 2.0: <https://github.com/Kyant0/AndroidLiquidGlass>. Control-source tabs directly use the Maven library and five unchanged catalog source files from commit `65ab177e90e5c1d8c62e70cf7755841982da65f6`; provenance and hashes are in `docs/liquid-tabs-upstream.md`. `OriginalLiquidTabs` supplies View/Compose lifecycle, cached background and application content. `AndroidFrameClock` supplies the Android entry corresponding to the catalog expect/actual helper. `GlassToggle` remains the earlier native View interaction adaptation. Apache License 2.0 is packaged under `assets/licenses/androidx.txt`.
+
+- ZXing Core 3.5.3, ZXing authors, Apache License 2.0: <https://github.com/zxing/zxing>. Used for offline hotspot QR encoding. Apache License 2.0 is packaged under `assets/licenses/androidx.txt`.
+
+- Jetpack Compose, Lifecycle and SavedState (AndroidX, Android Open Source Project), Kotlin and kotlinx.coroutines (JetBrains), and Kyant Shapes 1.2.1 are used by the original Tab component and its host. These dependencies use Apache License 2.0; the full license is packaged under `assets/licenses/androidx.txt`.

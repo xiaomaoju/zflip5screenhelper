@@ -29,6 +29,17 @@ public final class ShizukuBridge {
             return new Result(object.optBoolean("ok"), object.optString("message"), object.optString("output"));
         }
     }
+    private final Context application;
+    private final CopyOnWriteArrayList<Runnable> connectivityObservers = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Runnable> hotspotObservers = new CopyOnWriteArrayList<>();
+    private IShellService watchedService;
+    private boolean nfcRegistered;
+    private final android.content.BroadcastReceiver nfcEvents = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(Context context, android.content.Intent intent) { if (android.nfc.NfcAdapter.ACTION_ADAPTER_STATE_CHANGED.equals(intent.getAction())) notifyConnectivity(); }
+    };
+    private final IConnectivityListener connectivityEvents = new IConnectivityListener.Stub() {
+        @Override public void onChanged() { main.post(ShizukuBridge.this::notifyConnectivity); }
+    };
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean busy = new AtomicBoolean();
@@ -46,6 +57,7 @@ public final class ShizukuBridge {
         @Override public void onBindingDied(ComponentName name) { onServiceDisconnected(name); }
     };
     public ShizukuBridge(Context context) {
+        application = context.getApplicationContext();
         args = new Shizuku.UserServiceArgs(new ComponentName(context, ShellService.class))
             .daemon(false).processNameSuffix("cover_shell").version(BuildConfig.VERSION_CODE);
         Shizuku.addBinderReceivedListenerSticky(() -> main.post(this::connect));
@@ -80,14 +92,43 @@ public final class ShizukuBridge {
     }
     public void addObserver(Runnable observer) { observers.addIfAbsent(observer); }
     public void removeObserver(Runnable observer) { observers.remove(observer); }
-    private void changed() { for (Runnable observer : observers) main.post(observer); }
+    private void changed() { for (Runnable observer : observers) main.post(observer); updateConnectivityWatch(); main.post(this::notifyConnectivity); }
+    void addConnectivityObserver(Runnable observer, boolean hotspot) {
+        connectivityObservers.addIfAbsent(observer);
+        if (hotspot) hotspotObservers.addIfAbsent(observer);
+        if (!nfcRegistered) try {
+            android.content.IntentFilter filter = new android.content.IntentFilter(android.nfc.NfcAdapter.ACTION_ADAPTER_STATE_CHANGED);
+            if (android.os.Build.VERSION.SDK_INT >= 33) application.registerReceiver(nfcEvents, filter, Context.RECEIVER_EXPORTED); else application.registerReceiver(nfcEvents, filter);
+            nfcRegistered = true;
+        } catch (RuntimeException ignored) { }
+        updateConnectivityWatch();
+    }
+    void removeConnectivityObserver(Runnable observer) {
+        connectivityObservers.remove(observer);
+        hotspotObservers.remove(observer);
+        if (connectivityObservers.isEmpty() && nfcRegistered) { try { application.unregisterReceiver(nfcEvents); } catch (RuntimeException ignored) { } nfcRegistered = false; }
+        updateConnectivityWatch();
+    }
+    private void notifyConnectivity() { for (Runnable observer : connectivityObservers) observer.run(); }
+    private void updateConnectivityWatch() {
+        executor.execute(() -> {
+            IShellService wanted = hotspotObservers.isEmpty() ? null : remote;
+            if (watchedService == wanted) return;
+            if (watchedService != null) try { watchedService.watchConnectivity(null); } catch (Exception ignored) { }
+            watchedService = null;
+            if (wanted != null) try { wanted.watchConnectivity(connectivityEvents); watchedService = wanted; } catch (Exception ignored) { }
+        });
+    }
     public void run(String operation, int display, int value, String component, Callback callback) {
+        run(operation, display, value, component, () -> true, callback);
+    }
+    void run(String operation, int display, int value, String component, java.util.function.BooleanSupplier active, Callback callback) {
         IShellService service = remote;
         if (service == null) { connect(); callback.accept(new Result(false, status() + "，请稍后重试", "")); return; }
         if (!busy.compareAndSet(false, true)) { callback.accept(new Result(false, "上一项仍在执行，请稍后重试", "", true)); return; }
         executor.execute(() -> {
             Result result;
-            try { result = Result.parse(service.execute(operation, display, value, component == null ? "" : component)); }
+            try { result = active.getAsBoolean() ? Result.parse(service.execute(operation, display, value, component == null ? "" : component)) : new Result(false, "操作已取消，外屏状态已改变", ""); }
             catch (Exception e) { remote = null; changed(); result = new Result(false, "Shizuku 调用失败：" + e.getClass().getSimpleName(), ""); }
             Result delivered = result;
             busy.set(false);

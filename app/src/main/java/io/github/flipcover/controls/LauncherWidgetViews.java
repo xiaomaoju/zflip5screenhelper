@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
@@ -16,8 +17,6 @@ import android.util.TypedValue;
 import android.view.Display;
 import android.view.View;
 import android.widget.RemoteViews;
-import android.widget.TextView;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -32,111 +31,216 @@ final class LauncherWidgetViews {
     private final Display display;
     private final int widget;
     private final LauncherWidgetBridge.State state;
-    private final List<RecentTasks.Task> tasks;
+    private final LauncherWidgetBridge.Recents recents;
     private final Set<String> shownIcons;
-    private final Map<String, Bitmap> bitmaps = new HashMap<>();
+    private final Set<String> requestedIcons;
+    private final Map<String, Bitmap> bitmaps;
     private final JSONObject aliases;
     private final Map<String, Integer> badges;
-    LauncherWidgetViews(Context context, Prefs prefs, Display display, int widget, LauncherWidgetBridge.State state, List<RecentTasks.Task> tasks, Set<String> shownIcons) {
-        this.context = context.createDisplayContext(display); this.prefs = prefs; this.display = display; this.widget = widget; this.state = state; this.tasks = tasks; this.shownIcons = shownIcons;
+    LauncherWidgetViews(Context context, Prefs prefs, Display display, int widget, LauncherWidgetBridge.State state, LauncherWidgetBridge.Recents recents, Set<String> shownIcons, Set<String> requestedIcons, Map<String, Bitmap> bitmaps) {
+        this.context = AppLauncherStyle.fixedFontContext(context.createDisplayContext(display)); this.prefs = prefs; this.display = display; this.widget = widget; this.state = state; this.recents = recents; this.shownIcons = shownIcons; this.requestedIcons = requestedIcons;
+        this.bitmaps = bitmaps;
         cache = CoverApp.catalog(context); aliases = prefs.workspaceAliases(); badges = AppLauncherModel.badges(prefs.workspaceBadges(), CoverNotifications.ready(), CoverNotifications.snapshot());
     }
     static RemoteViews message(Context context, String text) {
-        RemoteViews view = new RemoteViews(context.getPackageName(), R.layout.launcher_widget);
+        RemoteViews view = base(context);
         view.setTextViewText(R.id.launcher_empty, text); view.setViewVisibility(R.id.launcher_pager, View.GONE); view.setViewVisibility(R.id.launcher_edit, View.GONE); return view;
+    }
+    private static RemoteViews base(Context context) {
+        RemoteViews view = new RemoteViews(context.getPackageName(), R.layout.launcher_widget);
+        view.setViewPadding(R.id.launcher_panel, Ui.dp(context, AppLauncherStyle.PANEL_PADDING_X), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_Y), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_X), Ui.dp(context, AppLauncherStyle.PANEL_PADDING_Y));
+        for (int id : new int[]{R.id.launcher_title, R.id.launcher_back}) view.setTextColor(id, Ui.TEXT);
+        for (int id : new int[]{R.id.launcher_page, R.id.launcher_empty}) view.setTextColor(id, Ui.MUTED);
+        if (Build.VERSION.SDK_INT >= 31) {
+            view.setColorStateList(R.id.launcher_panel, "setBackgroundTintList", ColorStateList.valueOf(Ui.SURFACE));
+            view.setColorStateList(R.id.launcher_rail, "setBackgroundTintList", ColorStateList.valueOf(Ui.SURFACE));
+            for (int id : new int[]{R.id.launcher_refresh, R.id.launcher_edit, R.id.launcher_previous, R.id.launcher_next}) view.setInt(id, "setColorFilter", Ui.TEXT);
+        }
+        return view;
     }
     RemoteViews render() {
         if (Build.VERSION.SDK_INT < 31) return message(context, "原生启动器卡片需要 Android 12 或更新版本");
         WidgetSafeArea.Frame frame = CoverApp.widgets(context).frame(widget);
         List<String> pins = prefs.hubPins();
-        float width = frame.width() - 10, height = frame.height() - 7 - 38 - 32 - (pins.isEmpty() ? 0 : 44);
-        TextView measure = Ui.text(context, "应用 Ag", AppLauncherStyle.LABEL_SP, Ui.TEXT); measure.measure(View.MeasureSpec.makeMeasureSpec(Math.max(1, Ui.dp(context, width)), View.MeasureSpec.AT_MOST), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        float labelHeight = prefs.workspaceLabels() ? measure.getMeasuredHeight() / context.getResources().getDisplayMetrics().density + 2 : 0;
-        int columns = AppLauncherStyle.columns(width, prefs.workspaceDensity());
-        int rows = Math.max(1, Math.min(6, (int) (height / (AppLauncherStyle.iconSize(prefs.workspaceDensity()) + labelHeight + 4))));
-        if (width < 80 || height < AppLauncherStyle.iconSize(prefs.workspaceDensity()) + labelHeight + 4) return message(context, "卡片空间不足，请调整尺寸或桌面密度");
+        float headerHeight = dimension(R.dimen.launcher_header_height), pageHeight = dimension(R.dimen.launcher_page_height);
+        float dockWidth = frame.width() - 2 * AppLauncherStyle.PANEL_PADDING_X, width = dockWidth - AppLauncherStyle.RAIL_WIDTH - AppLauncherStyle.RAIL_GAP, height = frame.height() - 2 * AppLauncherStyle.PANEL_PADDING_Y - headerHeight - pageHeight - AppLauncherStyle.dockHeight();
+        int columns = AppLauncherStyle.GRID_COLUMNS, rows = AppLauncherStyle.GRID_ROWS;
+        if (width < 80 || height < 60) return message(context, "卡片空间不足，请调整尺寸");
         AppWorkspaceLayout saved = prefs.workspace();
         if (cache.ready() && !cache.failed()) saved = AppLauncherModel.reconcile(saved, cache.snapshot(), pins, prefs.workspaceCompact());
         AppWorkspaceLayout.Folder opened = saved.folder(state.folder);
         if (opened == null) state.folder = null;
-        List<AppCatalogCache.Entry> selected = AppLauncherModel.select(cache.snapshot(), pins, aliases, "", prefs.hubSort(), tasks, new AppSearchIndex());
+        float gridHeight = opened == null ? height : Math.min(height, AppLauncherStyle.FOLDER_MEMBER_HEIGHT * rows);
+        List<AppCatalogCache.Entry> selected = AppLauncherModel.select(cache.snapshot(), pins, aliases, "", prefs.hubSort(), recents.tasks(), new AppSearchIndex());
         AppWorkspaceLayout layout;
-        if (opened != null) { columns = Math.min(3, columns); layout = AppWorkspaceLayout.sequential(opened.members()).project(columns, rows); }
+        if (opened != null) { columns = AppLauncherStyle.FOLDER_COLUMNS; layout = AppWorkspaceLayout.sequential(opened.members()).project(columns, rows); }
         else if (prefs.hubSort().equals("manual")) layout = saved.project(columns, rows);
         else layout = AppWorkspaceLayout.sequential(selected.stream().map(AppCatalogCache.Entry::id).collect(java.util.stream.Collectors.toList())).project(columns, rows);
         int capacity = columns * rows; state.pages = layout.pages(capacity); state.page = Math.max(0, Math.min(state.page, state.pages - 1));
-        RemoteViews view = new RemoteViews(context.getPackageName(), R.layout.launcher_widget);
+        RemoteViews view = base(context);
         geometry(view, R.id.launcher_panel, frame.left(), frame.top(), frame.width(), frame.height());
-        view.setTextViewText(R.id.launcher_title, opened == null ? "应用中心" : opened.name() + " · " + opened.members().size() + "/9");
+        view.setViewLayoutHeight(R.id.launcher_header, headerHeight, TypedValue.COMPLEX_UNIT_DIP);
+        view.setViewLayoutHeight(R.id.launcher_pager, pageHeight, TypedValue.COMPLEX_UNIT_DIP);
+        view.setViewLayoutHeight(R.id.launcher_pins, AppLauncherStyle.dockHeight(), TypedValue.COMPLEX_UNIT_DIP);
+        boolean right = prefs.handSide().equals("right");
+        float contentLeft = right ? 0 : AppLauncherStyle.RAIL_WIDTH + AppLauncherStyle.RAIL_GAP;
+        geometry(view, R.id.launcher_grid, contentLeft, 0, width, gridHeight);
+        geometry(view, R.id.launcher_empty, contentLeft, 0, width, height);
+        geometry(view, R.id.launcher_rail, right ? width + AppLauncherStyle.RAIL_GAP : 0, 0, AppLauncherStyle.RAIL_WIDTH, height);
+        view.setTextViewText(R.id.launcher_title, !state.expanded ? "应用 Dock" : opened == null ? "应用中心" : opened.name() + " · " + opened.members().size() + "/9");
         view.setViewVisibility(R.id.launcher_back, opened == null ? View.GONE : View.VISIBLE);
         view.setViewVisibility(R.id.launcher_empty, layout.size() == 0 ? View.VISIBLE : View.GONE);
         view.setTextViewText(R.id.launcher_empty, cache.ready() ? "未找到应用" : cache.failed() ? "应用目录暂不可用" : "正在读取应用…");
-        view.setTextViewText(R.id.launcher_page, (state.page + 1) + " / " + state.pages + (prefs.hubSort().equals("recent") && tasks.isEmpty() ? " · 最近排序待浮窗刷新" : ""));
+        view.setTextViewText(R.id.launcher_page, (state.page + 1) + " / " + state.pages);
+        String status = recents.busy() ? "正在刷新最近应用" : !recents.error().isEmpty() ? "最近应用不可用，点击重试" : !recents.known() ? "最近应用待刷新，点击刷新" : "刷新最近应用";
+        view.setContentDescription(R.id.launcher_refresh, status);
+        view.setTextViewText(R.id.launcher_refresh_status, recents.busy() ? "…" : !recents.error().isEmpty() ? "!" : "·");
+        view.setViewVisibility(R.id.launcher_refresh_status, recents.busy() || !recents.known() || !recents.error().isEmpty() ? View.VISIBLE : View.GONE);
         view.setBoolean(R.id.launcher_previous, "setEnabled", state.page > 0); view.setBoolean(R.id.launcher_next, "setEnabled", state.page + 1 < state.pages);
+        view.setFloat(R.id.launcher_previous, "setAlpha", state.page > 0 ? 1f : .5f); view.setFloat(R.id.launcher_next, "setAlpha", state.page + 1 < state.pages ? 1f : .5f);
         view.setOnClickPendingIntent(R.id.launcher_edit, action("edit", "")); view.setOnClickPendingIntent(R.id.launcher_back, action("back", ""));
+        view.setOnClickPendingIntent(R.id.launcher_refresh, action("refresh", "")); view.setBoolean(R.id.launcher_refresh, "setEnabled", !recents.busy());
         view.setOnClickPendingIntent(R.id.launcher_previous, action("previous", "")); view.setOnClickPendingIntent(R.id.launcher_next, action("next", ""));
-        view.removeAllViews(R.id.launcher_grid); view.removeAllViews(R.id.launcher_pins);
-        float cellWidth = width / columns, cellHeight = height / rows;
+        view.removeAllViews(R.id.launcher_grid); view.removeAllViews(R.id.launcher_dock_row);
+        float density = context.getResources().getDisplayMetrics().density;
         for (String id : layout.ordered()) {
             int slot = layout.slot(id); if (slot / capacity != state.page) continue;
-            int local = slot % capacity, span = layout.span(id);
-            RemoteViews cell = cell(id, layout.folder(id), cellWidth * span, cellHeight * span, false);
-            geometry(cell, R.id.launcher_cell, local % columns * cellWidth, local / columns * cellHeight, cellWidth * span - .5f, cellHeight * span - .5f); view.addView(R.id.launcher_grid, cell);
+            android.graphics.Rect box = AppLauncherStyle.gridCell(Ui.dp(context, width), Ui.dp(context, gridHeight), columns, rows, slot, layout.span(id), state.page);
+            RemoteViews cell = cell(id, layout.folder(id), box.width() / density, box.height() / density, false, false);
+            geometry(cell, R.id.launcher_cell, box.left / density, box.top / density, box.width() / density, box.height() / density); view.addView(R.id.launcher_grid, cell);
         }
-        view.setViewVisibility(R.id.launcher_pins, pins.isEmpty() ? View.GONE : View.VISIBLE);
-        float pinWidth = Math.min(52, width / Math.max(1, pins.size())), left = (width - pins.size() * pinWidth) / 2;
-        for (int i = 0; i < pins.size(); i++) { RemoteViews pin = cell(pins.get(i), null, pinWidth, 44, true); geometry(pin, R.id.launcher_cell, left + i * pinWidth, 0, pinWidth, 44); view.addView(R.id.launcher_pins, pin); }
-        view.setViewVisibility(R.id.launcher_hint, state.hint ? View.VISIBLE : View.GONE);
-        view.setViewVisibility(R.id.launcher_panel, state.hint ? View.INVISIBLE : View.VISIBLE);
-        view.setTextViewText(R.id.launcher_hint_text, AppLauncherModel.EDIT_HINT); view.setOnClickPendingIntent(R.id.launcher_hint_close, action("dismiss", ""));
-        view.setViewLayoutWidth(R.id.launcher_hint, Math.max(1, frame.width()), TypedValue.COMPLEX_UNIT_DIP);
-        view.setViewLayoutMargin(R.id.launcher_hint, RemoteViews.MARGIN_LEFT, frame.left(), TypedValue.COMPLEX_UNIT_DIP);
+        view.setViewVisibility(R.id.launcher_grid, state.expanded ? View.VISIBLE : View.INVISIBLE);
+        view.setViewVisibility(R.id.launcher_pager, state.expanded ? View.VISIBLE : View.INVISIBLE);
+        if (!state.expanded) { view.setViewVisibility(R.id.launcher_empty, View.GONE); view.setViewVisibility(R.id.launcher_back, View.GONE); }
+        renderRail(view);
+        renderDock(view, dockWidth, pins);
         return view;
     }
-    @android.annotation.TargetApi(31)
-    private RemoteViews cell(String id, AppWorkspaceLayout.Folder folder, float width, float height, boolean pin) {
-        RemoteViews view = new RemoteViews(context.getPackageName(), R.layout.launcher_widget_cell);
+    private float dimension(int resource) { return context.getResources().getDimension(resource) / context.getResources().getDisplayMetrics().density; }
+    @androidx.annotation.RequiresApi(31)
+    private void renderRail(RemoteViews view) {
+        view.setViewVisibility(R.id.launcher_rail, state.expanded ? View.VISIBLE : View.INVISIBLE);
+        int padding = Ui.dp(context, AppLauncherStyle.RAIL_FRAME_PADDING); view.setViewPadding(R.id.launcher_rail, padding, padding, padding, padding);
+        List<String> favorites = prefs.actions("favorites");
+        float height = AppLauncherStyle.RAIL_CELL;
+        RemoteViews.RemoteCollectionItems.Builder items = new RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(1);
+        for (String id : favorites) {
+            RemoteViews row = cell(id, null, AppLauncherStyle.RAIL_WIDTH, height, false, true);
+            row.setViewLayoutWidth(R.id.launcher_cell, AppLauncherStyle.RAIL_WIDTH, TypedValue.COMPLEX_UNIT_DIP); row.setViewLayoutHeight(R.id.launcher_cell, height, TypedValue.COMPLEX_UNIT_DIP);
+            row.setViewPadding(R.id.launcher_cell, Ui.dp(context, AppLauncherStyle.RAIL_PADDING), Ui.dp(context, AppLauncherStyle.RAIL_PADDING), Ui.dp(context, AppLauncherStyle.RAIL_PADDING), Ui.dp(context, AppLauncherStyle.RAIL_PADDING)); row.setViewPadding(R.id.launcher_label, 0, Ui.dp(context, AppLauncherStyle.RAIL_LABEL_GAP), 0, 0);
+            row.setViewVisibility(R.id.launcher_label, View.VISIBLE); row.setTextViewTextSize(R.id.launcher_label, TypedValue.COMPLEX_UNIT_DIP, AppLauncherStyle.RAIL_LABEL_SP);
+            row.setViewLayoutWidth(R.id.launcher_icon, AppLauncherStyle.RAIL_ICON, TypedValue.COMPLEX_UNIT_DIP); row.setViewLayoutHeight(R.id.launcher_icon, AppLauncherStyle.RAIL_ICON, TypedValue.COMPLEX_UNIT_DIP);
+            row.setContentDescription(R.id.launcher_cell, "侧栏：" + AppLauncherModel.label(id, aliases, cache));
+            row.setBoolean(R.id.launcher_cell, "setFocusable", false);
+            row.setOnClickFillInIntent(R.id.launcher_cell, new Intent().putExtra("item", id));
+            items.addItem(AppLauncherModel.itemId(id), row);
+        }
+        // One explicit Activity template keeps collection app launches eligible as direct user clicks.
+        Intent click = intent("side", null).setClass(context, LauncherWidgetActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        view.setPendingIntentTemplate(R.id.launcher_rail, PendingIntent.getActivity(context, 0, click, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE, ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle()));
+        view.setRemoteAdapter(R.id.launcher_rail, items.build());
+    }
+    @androidx.annotation.RequiresApi(31)
+    private void renderDock(RemoteViews view, float width, List<String> pins) {
+        float density = context.getResources().getDisplayMetrics().density;
+        List<RecentTasks.Task> apps = RecentTasks.apps(recents.tasks(), AppDockLayout.packages(pins));
+        AppDockLayout.Geometry geometry = AppDockLayout.fit(Ui.dp(context, width), pins.size(), apps.size(), density);
+        List<RecentTasks.Task> shown = apps.subList(0, geometry.recentCount()); float size = geometry.cell() / density;
+        float total = (geometry.chrome() + (pins.size() + shown.size()) * geometry.cell()) / density, x = AppLauncherStyle.DOCK_EDGE;
+        geometry(view, R.id.launcher_dock_row, (width - total) / 2, AppLauncherStyle.DOCK_TOP, total, AppLauncherStyle.DOCK_ROW);
+        view.setColorStateList(R.id.launcher_dock_row, "setBackgroundTintList", ColorStateList.valueOf(AppLauncherStyle.DOCK_COLOR));
+        RemoteViews toggle = tool(R.drawable.ic_ms_apps, state.expanded ? "收起全部应用，保留 Dock" : "展开全部应用", action("apps", ""));
+        toggle.setViewLayoutWidth(R.id.launcher_icon, AppLauncherStyle.DOCK_APPS_ICON, TypedValue.COMPLEX_UNIT_DIP); toggle.setViewLayoutHeight(R.id.launcher_icon, AppLauncherStyle.DOCK_APPS_ICON, TypedValue.COMPLEX_UNIT_DIP);
+        place(view, R.id.launcher_dock_row, toggle, x, 0, AppLauncherStyle.DOCK_TOOL_WIDTH, AppLauncherStyle.DOCK_ROW); x += AppLauncherStyle.DOCK_TOOL_WIDTH;
+        for (String id : pins) { RemoteViews pin = cell(id, null, size, AppLauncherStyle.DOCK_ROW, true, false); pin.setContentDescription(R.id.launcher_cell, "常用：" + AppLauncherModel.label(id, aliases, cache)); place(view, R.id.launcher_dock_row, pin, x, 0, size, AppLauncherStyle.DOCK_ROW); x += size; }
+        if (!pins.isEmpty() && !shown.isEmpty()) {
+            x += geometry.margin() / density; RemoteViews separator = new RemoteViews(context.getPackageName(), R.layout.launcher_widget_cell);
+            separator.setViewVisibility(R.id.launcher_icon, View.GONE); separator.setViewVisibility(R.id.launcher_label, View.GONE); separator.setInt(R.id.launcher_cell, "setBackgroundColor", AppLauncherStyle.DOCK_SEPARATOR); separator.setBoolean(R.id.launcher_cell, "setFocusable", false);
+            place(view, R.id.launcher_dock_row, separator, x, (AppLauncherStyle.DOCK_ROW - AppLauncherStyle.DOCK_SEPARATOR_HEIGHT) / 2f, geometry.separator() / density, AppLauncherStyle.DOCK_SEPARATOR_HEIGHT); x += (geometry.separator() + geometry.margin()) / density;
+        }
+        for (RecentTasks.Task task : shown) {
+            String id = cache.launcher(task.packageName()); if (id == null) id = "app:" + task.component();
+            RemoteViews recent = cell(id, null, size, AppLauncherStyle.DOCK_ROW, true, false); recent.setContentDescription(R.id.launcher_cell, "最近任务：" + AppLauncherModel.label(id, aliases, cache));
+            try { recent.setOnClickPendingIntent(R.id.launcher_cell, activity("task", SystemRecentTasks.json(task).toString())); } catch (Exception error) { recent.setOnClickPendingIntent(R.id.launcher_cell, null); }
+            recent.setBoolean(R.id.launcher_cell, "setEnabled", recents.known() && recents.canOpen() && !recents.busy()); recent.setFloat(R.id.launcher_cell, "setAlpha", recents.known() && recents.canOpen() ? 1 : .4f);
+            place(view, R.id.launcher_dock_row, recent, x, 0, size, AppLauncherStyle.DOCK_ROW); x += size;
+        }
+        if (!shown.isEmpty()) {
+            List<RecentTasks.Task> targets = AppDockLayout.clearTargets(recents.tasks(), pins, shown, CoverApp.taskLocks(context));
+            String encoded = "[]"; try { encoded = AppRecentTasks.encode(targets); } catch (Exception ignored) { }
+            RemoteViews clear = tool(R.drawable.ic_hub_clean, "清理可见最近应用的外屏后台任务，保留可见、固定和锁定任务", action("clear", encoded));
+            clear.setViewLayoutWidth(R.id.launcher_icon, AppLauncherStyle.DOCK_CLEAR_ICON, TypedValue.COMPLEX_UNIT_DIP); clear.setViewLayoutHeight(R.id.launcher_icon, AppLauncherStyle.DOCK_CLEAR_ICON, TypedValue.COMPLEX_UNIT_DIP);
+            clear.setBoolean(R.id.launcher_cell, "setEnabled", recents.known() && recents.canClear() && !recents.busy() && !targets.isEmpty()); place(view, R.id.launcher_dock_row, clear, x, 0, AppLauncherStyle.DOCK_TOOL_WIDTH, AppLauncherStyle.DOCK_ROW);
+        }
+        view.setViewVisibility(R.id.launcher_pins, View.VISIBLE);
+    }
+    private RemoteViews tool(int icon, String description, PendingIntent click) {
+        RemoteViews view = new RemoteViews(context.getPackageName(), R.layout.launcher_widget_cell); view.setImageViewResource(R.id.launcher_icon, icon); view.setInt(R.id.launcher_icon, "setColorFilter", Ui.TEXT);
+        view.setViewPadding(R.id.launcher_cell, 0, 0, 0, 0);
+        view.setViewVisibility(R.id.launcher_label, View.GONE); view.setContentDescription(R.id.launcher_cell, description); view.setOnClickPendingIntent(R.id.launcher_cell, click); return view;
+    }
+    @androidx.annotation.RequiresApi(31)
+    private void place(RemoteViews parent, int area, RemoteViews cell, float x, float y, float width, float height) { geometry(cell, R.id.launcher_cell, x, y, width, height); parent.addView(area, cell); }
+    @androidx.annotation.RequiresApi(31)
+    private RemoteViews cell(String id, AppWorkspaceLayout.Folder folder, float width, float height, boolean pin, boolean collection) {
+        RemoteViews view = new RemoteViews(context.getPackageName(), folder == null ? R.layout.launcher_widget_cell : R.layout.launcher_widget_folder);
         int count = AppLauncherModel.badge(id, badges);
         String name = folder == null ? AppLauncherModel.label(id, aliases, cache) : folder.name();
         if (folder != null) { Set<String> packages = new HashSet<>(); count = 0; for (String member : folder.members()) { android.content.ComponentName component = ActionCatalog.component(member); if (component != null && packages.add(component.getPackageName())) count += badges.getOrDefault(component.getPackageName(), 0); } }
         view.setTextViewText(R.id.launcher_label, name + (count > 0 ? " · " + count : "")); view.setTextColor(R.id.launcher_label, Ui.TEXT);
-        view.setTextViewTextSize(R.id.launcher_label, TypedValue.COMPLEX_UNIT_SP, AppLauncherStyle.LABEL_SP);
+        view.setTextViewTextSize(R.id.launcher_label, TypedValue.COMPLEX_UNIT_DIP, AppLauncherStyle.LABEL_SP);
         view.setContentDescription(R.id.launcher_cell, name + (folder == null ? "" : "，文件夹，" + folder.members().size() + "个应用") + (count > 0 ? "，" + count + "条活动通知" : ""));
         view.setViewVisibility(R.id.launcher_label, !pin && (prefs.workspaceLabels() || folder != null) ? View.VISIBLE : View.GONE);
-        int iconSize = pin ? 28 : AppLauncherStyle.iconSize(prefs.workspaceDensity());
+        int iconSize = pin ? AppLauncherStyle.dockIconSize(width) : AppLauncherStyle.iconSize(prefs.workspaceDensity(), width);
+        if (!pin && !collection && state.folder != null) iconSize = AppLauncherStyle.folderMemberIconSize(width);
         Bitmap icon;
         if (folder == null) icon = icon(id);
         else {
-            iconSize = Math.max(20, (int) Math.min(width - 8, height - 30)); icon = folderIcon(folder);
-            view.setInt(R.id.launcher_cell, "setBackgroundResource", R.drawable.launcher_widget_folder);
-            view.setColorStateList(R.id.launcher_cell, "setBackgroundTintList", ColorStateList.valueOf(AppLauncherStyle.FOLDER_COLORS[folder.color()]));
+            android.widget.TextView label = Ui.text(context, name, AppLauncherStyle.LABEL_SP, Ui.TEXT); label.setSingleLine(); label.measure(0, 0);
+            AppLauncherStyle.FolderGeometry layout = AppLauncherStyle.folderGeometry(context, Ui.dp(context, width), Ui.dp(context, height), label.getMeasuredHeight());
+            float density = context.getResources().getDisplayMetrics().density; android.graphics.Rect surface = layout.surface(), preview = layout.preview(), text = layout.label();
+            geometry(view, R.id.launcher_folder_surface, surface.left / density, surface.top / density, surface.width() / density, surface.height() / density);
+            geometry(view, R.id.launcher_icon, (preview.left - surface.left) / density, (preview.top - surface.top) / density, preview.width() / density, preview.height() / density);
+            geometry(view, R.id.launcher_label, (text.left - surface.left) / density, (text.top - surface.top) / density, text.width() / density, text.height() / density); icon = folderIcon(folder, preview.width());
+            view.setColorStateList(R.id.launcher_folder_surface, "setBackgroundTintList", ColorStateList.valueOf(AppLauncherStyle.FOLDER_COLORS[folder.color()]));
         }
-        view.setViewLayoutWidth(R.id.launcher_icon, iconSize, TypedValue.COMPLEX_UNIT_DIP); view.setViewLayoutHeight(R.id.launcher_icon, iconSize, TypedValue.COMPLEX_UNIT_DIP);
+        if (folder == null) {
+            view.setViewPadding(R.id.launcher_cell, Ui.dp(context, AppLauncherStyle.APP_PADDING), Ui.dp(context, AppLauncherStyle.APP_PADDING), Ui.dp(context, AppLauncherStyle.APP_PADDING), Ui.dp(context, AppLauncherStyle.APP_PADDING));
+            view.setViewPadding(R.id.launcher_label, 0, Ui.dp(context, AppLauncherStyle.APP_LABEL_GAP), 0, 0);
+            view.setViewLayoutWidth(R.id.launcher_icon, iconSize, TypedValue.COMPLEX_UNIT_DIP); view.setViewLayoutHeight(R.id.launcher_icon, iconSize, TypedValue.COMPLEX_UNIT_DIP);
+        }
         if (icon == null) view.setImageViewResource(R.id.launcher_icon, R.drawable.ic_ms_apps); else view.setImageViewBitmap(R.id.launcher_icon, icon);
-        view.setOnClickPendingIntent(R.id.launcher_cell, folder == null ? launch(id) : action("folder", id)); return view;
+        if (!collection) view.setOnClickPendingIntent(R.id.launcher_cell, folder == null ? activity("launch", id) : action("folder", id)); return view;
     }
     private Bitmap icon(String id) {
-        shownIcons.add(id); if (bitmaps.containsKey(id)) return bitmaps.get(id);
+        if (!id.startsWith("app:") && !id.startsWith("tile:")) {
+            Drawable drawable = ActionCatalog.loadIcon(context, id); Bitmap result = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888); result.setDensity(Bitmap.DENSITY_NONE); drawable.setBounds(0, 0, 48, 48); drawable.draw(new Canvas(result)); return result;
+        }
+        shownIcons.add(id); if (bitmaps.containsKey(id)) { requestedIcons.add(id); return bitmaps.get(id); }
         Drawable drawable = cache.cachedIcon(context, id);
-        if (!(drawable instanceof BitmapDrawable bitmap)) { cache.requestIcon(id); return null; }
-        Bitmap result = Bitmap.createScaledBitmap(bitmap.getBitmap(), 64, 64, true); result.setDensity(Bitmap.DENSITY_NONE); bitmaps.put(id, result); return result;
+        // Completion updates must not restart decodes for icons evicted by another card.
+        if (!(drawable instanceof BitmapDrawable bitmap)) { if (!requestedIcons.contains(id) && cache.requestIcon(id)) requestedIcons.add(id); return null; }
+        requestedIcons.add(id); Bitmap result = bitmap.getBitmap();
+        if (bitmaps.size() < AppWorkspaceLayout.MAX_APPS + AppDockPlacement.LIMIT) bitmaps.put(id, result); return result;
     }
-    private Bitmap folderIcon(AppWorkspaceLayout.Folder folder) {
-        Bitmap preview = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888); preview.setDensity(Bitmap.DENSITY_NONE); Canvas canvas = new Canvas(preview);
-        for (int i = 0; i < folder.members().size(); i++) { Bitmap icon = icon(folder.members().get(i)); if (icon != null) canvas.drawBitmap(icon, null, new android.graphics.Rect(i % 3 * 32 + 3, i / 3 * 32 + 3, i % 3 * 32 + 29, i / 3 * 32 + 29), null); }
+    private Bitmap folderIcon(AppWorkspaceLayout.Folder folder, int side) {
+        // Rasterize at the shared geometry's physical size; a fixed thumbnail loses member detail.
+        Bitmap preview = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888); preview.setDensity(Bitmap.DENSITY_NONE); Canvas canvas = new Canvas(preview); Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        for (int i = 0; i < folder.members().size(); i++) { Bitmap icon = icon(folder.members().get(i)); if (icon != null) canvas.drawBitmap(icon, null, AppLauncherStyle.folderIconBounds(preview.getWidth(), i), paint); }
         return preview;
     }
     private Intent intent(String operation, String item) {
-        return new Intent().setData(new Uri.Builder().scheme("flipcover").authority("launcher-widget").appendPath(Integer.toString(widget)).appendPath(Integer.toString(display.getDisplayId())).appendPath(operation).appendPath(item).build())
-                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widget).putExtra("display", display.getDisplayId()).putExtra("operation", operation).putExtra("item", item);
+        Intent intent = new Intent().setData(new Uri.Builder().scheme("flipcover").authority("launcher-widget").appendPath(Integer.toString(widget)).appendPath(Integer.toString(display.getDisplayId())).appendPath(operation).appendPath(item == null ? "" : item).build())
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widget).putExtra("display", display.getDisplayId()).putExtra("operation", operation);
+        if (item != null) intent.putExtra("item", item); return intent;
     }
     private PendingIntent action(String operation, String item) {
         return PendingIntent.getBroadcast(context, 0, intent(operation, item).setClass(context, LauncherWidgetProvider.class).setAction(LauncherWidgetProvider.ACTION), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
-    private PendingIntent launch(String item) {
-        return PendingIntent.getActivity(context, 0, intent("launch", item).setClass(context, LauncherWidgetActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE, ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle());
+    private PendingIntent activity(String operation, String item) {
+        return PendingIntent.getActivity(context, 0, intent(operation, item).setClass(context, LauncherWidgetActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE, ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle());
     }
-    @android.annotation.TargetApi(31)
+    @androidx.annotation.RequiresApi(31)
     private static void geometry(RemoteViews view, int id, float x, float y, float width, float height) {
         view.setViewLayoutWidth(id, width, TypedValue.COMPLEX_UNIT_DIP); view.setViewLayoutHeight(id, height, TypedValue.COMPLEX_UNIT_DIP);
         view.setViewLayoutMargin(id, RemoteViews.MARGIN_LEFT, x, TypedValue.COMPLEX_UNIT_DIP); view.setViewLayoutMargin(id, RemoteViews.MARGIN_TOP, y, TypedValue.COMPLEX_UNIT_DIP);

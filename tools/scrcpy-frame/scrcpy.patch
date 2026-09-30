@@ -1,0 +1,265 @@
+--- a/app/src/screen.c
++++ b/app/src/screen.c
+@@ -18,6 +18,10 @@
+ set_aspect_ratio(struct sc_screen *screen, struct sc_size content_size) {
+     assert(content_size.width && content_size.height);
+ 
++    if (screen->cover.enabled) {
++        content_size = cover_frame_size(screen->orientation);
++    }
++
+     if (screen->window_aspect_ratio_lock) {
+         float ar = (float) content_size.width / content_size.height;
+         bool ok = SDL_SetWindowAspectRatio(screen->window, ar, ar);
+@@ -227,6 +231,10 @@
+     bool is_icon = !screen->video || screen->disconnected;
+ 
+     struct sc_size window_size = sc_sdl_get_window_size(screen->window);
++    if (!is_icon && screen->cover.enabled) {
++        cover_frame_layout(screen, window_size);
++        return;
++    }
+     compute_content_rect(window_size, screen->content_size, is_icon,
+                          screen->render_fit, &screen->rect);
+ }
+@@ -304,6 +312,8 @@
+     if (!ok) {
+         LOGE("Could not render texture: %s", SDL_GetError());
+     }
++
++    cover_frame_render(screen, scale);
+ 
+ end:
+     sc_sdl_render_present(renderer);
+@@ -492,6 +502,7 @@
+     screen->orientation = SC_ORIENTATION_0;
+     screen->disconnected = false;
+     screen->disconnect_started = false;
++    memset(&screen->cover, 0, sizeof(screen->cover));
+ 
+     screen->video = params->video;
+     screen->camera = params->camera;
+@@ -672,6 +683,11 @@
+ 
+     // Initialize even if not used for simplicity
+     sc_mouse_capture_init(&screen->mc, screen->window, params->shortcut_mods);
++
++    if (!cover_frame_init(&screen->cover, screen->renderer)) {
++        av_frame_free(&screen->frame);
++        goto error_destroy_texture;
++    }
+ 
+ #ifdef CONTINUOUS_RESIZING_WORKAROUND
+     if (screen->video) {
+@@ -744,7 +760,9 @@
+     };
+ 
+     struct sc_size window_size =
+-        get_initial_optimal_size(screen->content_size, screen->req.width,
++        get_initial_optimal_size(screen->cover.enabled
++                                 ? cover_frame_size(screen->orientation)
++                                 : screen->content_size, screen->req.width,
+                                                        screen->req.height);
+ 
+     if (screen->flex_display
+@@ -807,6 +825,7 @@
+     if (screen->disconnect_started) {
+         sc_disconnect_destroy(&screen->disconnect);
+     }
++    cover_frame_destroy(&screen->cover);
+     sc_texture_destroy(&screen->tex);
+     av_frame_free(&screen->frame);
+ #ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
+@@ -895,6 +914,11 @@
+ void
+ sc_screen_set_orientation(struct sc_screen *screen,
+                           enum sc_orientation orientation) {
++    if (screen->cover.texture && sc_orientation_is_mirror(orientation)) {
++        LOGW("Mirroring is disabled for the calibrated cover frame");
++        return;
++    }
++    cover_frame_cancel_input(screen);
+     assert(screen->video);
+ 
+     if (orientation == screen->orientation) {
+@@ -904,9 +928,21 @@
+     struct sc_size new_content_size =
+         get_oriented_size(screen->frame_size, orientation);
+ 
+-    set_content_size(screen, new_content_size, true);
+-
+-    screen->orientation = orientation;
++    if (screen->cover.enabled) {
++        bool swap = sc_orientation_is_swap(screen->orientation)
++                  != sc_orientation_is_swap(orientation);
++        struct sc_size window_size = sc_sdl_get_window_size(screen->window);
++        screen->orientation = orientation;
++        set_content_size(screen, new_content_size, false);
++        set_aspect_ratio(screen, new_content_size);
++        if (swap && is_windowed(screen)) {
++            sc_sdl_set_window_size(screen->window,
++                (struct sc_size) {window_size.height, window_size.width});
++        }
++    } else {
++        screen->orientation = orientation;
++        set_content_size(screen, new_content_size, true);
++    }
+     LOGI("Display orientation set to %s", sc_orientation_get_name(orientation));
+ 
+     sc_screen_render(screen, true);
+@@ -1133,6 +1169,29 @@
+ 
+ void
+ sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
++    if (screen->cover.texture && screen->window_shown
++            && (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP)
++            && (event->key.key == SDLK_F8 || event->key.key == SDLK_F9)) {
++        if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat) {
++            cover_frame_cancel_input(screen);
++            if (event->key.key == SDLK_F8) {
++                screen->cover.enabled = !screen->cover.enabled;
++                set_aspect_ratio(screen, screen->content_size);
++            } else if (screen->cover.has_safe_area) {
++                screen->cover.guides = !screen->cover.guides;
++            } else {
++                LOGW("Device cutout metadata unavailable; guide remains disabled");
++            }
++            SDL_SetWindowTitle(screen->window, screen->cover.guides
++                ? "Z Flip5 外屏 · 绿色：系统缺口安全线 · F8 外框 / F9 辅助线"
++                : "Z Flip5 外屏 · 校准机型框 · F8 外框 / F9 辅助线");
++            sc_screen_render(screen, true);
++        }
++        return;
++    }
++    if (cover_frame_filter_event(screen, event)) {
++        return;
++    }
+     switch (event->type) {
+         case SC_EVENT_OPEN_WINDOW: {
+             struct sc_size *size = event->user.data1;
+--- a/app/src/screen.h
++++ b/app/src/screen.h
+@@ -11,6 +11,7 @@
+ #include <libavutil/pixfmt.h>
+ 
+ #include "controller.h"
++#include "cover_frame.h"
+ #include "coords.h"
+ #include "disconnect.h"
+ #include "fps_counter.h"
+@@ -49,6 +50,7 @@
+     } bg;
+ 
+     struct sc_texture tex;
++    struct cover_frame cover;
+     struct sc_input_manager im;
+     struct sc_mouse_capture mc; // only used in mouse relative mode
+     struct sc_fps_counter fps_counter;
+--- a/app/src/main.c
++++ b/app/src/main.c
+@@ -2,6 +2,10 @@
+ 
+ #include <stdbool.h>
+ #include <stdio.h>
++#include <stdlib.h>
++#ifdef __APPLE__
++#include <unistd.h>
++#endif
+ #ifdef HAVE_V4L2
+ # include <libavdevice/avdevice.h>
+ #endif
+@@ -76,6 +80,12 @@
+         goto end;
+     }
+ 
++    if (args.opts.display_id != 1 || !getenv("FLIPCOVER_FRAME_PNG")) {
++        LOGE("Use the Z Flip5 cover launcher; this client only supports display 1");
++        ret = SCRCPY_EXIT_FAILURE;
++        goto end;
++    }
++
+ #ifdef SCRCPY_LAVF_REQUIRES_REGISTER_ALL
+     av_register_all();
+ #endif
+@@ -127,6 +137,18 @@
+ 
+ int
+ main(int argc, char *argv[]) {
++#ifdef __APPLE__
++    if (argc == 1) {
++        const char *base = SDL_GetBasePath();
++        char launcher[4096];
++        if (!base || snprintf(launcher, sizeof(launcher), "%slaunch-cover.command", base) >= (int) sizeof(launcher)) {
++            return 1;
++        }
++        execl("/bin/zsh", "zsh", launcher, (char *) NULL);
++        perror("cover launcher");
++        return 1;
++    }
++#endif
+ #ifndef _WIN32
+     return main_scrcpy(argc, argv);
+ #else
+--- a/app/meson.build
++++ b/app/meson.build
+@@ -31,6 +31,7 @@
+     'src/recorder.c',
+     'src/scrcpy.c',
+     'src/screen.c',
++    'src/cover_frame.c',
+     'src/sdl_hints.c',
+     'src/server.c',
+     'src/texture.c',
+--- a/server/src/main/java/com/genymobile/scrcpy/control/Controller.java
++++ b/server/src/main/java/com/genymobile/scrcpy/control/Controller.java
+@@ -546,6 +546,11 @@
+         }
+ 
+         int pointerCount = pointersState.update(pointerProperties, pointerCoords);
++        if (action == MotionEvent.ACTION_CANCEL) {
++            // CANCEL terminates the entire gesture, including virtual fingers.
++            // The event arrays above retain the coordinates for this event.
++            pointersState.clear();
++        }
+         if (pointerCount == 1) {
+             if (action == MotionEvent.ACTION_DOWN) {
+                 lastTouchDown = now;
+--- a/server/src/main/java/com/genymobile/scrcpy/control/PointersState.java
++++ b/server/src/main/java/com/genymobile/scrcpy/control/PointersState.java
+@@ -46,6 +46,10 @@
+         return pointers.get(index);
+     }
+ 
++    public void clear() {
++        pointers.clear();
++    }
++
+     public int getPointerIndex(long id) {
+         int index = indexOf(id);
+         if (index != -1) {
+--- a/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
++++ b/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
+@@ -159,7 +159,11 @@
+         if (vdListener != null) {
+             int virtualDisplayId;
+             PositionMapper positionMapper;
+-            if (virtualDisplay == null || displayId == 0) {
++            // One UI's mirrored cover display may have no input window.
++            // Map back to the selected physical cover, including any capture
++            // rotation/scale, instead of injecting into that mirror display.
++            boolean samsungCover = displayId == 1 && Build.MANUFACTURER.equalsIgnoreCase("samsung");
++            if (virtualDisplay == null || displayId == 0 || samsungCover) {
+                 // Surface control or main display: send all events to the original display, relative to the device size
+                 Size deviceSize = displayInfo.getSize();
+                 positionMapper = PositionMapper.create(videoSize, transform, deviceSize);
+--- a/server/build_without_gradle.sh
++++ b/server/build_without_gradle.sh
+@@ -19,7 +19,7 @@
+ PLATFORM_TOOLS="$ANDROID_HOME/platforms/android-$PLATFORM"
+ BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+ 
+-BUILD_DIR="$(realpath ${BUILD_DIR:-build_manual})"
++BUILD_DIR="$(realpath "${BUILD_DIR:-build_manual}")"
+ CLASSES_DIR="$BUILD_DIR/classes"
+ GEN_DIR="$BUILD_DIR/gen"
+ SERVER_DIR=$(dirname "$0")

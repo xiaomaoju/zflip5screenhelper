@@ -4,6 +4,30 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class PanelDragTest {
+    @Test public void freshPanelTopTracksFingerFromCutoutHomeAndCalibratedEntries() {
+        DockGeometry.Box[] cuts = {new DockGeometry.Box(351, 682, 369, 66), new DockGeometry.Box(0, 351, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(682, 0, 66, 369)};
+        for (int rotation = 0; rotation < 4; rotation++) for (boolean measured : new boolean[]{true, false}) {
+            int width = rotation % 2 == 0 ? 720 : 748, height = rotation % 2 == 0 ? 748 : 720;
+            java.util.List<DockGeometry.Box> cutouts = measured ? java.util.List.of(cuts[rotation]) : java.util.List.of();
+            DockGeometry.Placement dock = DockGeometry.resolve(width, height, cutouts, 2.125f, (rotation + 3) % 4, .46f, .088f, measured);
+            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, width, height, cutouts, 2.125f, 24);
+            for (float fraction : new float[]{.1f, .5f, .9f}) {
+                float originY = entry.touch().y() + entry.touch().height() * fraction;
+                float start = PanelDrag.entryStart(originY, 0, height);
+                for (float traveled : new float[]{20, 120, 240, 80, 0, -10}) {
+                    float progress = PanelDrag.progress(start, traveled, height);
+                    assertEquals(originY - traveled, (1 - progress) * height, .001f);
+                }
+                assertEquals(1, PanelDrag.progress(start, height, height), 0);
+                assertFalse(PanelDrag.shouldOpen(0, height, 0, 2.125f));
+                assertFalse(PanelDrag.shouldOpen(20, height, 0, 2.125f));
+            }
+        }
+    }
+    @Test public void entryAnchorUsesDisplayCoordinatesWithoutChangingFrameGeometry() {
+        float start = PanelDrag.entryStart(600, 30, 720);
+        assertEquals(480, 30 + (1 - PanelDrag.progress(start, 120, 720)) * 720, .001f);
+    }
     @Test public void diagonalEntryAndSmallInitialJitterCanStillOpen() {
         PanelDrag drag = new PanelDrag(DockGeometry.BOTTOM, 8); drag.move(10, -2); assertEquals(28, drag.move(24, -28), 0); assertTrue(drag.active());
         assertTrue(PanelDrag.shouldOpen(82, 748, 0, 2)); assertFalse(PanelDrag.shouldOpen(15, 748, 2000, 2));

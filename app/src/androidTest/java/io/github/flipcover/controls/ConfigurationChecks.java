@@ -31,6 +31,7 @@ final class ConfigurationChecks {
             activity = (MainActivity) test.startActivitySync(new Intent(test.getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             test.waitForIdleSync();
             roundtrip();
+            homeBehavior();
             templates();
             malformed();
             compatibility();
@@ -97,6 +98,24 @@ final class ConfigurationChecks {
         bad = new JSONObject(config.toString()); bad.getJSONObject("rotations").put("com.example.first", 2.5); reject(bad, "late rotation failure");
     }
 
+    private void homeBehavior() throws Exception {
+        for (String mode : new String[]{"clock", "cards"}) {
+            prefs.data.edit().putString("home_action", mode).commit(); JSONObject saved = activity.exportConfigurationData();
+            prefs.data.edit().putString("home_action", mode.equals("cards") ? "clock" : "cards").commit();
+            activity.applyConfigurationData(saved); require(prefs.homeAction().equals(mode), "configuration roundtrip keeps Home " + mode);
+            prefs.saveLayout(); prefs.data.edit().putString("home_action", mode.equals("cards") ? "clock" : "cards").commit();
+            prefs.restoreLayout(false); require(prefs.homeAction().equals(mode), "layout backup keeps Home " + mode);
+            prefs.restoreLayout(true); require(!prefs.homeAction().equals(mode), "layout undo restores prior Home behavior");
+        }
+        JSONObject saved = activity.exportConfigurationData();
+        for (Object invalid : new Object[]{"unknown", 1, true, JSONObject.NULL}) {
+            JSONObject bad = new JSONObject(saved.toString()); bad.getJSONObject("layout").put("homeAction", invalid); reject(bad, "invalid Home behavior");
+        }
+        JSONObject missing = new JSONObject(saved.toString()); missing.getJSONObject("layout").remove("homeAction"); reject(missing, "new layout requires Home behavior");
+        JSONObject legacy = new JSONObject(saved.toString()); legacy.getJSONObject("layout").put("version", 9).remove("homeAction");
+        activity.applyConfigurationData(legacy); require(prefs.homeAction().equals("cards"), "older layout defaults Home to native cards");
+    }
+
     private void templates() throws Exception {
         WidgetTemplates.Card card = new WidgetTemplates.Card(6, List.of(new WidgetTemplates.Entry("com.example.widgets/.Provider", 0, 0, 2, 2), new WidgetTemplates.Entry("com.example.widgets/.Provider", 2, 2, 2, 2)));
         JSONObject config = activity.exportConfigurationData().put("widgetTemplates", WidgetTemplates.json(List.of(card)));
@@ -122,7 +141,7 @@ final class ConfigurationChecks {
 
     private void compatibility() throws Exception {
         JSONObject current = activity.exportConfigurationData();
-        for (int version = 1; version <= 13; version++) {
+        for (int version = 1; version <= 14; version++) {
             JSONObject legacy = new JSONObject(current.toString()).put("version", version);
             if (version < 4) legacy.remove("layout");
             if (version < 5) legacy.remove("rotations");

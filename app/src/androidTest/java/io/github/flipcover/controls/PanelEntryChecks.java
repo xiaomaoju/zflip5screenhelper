@@ -103,7 +103,7 @@ final class PanelEntryChecks {
         root.addView(right, new FrameLayout.LayoutParams(600, 48));
         entry = new PanelEntryView(activity, prefs, entryPlacement(DockGeometry.BOTTOM), new DockView.Listener() {
             public void action(String id) { clicks++; } public void configure() { }
-            public void beginPull(String name, float value) { begins++; page = name; }
+            public void beginPull(String name, float value, float originY) { begins++; page = name; }
             public void pull(String name, float value) { distance = value; }
             public void release(String name, float value, float speed, boolean cancel) { releases++; canceled = cancel; }
             public void toggleVisibility() { toggles++; }
@@ -125,7 +125,7 @@ final class PanelEntryChecks {
             require(placement.edge() == DockGeometry.BOTTOM && !placement.vertical(), "every rotation uses a bottom horizontal entry");
             entry = new PanelEntryView(activity, prefs, placement, new DockView.Listener() {
                 public void action(String id) { clicks++; } public void configure() { }
-                public void beginPull(String name, float value) { begins++; page = name; }
+                public void beginPull(String name, float value, float originY) { begins++; page = name; }
                 public void pull(String name, float value) { distance = value; }
                 public void release(String name, float value, float speed, boolean cancel) { releases++; canceled = cancel; }
             });
@@ -138,7 +138,7 @@ final class PanelEntryChecks {
             event(entry, time, 160, MotionEvent.ACTION_DOWN, x, y); event(entry, time, 200, MotionEvent.ACTION_MOVE, x + 120, y); event(entry, time, 240, MotionEvent.ACTION_UP, x + 120, y);
             require(begins == 1 && releases == 1, "horizontal swipe never opens a panel on rotation " + edge);
             Bitmap bitmap = Bitmap.createBitmap(entry.getWidth(), entry.getHeight(), Bitmap.Config.ARGB_8888); entry.draw(new Canvas(bitmap));
-            DockGeometry.Chrome chrome = DockGeometry.chrome(placement, activity.getResources().getDisplayMetrics().density);
+            DockGeometry.Chrome chrome = DockGeometry.panelEntryChrome(placement, activity.getResources().getDisplayMetrics().density);
             for (DockGeometry.Box bar : new DockGeometry.Box[]{chrome.firstHandle(), chrome.secondHandle()}) require(android.graphics.Color.alpha(bitmap.getPixel(bar.x() + bar.width() / 2, bar.y() + bar.height() / 2)) > 0, "white handle is drawn on edge " + edge);
             bitmap.recycle();
         }
