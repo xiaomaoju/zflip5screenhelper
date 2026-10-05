@@ -129,7 +129,7 @@ final class PanelLayoutChecks {
     }
 
     private void checkLayout(int mask, int columns, String position, String hand, boolean labels) {
-        ViewGroup dashboard = tagged("control-dashboard");
+        ViewGroup dashboard = tagged("control-dashboard"), grid = tagged("control-tile-grid"); ScrollView gridScroll = tagged("control-grid-scroll");
         View brightness = dashboard.findViewWithTag("control-brightness"), volume = dashboard.findViewWithTag("control-volume"), sliders = dashboard.findViewWithTag("control-sliders"), media = dashboard.findViewWithTag("media-card");
         require((brightness != null) == ((mask & 1) != 0), "brightness switch controls actual view construction");
         require((volume != null) == ((mask & 2) != 0), "volume switch controls actual view construction");
@@ -140,11 +140,11 @@ final class PanelLayoutChecks {
         for (String id : ACTIONS) {
             ViewGroup tile = dashboard.findViewWithTag("control-" + id);
             require(tile != null, "configured action mounted: " + id);
-            contained(tile, dashboard, "tile " + id);
+            contained(tile, grid, "tile " + id);
             int minimumWidth = context.getResources().getConfiguration().fontScale > 1.3f || prefs.panelLabelSize() == 2 || prefs.panelDensity() == 2 ? 48 : 28;
             require(tile.getWidth() >= Ui.dp(context, minimumWidth) - 1 && tile.getHeight() >= Ui.dp(context, 48) - 1, "tile retains chosen compact or large-type width: " + id);
-            if (tile.getTop() == 0) { firstRow++; minLeft = Math.min(minLeft, tile.getLeft()); maxRight = Math.max(maxRight, tile.getRight()); }
-            gridBottom = Math.max(gridBottom, tile.getBottom());
+            if (tile.getTop() == 0) { firstRow++; minLeft = Math.min(minLeft, gridScroll.getLeft() + tile.getLeft()); maxRight = Math.max(maxRight, gridScroll.getLeft() + tile.getRight()); }
+            gridBottom = gridScroll.getBottom();
             ViewGroup face = (ViewGroup) tile.getChildAt(0); TextView label = (TextView) tile.getChildAt(1);
             contained(face, tile, "icon face " + id);
             contained(face.getChildAt(0), face, "icon glyph " + id);
@@ -177,9 +177,10 @@ final class PanelLayoutChecks {
         }
         ScrollView scroll = find(activity.findViewById(android.R.id.content), ScrollView.class); require(scroll != null, "control content remains scrollable");
         scroll.scrollTo(0, scroll.getChildAt(0).getHeight());
+        gridScroll.scrollTo(0, grid.getHeight());
         View tail = hint.getVisibility() == View.VISIBLE ? hint : media != null && media.getBottom() >= gridBottom ? media : sliders != null && sliders.getBottom() >= gridBottom ? sliders : dashboard.findViewWithTag("control-configure");
-        reachableTail(scroll, tail, "last control region");
-        scroll.scrollTo(0, 0);
+        reachableTail(tail.getParent() == grid ? gridScroll : scroll, tail, "last control region");
+        scroll.scrollTo(0, 0); gridScroll.scrollTo(0, 0);
     }
 
     private void contentCounts() throws Exception {
@@ -207,15 +208,16 @@ final class PanelLayoutChecks {
                         return;
                     }
                     require(dashboard != null, "nonempty control list mounts dashboard");
+                    ViewGroup grid = root.findViewWithTag("control-tile-grid"); ScrollView gridScroll = root.findViewWithTag("control-grid-scroll");
                     int firstRow = 0, firstRowRight = 0;
                     for (String id : selected) {
                         ViewGroup tile = dashboard.findViewWithTag("control-" + id); require(tile != null, "variable list preserves configured action " + id);
-                        contained(tile, dashboard, "variable-list tile " + id);
+                        contained(tile, grid, "variable-list tile " + id);
                         int minimumWidth = context.getResources().getConfiguration().fontScale > 1.3f || prefs.panelLabelSize() == 2 || prefs.panelDensity() == 2 ? 48 : 28;
                         require(tile.getHeight() >= Ui.dp(context, 48) - 1 && tile.getWidth() >= Ui.dp(context, minimumWidth) - 1, "variable list keeps chosen compact or large-type size");
                         if (tile.getTop() == 0) { firstRow++; firstRowRight = Math.max(firstRowRight, tile.getRight()); }
                         TextView label = (TextView) tile.getChildAt(1); contained(label, tile, "variable-list label"); readable(label, "variable-list label");
-                        if (count == 1) require(tile.getChildAt(0).getTop() <= Ui.dp(context, 12), "single control stays near the header without a large top spacer");
+                        require(gridScroll.getHeight() == tile.getHeight() * 4, "quantity never changes the four-row viewport");
                     }
                     require(firstRow == Math.min(count, columns), "variable count preserves manual columns");
                     View first = dashboard.findViewWithTag("control-" + selected.get(0));
@@ -223,8 +225,9 @@ final class PanelLayoutChecks {
                     if (count >= columns) require(dashboard.getWidth() - firstRowRight < columns, "long control list fills all available grid width");
                     for (int index = 0; index < selected.size(); index++) for (int other = index + 1; other < selected.size(); other++) require(!Rect.intersects(rect(dashboard.findViewWithTag("control-" + selected.get(index))), rect(dashboard.findViewWithTag("control-" + selected.get(other)))), "variable-list controls never overlap");
                     scroll.scrollTo(0, scroll.getChildAt(0).getHeight());
-                    View last = dashboard.findViewWithTag("control-" + selected.get(selected.size() - 1)); reachableTail(scroll, last, "final variable-list control");
-                    scroll.scrollTo(0, 0);
+                    gridScroll.scrollTo(0, grid.getHeight());
+                    View last = dashboard.findViewWithTag("control-" + selected.get(selected.size() - 1)); last.requestRectangleOnScreen(new Rect(0, 0, last.getWidth(), last.getHeight()), true); reachableTail(gridScroll, last, "final variable-list control");
+                    scroll.scrollTo(0, 0); gridScroll.scrollTo(0, 0);
                 });
                 if (columns == 5) capture("content-count-" + count + "-font-200");
             }

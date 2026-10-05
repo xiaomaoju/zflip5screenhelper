@@ -55,10 +55,10 @@ final class WidgetPickerView extends LinearLayout implements AppCatalogCache.Lis
     private final Bundle saved;
     WidgetPickerView(Context c, NativeWidgetBridge bridge, int outer, List<WidgetGrid.Item> placed, Bundle saved, Consumer<AppWidgetProviderInfo> choose) {
         super(c); this.bridge = bridge; this.outer = outer; this.placed = placed; this.saved = saved; this.choose = choose; catalog = CoverApp.catalog(c);
-        setOrientation(VERTICAL); setPadding(Ui.dp(c, 12), Ui.dp(c, 4), Ui.dp(c, 12), 0);
+        setOrientation(VERTICAL); setPadding(Ui.dp(c, 10), Ui.dp(c, 2), Ui.dp(c, 10), 0);
         expanded.addAll(saved.getStringArrayList("expanded") == null ? List.of() : saved.getStringArrayList("expanded"));
-        search = SettingsUi.search(c, "搜索应用或小组件", saved.getString("query", "")); search.setTag("widget-search"); addView(search, new LayoutParams(-1, -2));
-        status = SettingsUi.text(c, "正在读取小组件…", 14, SettingsUi.MUTED); status.setPadding(0, Ui.dp(c, 8), 0, Ui.dp(c, 8)); addView(status);
+        search = SettingsUi.search(c, "搜索应用或小组件", saved.getString("query", "")); search.setTextSize(13); search.setMinimumHeight(Ui.dp(c, 36)); search.setPadding(Ui.dp(c, 10), Ui.dp(c, 4), Ui.dp(c, 10), Ui.dp(c, 4)); search.setTag("widget-search"); addView(search, new LayoutParams(-1, -2));
+        status = NativeWidgetUi.text(c, "正在读取小组件…", 11, SettingsUi.MUTED); status.setPadding(0, Ui.dp(c, 4), 0, Ui.dp(c, 4)); addView(status);
         list = new ListView(c); list.setTag("widget-picker-list"); list.setDivider(null); list.setItemsCanFocus(true); list.setAdapter(adapter); addView(list, new LayoutParams(-1, 0, 1));
         search.addTextChangedListener(new android.text.TextWatcher() { public void beforeTextChanged(CharSequence s, int start, int count, int after) { } public void onTextChanged(CharSequence s, int start, int before, int count) { rebuild(); } public void afterTextChanged(android.text.Editable text) { } });
         load();
@@ -73,7 +73,7 @@ final class WidgetPickerView extends LinearLayout implements AppCatalogCache.Lis
                 for (AppWidgetProviderInfo info : AppWidgetManager.getInstance(app).getInstalledProvidersForProfile(android.os.Process.myUserHandle())) {
                     String pkg = info.provider.getPackageName(); if (pkg.equals(app.getPackageName())) continue;
                     String label = labels.get(pkg); if (label == null) { try { label = app.getPackageManager().getApplicationLabel(app.getPackageManager().getApplicationInfo(pkg, 0)).toString(); } catch (android.content.pm.PackageManager.NameNotFoundException ignored) { continue; } labels.put(pkg, label); }
-                    found.add(new Entry(info, info.loadLabel(app.getPackageManager()), label, pkg));
+                    found.add(new Entry(info, bridge.providerLabel(info), label, pkg));
                 }
                 java.text.Collator order = java.text.Collator.getInstance(); found.sort((a, b) -> { int compared = order.compare(a.app, b.app); return compared == 0 ? order.compare(a.name, b.name) : compared; });
             } catch (RuntimeException failure) { error = "读取失败，点此重试"; }
@@ -129,19 +129,19 @@ final class WidgetPickerView extends LinearLayout implements AppCatalogCache.Lis
         @Override public View getView(int position, View recycled, ViewGroup parent) {
             Context c = getContext(); Object value = rows.get(position);
             if (value instanceof List<?> group) {
-                Entry first = (Entry) group.get(0); LinearLayout row = SettingsUi.row(c); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(Ui.dp(c, 14), Ui.dp(c, 12), Ui.dp(c, 14), Ui.dp(c, 12)); row.setMinimumHeight(Ui.dp(c, 64)); row.setBackground(Ui.ripple(c, SettingsUi.SURFACE, 20)); row.setTag("widget-group-" + first.packageName);
+                Entry first = (Entry) group.get(0); LinearLayout row = SettingsUi.row(c); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(Ui.dp(c, 8), Ui.dp(c, 4), Ui.dp(c, 8), Ui.dp(c, 4)); row.setMinimumHeight(Ui.dp(c, 44)); row.setBackground(Ui.ripple(c, SettingsUi.SURFACE, 14)); row.setTag("widget-group-" + first.packageName);
                 ImageView icon = new ImageView(c); icon.setTag("widget-app-icon"); String launcher = catalog.launcher(first.packageName); Drawable image = launcher == null ? groupIcons.get(first.packageName) : catalog.cachedIcon(c, launcher);
                 icon.setImageDrawable(image == null ? Ui.icon(c, R.drawable.ic_ms_apps, SettingsUi.ACCENT) : image); icon.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); icon.setContentDescription(launcher == null ? first.packageName : launcher); if (image == null) { if (launcher != null) catalog.requestIcon(launcher); else groupIcon(first.packageName, icon); }
-                row.addView(icon, new LayoutParams(Ui.dp(c, 32), Ui.dp(c, 32))); LinearLayout words = SettingsUi.column(c); words.setPadding(Ui.dp(c, 12), 0, Ui.dp(c, 8), 0); words.addView(SettingsUi.heading(c, first.app, 16)); words.addView(SettingsUi.text(c, group.size() + "种小组件", 14, SettingsUi.ACCENT)); row.addView(words, new LayoutParams(0, -2, 1));
-                TextView arrow = SettingsUi.text(c, (expanded.contains(first.packageName) || !search.getText().toString().isEmpty()) ? "⌃" : "⌄", 20, SettingsUi.MUTED); row.addView(arrow); row.setFocusable(true); row.setOnClickListener(v -> { int index = list.getFirstVisiblePosition(), top = list.getChildCount() == 0 ? 0 : list.getChildAt(0).getTop(); if (!expanded.add(first.packageName)) expanded.remove(first.packageName); rebuild(); list.setSelectionFromTop(index, top); }); return row;
+                row.addView(icon, new LayoutParams(Ui.dp(c, 24), Ui.dp(c, 28))); LinearLayout words = SettingsUi.column(c); words.setPadding(Ui.dp(c, 10), 0, Ui.dp(c, 6), 0); words.addView(NativeWidgetUi.heading(c, first.app, 13)); words.addView(NativeWidgetUi.text(c, group.size() + "种小组件", 11, SettingsUi.ACCENT)); row.addView(words, new LayoutParams(0, -2, 1));
+                TextView arrow = NativeWidgetUi.text(c, (expanded.contains(first.packageName) || !search.getText().toString().isEmpty()) ? "⌃" : "⌄", 16, SettingsUi.MUTED); row.addView(arrow); row.setFocusable(true); row.setOnClickListener(v -> { int index = list.getFirstVisiblePosition(), top = list.getChildCount() == 0 ? 0 : list.getChildAt(0).getTop(); if (!expanded.add(first.packageName)) expanded.remove(first.packageName); rebuild(); list.setSelectionFromTop(index, top); }); return row;
             }
-            Entry entry = (Entry) value; WidgetGrid.Item span = bridge.defaultItem(outer, entry.info); LinearLayout tile = SettingsUi.column(c); tile.setTag("widget-option-" + entry.info.provider.flattenToString()); tile.setPadding(Ui.dp(c, 12), Ui.dp(c, 14), Ui.dp(c, 12), Ui.dp(c, 18));
-            tile.addView(SettingsUi.heading(c, entry.name, 16)); TextView size = SettingsUi.text(c, span.sizeLabel() + " · 占" + span.cells() + "格", 14, SettingsUi.ACCENT); size.setTag("widget-size-label"); size.setPadding(0, Ui.dp(c, 4), 0, 0); tile.addView(size);
-            WidgetPreview picture = new WidgetPreview(c); picture.setBackground(Ui.background(c, SettingsUi.SURFACE, 18)); int previewHeight = Math.max(56, Math.min(112, 220 * span.height() / Math.max(1, span.width()))); LayoutParams previewParams = new LayoutParams(-1, Ui.dp(c, previewHeight)); previewParams.topMargin = Ui.dp(c, 10); tile.addView(picture, previewParams);
-            TextView caption = SettingsUi.text(c, "", 14, SettingsUi.MUTED); SettingsUi.add(tile, caption); preview(entry, picture, caption, span);
+            Entry entry = (Entry) value; WidgetGrid.Item span = bridge.defaultItem(outer, entry.info); LinearLayout tile = SettingsUi.column(c); tile.setTag("widget-option-" + entry.info.provider.flattenToString()); tile.setPadding(Ui.dp(c, 10), Ui.dp(c, 8), Ui.dp(c, 10), Ui.dp(c, 8));
+            tile.addView(NativeWidgetUi.heading(c, entry.name, 13)); TextView size = NativeWidgetUi.text(c, span.sizeLabel() + " · 占" + span.cells() + "格", 11, SettingsUi.ACCENT); size.setTag("widget-size-label"); size.setPadding(0, Ui.dp(c, 2), 0, 0); tile.addView(size);
+            WidgetPreview picture = new WidgetPreview(c); picture.setBackground(Ui.background(c, SettingsUi.SURFACE, 16)); int previewHeight = Math.max(48, Math.min(72, 128 * span.height() / Math.max(1, span.width()))); LayoutParams previewParams = new LayoutParams(-1, Math.min(Ui.dp(c, previewHeight), NativeWidgetUi.previewHeight(c, 72))); previewParams.topMargin = Ui.dp(c, 6); tile.addView(picture, previewParams);
+            TextView caption = NativeWidgetUi.text(c, "", 11, SettingsUi.MUTED); NativeWidgetUi.add(tile, caption); preview(entry, picture, caption, span);
             boolean fits = bridge.supports(outer, entry.info, span.width(), span.height()), room = fits && WidgetGrid.find(placed, Integer.MAX_VALUE, span.width(), span.height()) != null;
-            Button add = SettingsUi.button(c, room ? "添加" : "选择尺寸与位置", () -> choose.accept(entry.info)); add.setTag("widget-add-" + entry.info.provider.flattenToString()); SettingsUi.add(tile, add);
-            if (!room) SettingsUi.add(tile, SettingsUi.text(c, fits ? "当前没有连续的" + span.sizeLabel() + "空位" : "此样式需要调整尺寸或使用较大卡片", 14, SettingsUi.MUTED)); return tile;
+            Button add = NativeWidgetUi.button(c, room ? "添加" : "选择尺寸与位置", () -> choose.accept(entry.info)); add.setTag("widget-add-" + entry.info.provider.flattenToString()); NativeWidgetUi.add(tile, add);
+            if (!room) NativeWidgetUi.add(tile, NativeWidgetUi.text(c, fits ? "当前没有连续的" + span.sizeLabel() + "空位" : "此样式需要调整尺寸或使用较大卡片", 11, SettingsUi.MUTED)); return tile;
         }
     }
 }

@@ -104,7 +104,11 @@ final class RecentTasksGlassChecks {
             });
             require(first.getScaleX() < .99f && first.getScaleY() > 1.02f, "upward drag narrows and stretches the glass lens before release"); capture("tasks-pull");
             main(() -> pageEvent(pullStart, android.view.MotionEvent.ACTION_CANCEL, pullingCard.centerX(), pullingCard.centerY() - Ui.dp(activity, 72)));
-            SystemClock.sleep(380); test.waitForIdleSync();
+            long reboundDeadline = SystemClock.uptimeMillis() + 2000;
+            while (SystemClock.uptimeMillis() < reboundDeadline) {
+                boolean[] resting = {false}; main(() -> resting[0] = first.getScaleX() == 1 && first.getScaleY() == 1 && page.findViewWithTag("task-card:200").getTranslationY() == 0);
+                if (resting[0]) break; SystemClock.sleep(20); test.waitForIdleSync();
+            }
             require(first.getScaleX() == 1 && first.getScaleY() == 1 && page.findViewWithTag("task-card:200").getTranslationY() == 0, "cancel returns lens and card to exact resting size and position");
 
             main(() -> {
@@ -155,11 +159,35 @@ final class RecentTasksGlassChecks {
             for (Bitmap bitmap : snapshots) require(bitmap.isRecycled(), "memory trim releases visible preview pixels");
             require(!((TaskPreviewView) page.findViewWithTag("task-preview:200")).refracting(), "icon fallback never magnifies the icon");
             int trimmedRequests = requests; main(() -> hub.recentResult(tasks, null)); idle(); require(requests == trimmedRequests, "memory trim does not immediately reload previews");
-            main(() -> hub.showTasks(false)); checkRevealRequests(tasks); checkOptics();
+            main(() -> hub.showTasks(false)); checkRevealRequests(tasks); checkExitEffects(); checkOptics();
             return "PASS: " + assertions + " task glass assertions; rotation=" + rotation + "; reveal-to-request=" + revealRequestMillis + "ms; production hardware rendering, crop/convex pixels, lifecycle, bounded previews";
         } finally { main(() -> { if (session != null) session.close(); if (hub != null) hub.dispose(); if (root != null) root.removeAllViews(); }); }
     }
     private void attachGlass() { attachGlass(false); }
+    private void checkExitEffects() throws Exception {
+        main(() -> hub.showTasks(true)); idle();
+        if (session != null) main(() -> session.close());
+        attachGlass(); idle();
+        long bytes = session.bytes(); int captures = session.captures, preparations = session.preparations;
+        int[] completed = {0}; android.animation.ValueAnimator[] exit = {null};
+        main(() -> {
+            hub.dismissForTaskClear(() -> { completed[0]++; session.close(); });
+            try { java.lang.reflect.Field field = RecentTasksView.class.getDeclaredField("exitAnimation"); field.setAccessible(true); exit[0] = (android.animation.ValueAnimator) field.get(page); }
+            catch (Exception error) { throw new AssertionError(error); }
+            exit[0].pause(); exit[0].setCurrentPlayTime(60);
+            View slot = (View) page.findViewWithTag("tasks-clear").getParent();
+            require(slot.getScaleX() > 1 && slot.getAlpha() > 0 && slot.getAlpha() < 1, "X elastically pops and fades during the dissolve");
+            require(page.findViewWithTag("task-carousel").getAlpha() == 0 && hub.getTranslationY() == 0, "task cards disappear first without moving the full screenshot");
+            require(session.bytes() == bytes && session.captures == captures && session.preparations == preparations, "dissolve borrows the existing Gaussian capture without more pixels or preparation");
+        });
+        capture("tasks-exit-pop");
+        main(() -> exit[0].setCurrentPlayTime(120)); capture("tasks-exit-blur");
+        main(() -> exit[0].end()); idle();
+        require(completed[0] == 1 && session.bytes() == 0, "exit completion releases the texture once"); capture("tasks-exit-gone");
+        main(() -> hub.reopen()); idle();
+        require(((View) page.findViewWithTag("tasks-clear").getParent()).getScaleX() == 1 && page.findViewWithTag("task-carousel").getAlpha() == 1, "reopening restores resting controls and cancels the old exit");
+        main(() -> hub.showTasks(false));
+    }
     private void checkBlankTaps() {
         float x = page.getWidth() / 2f, y = 20;
         main(() -> pageGesture(x, y, x, y, 40, false)); require(closeRequests == 1, "one blank tap invokes the existing downward dismissal exactly once");

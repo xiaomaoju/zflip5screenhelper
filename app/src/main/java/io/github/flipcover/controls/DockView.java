@@ -16,7 +16,7 @@ import android.widget.LinearLayout;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class DockView extends FrameLayout {
+public final class DockView extends InputSurface {
     public interface Listener {
         void action(String id); void configure();
         default void beginPull(String page, float distance, float originY) { }
@@ -29,6 +29,10 @@ public final class DockView extends FrameLayout {
     private final Listener listener;
     private final LinearLayout track;
     private final List<LinearLayout> pages = new ArrayList<>();
+    private final List<ImageButton> launcherButtons = new ArrayList<>();
+    private boolean launcherHidden;
+    private float launcherProgress;
+    private android.animation.ValueAnimator launcherAnimation;
     private final SwipeGesture gesture;
     private final View dots;
     private final int extent;
@@ -98,12 +102,12 @@ public final class DockView extends FrameLayout {
         dots = new View(context) {
             private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(Canvas canvas) {
-                paint.setColor(Ui.chromeColor(prefs)); paint.setAlpha(230); if (prefs.chromeStyle().equals("contrast")) paint.setShadowLayer(Ui.dp(context, 1), 0, 0, android.graphics.Color.BLACK);
+                paint.setColor(Ui.chromeColor(prefs)); paint.setAlpha(230); ChromeShadowDrawable.applyShadow(paint, prefs.chromeStyle().equals("contrast") ? density * 1.25f : 0);
                 if (compact || pages.size() < 2) return;
                 int visible = Math.min(3, pages.size()), first = Math.max(0, Math.min(page - 1, pages.size() - visible));
                 float gap = Ui.dp(context, 4), radius = Math.max(1, density * .65f);
                 for (int i = 0; i < visible; i++) {
-                    paint.setColor(i + first == page ? Ui.TEXT : Ui.MUTED); paint.setAlpha(i + first == page ? 220 : 95);
+                    paint.setColor(Ui.chromeColor(prefs)); paint.setAlpha(i + first == page ? 220 : 95);
                     float offset = (i - (visible - 1) / 2f) * gap;
                     DockGeometry.Box bar = chrome.firstHandle();
                     float x = placement.vertical() ? bar.x() + bar.width() / 2f : visualX + visual.width() / 2f + offset;
@@ -125,8 +129,32 @@ public final class DockView extends FrameLayout {
         if (placement.vertical()) button.setPadding(icons.x() + across, along, touch.width() - icons.x() - across - size, along);
         else button.setPadding(along, icons.y() + across, along, touch.height() - icons.y() - across - size);
         button.setContentDescription(ActionCatalog.label(context, id));
-        button.setOnClickListener(v -> listener.action(id));
+        boolean launcher = id.equals("app_hub") || id.equals("app_dock");
+        if (launcher) launcherButtons.add(button);
+        button.setOnClickListener(v -> { if (!launcher || !launcherHidden) listener.action(id); });
         return button;
+    }
+    void launcherHidden(boolean hidden) {
+        if (launcherHidden == hidden) return;
+        launcherHidden = hidden;
+        if (launcherAnimation != null) { launcherAnimation.cancel(); launcherAnimation = null; }
+        if (pressedButton != null && launcherButtons.contains(pressedButton)) endTouch();
+        for (ImageButton button : launcherButtons) {
+            button.setEnabled(!hidden); button.setImportantForAccessibility(hidden ? IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS : IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        }
+        float target = hidden ? 1 : 0;
+        if (!isAttachedToWindow() || !android.animation.ValueAnimator.areAnimatorsEnabled()) { launcherProgress = target; applyLauncherProgress(); return; }
+        launcherAnimation = android.animation.ValueAnimator.ofFloat(launcherProgress, target);
+        launcherAnimation.setDuration(Math.max(1, Math.round(200 * Math.abs(target - launcherProgress))));
+        launcherAnimation.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        launcherAnimation.addUpdateListener(frame -> { launcherProgress = (float) frame.getAnimatedValue(); applyLauncherProgress(); }); launcherAnimation.start();
+    }
+    String launcherEntryDiagnostics() { return "hidden=" + launcherHidden + ", progress=" + launcherProgress; }
+    private void applyLauncherProgress() {
+        float distance = (placement.vertical() ? placement.touch().width() : placement.touch().height()) * launcherProgress;
+        float x = placement.edge() == DockGeometry.LEFT ? -distance : placement.edge() == DockGeometry.RIGHT ? distance : 0;
+        float y = placement.edge() == DockGeometry.TOP ? -distance : placement.edge() == DockGeometry.BOTTOM ? distance : 0;
+        for (ImageButton button : launcherButtons) { button.setTranslationX(x); button.setTranslationY(y); button.setAlpha(1 - launcherProgress); }
     }
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
@@ -143,14 +171,21 @@ public final class DockView extends FrameLayout {
         if (pressedButton != null) postDelayed(hold, ViewConfiguration.getLongPressTimeout());
     }
     private View buttonAt(float position) {
+        DockGeometry.Box visual = placement.visual(), touch = placement.touch();
+        int length = placement.vertical() ? touch.height() : touch.width();
+        if (position < 0 || position >= length) return null;
+        int rowStart = placement.vertical() ? visual.y() - touch.y() : visual.x() - touch.x();
+        int rowEnd = rowStart + (placement.vertical() ? visual.height() : visual.width());
+        if (position < rowStart || position >= rowEnd) return fixed.isEnabled() ? fixed : null;
         int first = placement.vertical() ? fixed.getTop() : fixed.getLeft(), last = placement.vertical() ? fixed.getBottom() : fixed.getRight();
-        if (position >= first && position < last) return fixed;
+        if (position >= first && position < last) return fixed.isEnabled() ? fixed : null;
+        if (position < pagerStart || position >= pagerStart + extent) return null;
         float trackPosition = position - pagerStart - startTranslation;
         for (LinearLayout group : pages) {
             float local = trackPosition - (placement.vertical() ? group.getTop() : group.getLeft());
             for (int i = 0; i < group.getChildCount(); i++) {
                 View button = group.getChildAt(i); int begin = placement.vertical() ? button.getTop() : button.getLeft(), end = placement.vertical() ? button.getBottom() : button.getRight();
-                if (local >= begin && local < end && button instanceof ImageButton) return button;
+                if (local >= begin && local < end && button instanceof ImageButton) return button.isEnabled() ? button : null;
             }
         }
         return null;
@@ -227,5 +262,5 @@ public final class DockView extends FrameLayout {
         if (action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) { page = Math.max(0, page - 1); snap(true); return true; }
         return super.performAccessibilityAction(action, args);
     }
-    @Override protected void onDetachedFromWindow() { endTouch(); track.animate().cancel(); super.onDetachedFromWindow(); }
+    @Override protected void onDetachedFromWindow() { endTouch(); track.animate().cancel(); if (launcherAnimation != null) { launcherAnimation.cancel(); launcherAnimation = null; } launcherProgress = launcherHidden ? 1 : 0; applyLauncherProgress(); super.onDetachedFromWindow(); }
 }

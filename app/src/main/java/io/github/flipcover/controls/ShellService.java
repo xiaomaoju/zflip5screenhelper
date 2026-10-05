@@ -38,7 +38,7 @@ public final class ShellService extends IShellService.Stub {
                 case "wifi", "bluetooth", "data", "airplane", "dnd" -> switchSetting(operation, value);
                 case "tile_add", "tile_click" -> tile(operation, component);
                 case "diagnostics" -> diagnostics(displayId);
-                case "recent_tasks", "recent_clear" -> recentTasks(displayId, component, operation.equals("recent_clear"));
+                case "recent_tasks", "recent_clear", "recent_dismiss" -> recentTasks(displayId, component, !operation.equals("recent_tasks"), operation.equals("recent_dismiss"));
                 case "recent_open" -> reply(true, "任务恢复结果", new SystemRecentTasks(ownerContext, ownerUid).open(displayId, component).toString());
                 case "native_home" -> nativeHome(displayId);
                 default -> reply(false, "不支持的操作", "");
@@ -53,8 +53,8 @@ public final class ShellService extends IShellService.Stub {
         try { return new SystemRecentTasks(ownerContext, ownerUid).snapshot(displayId, task); }
         catch (Exception error) { android.os.Bundle result = new android.os.Bundle(); result.putString("message", "预览不可用"); return result; }
     }
-    private String recentTasks(int display, String request, boolean clear) throws Exception {
-        JSONObject result = new SystemRecentTasks(ownerContext, ownerUid).execute(display, request, clear);
+    private String recentTasks(int display, String request, boolean clear, boolean explicit) throws Exception {
+        JSONObject result = new SystemRecentTasks(ownerContext, ownerUid).execute(display, request, clear, explicit);
         String message = clear ? "已从系统移除 " + result.getInt("removed") + " 个任务" + (result.getInt("retained") > 0 ? "，部分任务仍保留" : "") : "已同步外屏最近任务";
         return reply(true, message, result.toString());
     }

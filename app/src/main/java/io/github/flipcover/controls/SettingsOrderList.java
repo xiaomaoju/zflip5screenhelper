@@ -95,8 +95,11 @@ final class SettingsOrderList extends LinearLayout {
     private boolean startDrag(String id, View row, View pressed) {
         if (dragging != null || !items.contains(id)) return false;
         dragging = id;
+        SettingsUi.Viewport viewport = InputNavigation.parent(row, SettingsUi.Viewport.class);
+        float scale = viewport == null ? 1f : viewport.getChildAt(0).getScaleX();
         DragShadowBuilder shadow = new DragShadowBuilder(row) {
-            @Override public void onProvideShadowMetrics(android.graphics.Point size, android.graphics.Point touch) { size.set(row.getWidth(), row.getHeight()); touch.set(pressed.getLeft() + pressed.getWidth() / 2, row.getHeight() / 2); }
+            @Override public void onProvideShadowMetrics(android.graphics.Point size, android.graphics.Point touch) { size.set(Math.max(1, Math.round(row.getWidth() * scale)), Math.max(1, Math.round(row.getHeight() * scale))); touch.set(Math.round((pressed.getLeft() + pressed.getWidth() / 2f) * scale), Math.round(row.getHeight() / 2f * scale)); }
+            @Override public void onDrawShadow(Canvas canvas) { canvas.save(); canvas.scale(scale, scale); row.draw(canvas); canvas.restore(); }
         };
         if (!row.startDragAndDrop(ClipData.newPlainText("shortcut-order", id), shadow, this, 0)) { dragging = null; return false; }
         row.setAlpha(.35f); row.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); return true;
@@ -122,8 +125,8 @@ final class SettingsOrderList extends LinearLayout {
         }
     }
     private void updateInsertion() {
-        int[] listLocation = new int[2], scrollLocation = new int[2]; getLocationOnScreen(listLocation); scroll.getLocationOnScreen(scrollLocation);
-        float y = pointerY + scrollLocation[1] - listLocation[1]; insertion = items.size();
+        android.graphics.Rect listBounds = new android.graphics.Rect(0, 0, getWidth(), getHeight()); scroll.offsetDescendantRectToMyCoords(this, listBounds);
+        float y = pointerY + scroll.getScrollY() - listBounds.top; insertion = items.size();
         for (int i = 0; i < items.size(); i++) { View row = getChildAt(i); if (y < (row.getTop() + row.getBottom()) / 2f) { insertion = i; break; } }
         invalidate();
     }

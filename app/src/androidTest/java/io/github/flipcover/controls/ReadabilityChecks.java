@@ -138,7 +138,7 @@ final class ReadabilityChecks {
         for (String id : prefs.actions("panel")) {
             ViewGroup tile = dashboard.findViewWithTag("control-" + id); require(tile != null, "configured control is present: " + id);
             if (tile.getTop() == 0) firstRow++;
-            contained(tile, dashboard, "control " + id);
+            contained(tile, (ViewGroup) tile.getParent(), "control " + id);
             ViewGroup face = (ViewGroup) tile.getChildAt(0); View symbol = face.getChildAt(0); TextView marker = (TextView) face.getChildAt(1), label = (TextView) tile.getChildAt(1);
             contained(face, tile, "control face"); contained(symbol, face, "control symbol"); contained(label, tile, "control label");
             require(Math.abs(symbol.getLeft() + symbol.getRight() - face.getWidth()) <= 1 && Math.abs(symbol.getTop() + symbol.getBottom() - face.getHeight()) <= 1, "main icon stays centered independently of unknown-state badge");
@@ -200,16 +200,15 @@ final class ReadabilityChecks {
 
     private void checkHub() {
         require(hub.expanded(), "application center opens expanded");
-        View edit = tagged("hub-edit"), expand = tagged("hub-expand"), close = tagged("hub-close");
-        target(edit, 20, 28, "compact rail edit"); target(expand, 20, 28, "compact rail expand"); target(close, 24, 30, "compact hub close"); separate(edit, expand, "rail actions");
-        require(edit.getTop() == expand.getTop() && edit.getRight() <= expand.getLeft(), "rail tools share one compact row");
-        target(tagged("hub-tasks"), 28, 30, "retained multitasking entry");
+        View edit = tagged("hub-edit");
+        target(edit, AppLauncherStyle.RAIL_WIDTH, AppLauncherStyle.RAIL_WIDTH, "independent circular sidebar settings");
+        require(tagged("hub-tasks") == null && tagged("hub-close") == null, "upper-right buttons are removed");
         TextView search = tagged("hub-search"), sort = tagged("hub-sort"), status = tagged("hub-recent-status");
         require(search.getHeight() >= Ui.dp(context, 30) && sort.getHeight() >= Ui.dp(context, 30), "search and sort retain compact minimum height with natural text growth");
         readable(search, "search field"); readable(sort, "sort action"); readable(status, "recent task status");
         require(status.getHeight() >= Ui.dp(context, 14), "compact recent status retains a readable line with natural font growth");
         View clear = tagged("hub-clear"); target(clear, 22, 34, "compact recent task clear"); separate(status, clear, "recent status and clear action");
-        separate(search, sort, "search and sort"); separate(sort, close, "sort and close");
+        separate(search, sort, "search and sort");
         require(!search.hasFocus(), "opening application center does not summon keyboard");
         AppWorkspaceView grid = tagged("hub-grid");
         if (grid.getAdapter().getCount() > 0) {
@@ -219,8 +218,8 @@ final class ReadabilityChecks {
             require(visibleCell, "nonempty application catalog exposes at least one cell in the viewport");
         }
         for (int i = 0; i < grid.getChildCount(); i++) { TextView label = find(grid.getChildAt(i), TextView.class); if (label != null) readable(label, "visible application name"); }
-        expand.performClick(); require(!hub.expanded(), "expand target collapses application center"); tagged("hub-apps").performClick(); require(hub.expanded(), "Dock launcher expands application center");
-        clear.performClick(); require(hubClearRequests == 1, "clear target invokes only the local fixture callback"); close.performClick(); require(hubCloseRequests == 1, "close target invokes its callback once");
+        tagged("hub-apps").performClick(); require(!hub.expanded(), "Dock launcher collapses application center"); tagged("hub-apps").performClick(); require(hub.expanded(), "Dock launcher expands application center");
+        clear.performClick(); require(hubClearRequests == 1, "clear target invokes only the local fixture callback"); tagged("hub-dismiss-left").performClick(); require(hubCloseRequests == 1, "blank dismissal invokes its callback once");
     }
 
     private void mountMediaDetail() {
@@ -234,11 +233,10 @@ final class ReadabilityChecks {
     }
 
     private void checkMediaDetail() {
-        View close = tagged("detail-close"); target(close, 48, 48, "media detail close");
         ViewGroup card = tagged("detail-card"); contained(card, (ViewGroup) card.getParent(), "detail card");
+        require(card.findViewWithTag("detail-close") == null, "media detail has no close button");
         ScrollView scroll = tagged("detail-scroll"); require(scroll.getHeight() > 0, "media detail retains a body viewport");
-        separate(close, scroll, "fixed close action and scrolling body"); checkMediaContents(tagged("media-expanded"));
-        Rect visible = new Rect(); require(close.getGlobalVisibleRect(visible) && visible.width() == close.getWidth() && visible.height() == close.getHeight(), "detail close remains fully visible");
+        separate(card.getChildAt(0), scroll, "fixed media toolbar and scrolling body"); checkMediaContents(tagged("media-expanded"));
     }
 
     private void checkMediaContents(View media) {

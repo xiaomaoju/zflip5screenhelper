@@ -117,10 +117,13 @@ final class BrightnessChecks {
                 require(field(CoverService.class, "pendingBrightness").get(owner) == null, "UserService disconnect cancels waiting release");
             });
             busy.set(false);
+            int beforeReconnect = fake.operations().size();
             main(() -> { field(ShizukuBridge.class, "remote").set(bridge, fake); connection(true, true); });
             waitValue(42);
             require(fake.values().size() == 7, "reconnection never replays discarded waiting release");
             require(fake.operations().contains("states") && fake.operations().contains("brightness_read"), "reconnection refreshes states and reads brightness");
+            waitFor(() -> fake.operations().size() >= beforeReconnect + 2);
+            require(fake.operations().get(beforeReconnect).equals("brightness_read") && fake.operations().get(beforeReconnect + 1).equals("states"), "initial brightness read precedes the slower general state refresh");
             // Reconnect while the old service call is still running. Its reply is stale; a fresh
             // read must wait for the shared bridge, then be the only reply to enable the slider.
             Reply disconnectedWrite = fake.block(), freshRead = fake.blockRead();

@@ -7,6 +7,7 @@ on:
       - 'dist/**/*.html'
       - 'dist/device-frames/**'
       - 'dist/HTML-PROTOTYPE.md'
+      - 'dist/HTML-SYNC-0.17.4.md'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -39,7 +40,7 @@ jobs:
           set -euo pipefail
           site=Cache/build-output.nosync/pages
           mkdir -p "$site/device-frames"
-          cp dist/index.html dist/flipcover-tutorial.html dist/flipcover-prototype.html dist/settings-oneui-prototype.html dist/nfc-hotspot-prototype.html dist/HTML-PROTOTYPE.md "$site/"
+          cp dist/index.html dist/flipcover-tutorial.html dist/flipcover-prototype.html dist/settings-oneui-prototype.html dist/nfc-hotspot-prototype.html dist/HTML-PROTOTYPE.md dist/HTML-SYNC-0.17.4.md dist/notification-force-jelly.html dist/control-force-jelly.html dist/task-force-jelly.html dist/launcher-force-jelly.html "$site/"
           cp dist/device-frames/preview.html dist/device-frames/zflip5-cover-overlay.svg dist/device-frames/zflip5-cover-overlay.png dist/device-frames/zflip5-cover-overlay@2x.png "$site/device-frames/"
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4

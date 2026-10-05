@@ -38,8 +38,8 @@ final class GlassBackdrop implements AutoCloseable {
             sharp = source.getWidth()==sharpWidth && source.getHeight()==sharpHeight ? source : render(source, sharpWidth, sharpHeight, 0);
             float blurredScale = Math.min(1, blurLimit / (float) Math.max(width, height));
             int w = Math.max(1, Math.round(width * blurredScale)), h = Math.max(1, Math.round(height * blurredScale));
-            soft = render(sharp, w, h, 18 * density * blurredScale);
-            strong = render(sharp, w, h, 28 * density * blurredScale);
+            soft = render(sharp, w, h, BuildConfig.APPEARANCE_GLASS_SOFT_BLUR_DP * density * blurredScale);
+            strong = render(sharp, w, h, BuildConfig.APPEARANCE_GLASS_STRONG_BLUR_DP * density * blurredScale);
             GlassBackdrop backdrop = new GlassBackdrop(sharp, soft, strong, width, height);
             if (backdrop.bytes > 12L * 1024 * 1024) throw new IllegalStateException("glass texture budget");
             return backdrop;

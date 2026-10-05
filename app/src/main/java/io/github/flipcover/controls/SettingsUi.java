@@ -25,6 +25,25 @@ final class SettingsUi {
     static final int BACKGROUND = Color.BLACK, SURFACE = 0xFF171719, MASTER = 0xFF39393C;
     static final int TEXT = 0xFFF5F5F7, MUTED = 0xFFB8B8C0, ACCENT = 0xFF80AAFF, ACTIVE = 0xFF233A60, ON_ACTIVE = TEXT;
     static final int CONTROL = 0xFF3875F6, DANGER = 0xFFFF8A80;
+    /** Main settings only: measure a larger logical viewport, then let native View transforms map drawing and touch. */
+    static final class Viewport extends FrameLayout {
+        private final float scale;
+        Viewport(Context context, int percent) { super(context); scale = BuildConfig.APPEARANCE_SETTINGS_BASE_SCALE * percent / 100f; setTag("settings-viewport"); }
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            int width = MeasureSpec.getSize(widthSpec), height = MeasureSpec.getSize(heightSpec);
+            setMeasuredDimension(width, height);
+            if (getChildCount() == 0) return;
+            View content = getChildAt(0); content.setPivotX(0); content.setPivotY(0); content.setScaleX(scale); content.setScaleY(scale);
+            content.measure(MeasureSpec.makeMeasureSpec(Math.max(1, Math.round(width / scale)), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(Math.max(1, Math.round(height / scale)), MeasureSpec.EXACTLY));
+        }
+        @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) { if (getChildCount() > 0) { View content = getChildAt(0); content.layout(0, 0, content.getMeasuredWidth(), content.getMeasuredHeight()); } }
+        static android.graphics.Rect bounds(View view, android.graphics.Rect local, View root) {
+            android.graphics.RectF bounds = new android.graphics.RectF(local == null ? new android.graphics.Rect(0, 0, view.getWidth(), view.getHeight()) : local);
+            android.graphics.Matrix global = new android.graphics.Matrix(), inverse = new android.graphics.Matrix();
+            view.transformMatrixToGlobal(global); global.mapRect(bounds); global.reset(); root.transformMatrixToGlobal(global); if (global.invert(inverse)) inverse.mapRect(bounds);
+            android.graphics.Rect result = new android.graphics.Rect(); bounds.roundOut(result); return result;
+        }
+    }
     static int dp(Context c, float value) { return Ui.dp(c, value); }
     static LinearLayout column(Context c) { return Ui.column(c); }
     static LinearLayout row(Context c) { return Ui.row(c); }

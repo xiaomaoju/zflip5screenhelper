@@ -24,9 +24,14 @@ final class Panels {
     private LevelSlider brightness;
     private Integer confirmedBrightness;
     private NotificationCenterView notificationCenter;
+    private int controlViewportHeight;
+    private ControlScrollView controlScroll;
+    ControlScrollView controlScroll() { return controlScroll; }
+    void bindControlHeader(android.widget.LinearLayout header) { if (controlScroll == null) return; if (header instanceof ControlHeaderView view) controlScroll.module(0, view.feedback); View edit = header.findViewWithTag("control-edit"), refresh = header.findViewWithTag("control-refresh"); if (edit != null) controlScroll.module(1, RuntimeVisuals.control(edit)); if (refresh != null) controlScroll.module(2, RuntimeVisuals.control(refresh)); }
     Panels(CoverService owner) { this(owner, false); }
     Panels(CoverService owner, boolean preview) { this.owner = owner; this.preview = preview; context = owner.screenContext; }
     boolean hasBrightness() { return brightness != null && !preview; }
+    void controlViewportHeight(int height) { controlViewportHeight = Math.max(0, height); }
     void brightnessWorking(boolean value) { if (brightness != null) { brightness.setActivated(value); brightness.setStateDescription(value ? "正在调节外屏亮度" : null); brightness.invalidate(); } }
     View build(String page) {
         body = Ui.column(context);
@@ -92,39 +97,56 @@ final class Panels {
         ControlDashboard dashboard = new ControlDashboard(); dashboard.setTag("control-dashboard");
         for (String id : actions) {
             Tile tile = new Tile(id, () -> { if (id.equals("rotation")) owner.toggleRotation(); else owner.act(id); }, true);
-            tile.label.setTextSize(new int[]{9, 10, 12}[owner.prefs.panelLabelSize()]); tile.label.setMaxLines(roomyLabels() || id.equals("system_controls") ? 2 : 1); tile.label.setVisibility(owner.prefs.panelLabels() ? View.VISIBLE : View.GONE);
-            tile.setTag("control-" + id); tile.setOnLongClickListener(v -> { if (!preview) owner.showDetails(id, tile); return true; }); buttons.put(id, tile); dashboard.addTile(tile);
+            tile.label.setTextSize(PanelUi.labelSize(owner.prefs.panelLabelSize())); tile.label.setMaxLines(roomyLabels() ? 2 : 1); tile.label.setVisibility(owner.prefs.panelLabels() ? View.VISIBLE : View.GONE);
+            tile.controlFeedback = new ControlFeedback(tile.face, true); tile.setTag("control-" + id); tile.setOnLongClickListener(v -> { if (!preview) owner.showDetails(id, tile); return true; }); buttons.put(id, tile); dashboard.addTile(tile);
+            if (!preview) InputNavigation.bind(tile, "control:" + id, InputNavigation.Region.CONTROL, tile::performClick, () -> owner.showDetails(id, tile));
         }
-        if (actions.isEmpty()) Ui.add(body, Ui.button(context, preview ? "暂无控制按钮 · 示意" : "添加控制按钮", () -> { if (!preview) owner.editControls(); }));
+        if (actions.isEmpty()) { View add = Ui.button(context, preview ? "暂无控制按钮 · 示意" : "添加控制按钮", () -> { if (!preview) owner.editControls(); }); InputNavigation.exclude(add); Ui.add(body, add); }
         if (owner.prefs.panelBrightness() || owner.prefs.panelVolume()) {
             LinearLayout sliders = Ui.row(context); sliders.setGravity(Gravity.TOP); sliders.setTag("control-sliders");
             if (owner.prefs.panelBrightness()) {
                 brightness = new LevelSlider(context, "外屏亮度", R.drawable.ic_ms_brightness_6, 5, 100, 5, value -> { if (!preview) owner.setBrightness(Panels.this, value); }); brightness.setEnabled(false);
-                brightness.setTag("control-brightness"); brightness.setOnLongClickListener(v -> { if (!preview) owner.showDetails("brightness", brightness); return true; });
+                controlScroll.module(3, brightness.controlFeedback()); brightness.setTag("control-brightness"); brightness.setOnLongClickListener(v -> { if (!preview) owner.showDetails("brightness", brightness); return true; });
+                if (!preview) InputNavigation.bind(brightness, "control:brightness", InputNavigation.Region.TOOLS, null, () -> owner.showDetails("brightness", brightness));
                 sliders.addView(brightness, new LinearLayout.LayoutParams(Ui.dp(context, 44), -1));
             }
             if (owner.prefs.panelVolume()) {
                 AudioManager audio = preview ? null : context.getSystemService(AudioManager.class);
                 LevelSlider volume = new LevelSlider(context, "媒体音量", R.drawable.ic_ms_volume_up, 0, preview ? 100 : audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC), preview ? 0 : audio.getStreamVolume(AudioManager.STREAM_MUSIC), value -> { if (!preview) audio.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0); });
-                volume.setEnabled(!preview); volume.setTag("control-volume"); volume.setOnLongClickListener(v -> { if (!preview) owner.showDetails("volume", volume); return true; });
+                controlScroll.module(4, volume.controlFeedback()); volume.setEnabled(!preview); volume.setTag("control-volume"); volume.setOnLongClickListener(v -> { if (!preview) owner.showDetails("volume", volume); return true; });
+                if (!preview) InputNavigation.bind(volume, "control:volume", InputNavigation.Region.TOOLS, null, () -> owner.showDetails("volume", volume));
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(Ui.dp(context, 44), -1); params.leftMargin = sliders.getChildCount() == 0 ? 0 : Ui.dp(context, 5); sliders.addView(volume, params);
             }
             dashboard.sliders = sliders; dashboard.addView(sliders);
         }
-        if (owner.prefs.panelMedia()) { dashboard.media = new MediaCardView(owner, true, preview); dashboard.addView(dashboard.media); }
+        if (owner.prefs.panelMedia()) { dashboard.media = new MediaCardView(owner, true, preview); controlScroll.module(5, dashboard.media.controlFeedback()); dashboard.addView(dashboard.media); }
         dashboard.addView(dashboard.positionHint);
         if (!actions.isEmpty() || dashboard.sliders != null || dashboard.media != null) body.addView(dashboard, new LinearLayout.LayoutParams(-1, 0, 1)); updateStates();
     }
     private boolean roomyLabels() { return context.getResources().getConfiguration().fontScale > 1.3f || owner.prefs.panelLabelSize() == 2 || owner.prefs.panelDensity() == 2; }
     /** Compact labels keep side tools; large type and genuinely narrow widths can stack. */
     private final class ControlDashboard extends android.view.ViewGroup {
+        private static final int VISIBLE_ROWS = 4;
         private final java.util.ArrayList<Tile> tiles = new java.util.ArrayList<>();
+        private final ControlScrollView gridScroll;
+        private final android.view.ViewGroup grid;
         LinearLayout sliders; MediaCardView media;
-        int columns, rows, gridWidth, gridHeight, sliderWidth, sliderHeight, toolWidth, toolHeight, gap, hintHeight;
+        int columns, gridWidth, gridHeight, sliderWidth, sliderHeight, toolWidth, toolHeight, gap, hintHeight;
         boolean stacked;
-        final TextView positionHint;
-        ControlDashboard() { super(context); positionHint = Ui.text(context, "空间不足，工具区已移到下方", 10, Ui.MUTED); positionHint.setTag("control-tools-hint"); positionHint.setVisibility(GONE); }
-        void addTile(Tile tile) { tiles.add(tile); addView(tile); }
+        final TextView positionHint, labelSizer;
+        ControlDashboard() {
+            super(context);
+            grid = new android.view.ViewGroup(context) {
+                @Override protected void onMeasure(int widthSpec, int heightSpec) { setMeasuredDimension(gridWidth, Math.max(VISIBLE_ROWS, (tiles.size() + columns - 1) / columns) * (gridHeight / VISIBLE_ROWS)); }
+                @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
+                    for (int i = 0; i < tiles.size(); i++) { int x = i % columns * gridWidth / columns, y = i / columns * gridHeight / VISIBLE_ROWS; Tile tile = tiles.get(i); tile.layout(x, y, x + tile.getMeasuredWidth(), y + tile.getMeasuredHeight()); }
+                }
+            };
+            grid.setTag("control-tile-grid"); gridScroll = new ControlScrollView(context); controlScroll = gridScroll; gridScroll.setTag("control-grid-scroll"); gridScroll.addView(grid); addView(gridScroll);
+            labelSizer = Ui.text(context, roomyLabels() ? "控\n制" : "控", PanelUi.labelSize(owner.prefs.panelLabelSize()), Ui.TEXT); labelSizer.setLines(roomyLabels() ? 2 : 1);
+            positionHint = Ui.text(context, "空间不足，工具区已移到下方", 10, Ui.MUTED); positionHint.setTag("control-tools-hint"); positionHint.setVisibility(GONE);
+        }
+        void addTile(Tile tile) { tiles.add(tile); grid.addView(tile); }
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
             int width = MeasureSpec.getSize(widthSpec), requested = owner.prefs.panelColumns(), density = owner.prefs.panelDensity(); gap = Ui.dp(context, switch (density) { case 0 -> 4; case 2 -> 8; default -> 6; });
             boolean tools = sliders != null || media != null;
@@ -133,29 +155,32 @@ final class Panels {
             toolWidth = tools ? Math.max(sliderWidth, media == null ? 0 : Ui.dp(context, 93)) + sidePadding : 0;
             int sideWidth = width - toolWidth;
             int minimumCell = Ui.dp(context, roomyLabels() ? 48 : 28);
-            if (roomyLabels() && owner.prefs.panelLabels()) for (Tile tile : tiles) minimumCell = Math.max(minimumCell, (int) Math.ceil(tile.label.getPaint().measureText(tile.label.getText().toString())) + Ui.dp(context, 8));
             String position = owner.prefs.panelToolsPosition();
             stacked = tools && (tiles.isEmpty() || position.equals("bottom") || sideWidth / requested < minimumCell); gridWidth = stacked ? width : sideWidth;
             boolean fallback = tools && !tiles.isEmpty() && stacked && position.equals("side"); positionHint.setVisibility(fallback ? VISIBLE : GONE); hintHeight = 0;
             if (fallback) { positionHint.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)); hintHeight = positionHint.getMeasuredHeight() + gap; }
-            int maxColumns = requested, cellWidth = gridWidth / requested, labelHeight = 0;
-            if (owner.prefs.panelLabels()) for (Tile tile : tiles) {
-                tile.label.measure(MeasureSpec.makeMeasureSpec(Math.max(1, cellWidth - tile.getPaddingLeft() - tile.getPaddingRight()), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-                labelHeight = Math.max(labelHeight, tile.label.getMeasuredHeight());
+            int cellWidth = gridWidth / requested, labelHeight = 0;
+            if (owner.prefs.panelLabels() && !tiles.isEmpty()) {
+                // Reserve the configured line count, independent of the current action list.
+                labelSizer.measure(MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)); labelHeight = labelSizer.getMeasuredHeight();
             }
             int minimumRow = Math.max(Ui.dp(context, 48), labelHeight + Ui.dp(context, switch (density) { case 0 -> 39; case 2 -> 51; default -> 43; }));
             int mediaWidth = media == null ? 0 : stacked ? width - sliderWidth - (sliders == null ? 0 : gap) : toolWidth - sidePadding;
             int mediaMinimum = media == null ? 0 : media.minimumCardHeight(mediaWidth), sliderMinimum = sliders == null ? 0 : Ui.dp(context, stacked ? 92 : 68);
-            int betweenTools = sliders != null && media != null ? gap : 0, rowCount = (tiles.size() + maxColumns - 1) / maxColumns;
+            int betweenTools = sliders != null && media != null ? gap : 0, rowCount = tiles.isEmpty() ? 0 : VISIBLE_ROWS;
             toolHeight = stacked ? Math.max(sliderMinimum, mediaMinimum) : sliderMinimum + betweenTools + mediaMinimum;
             int gridGap = tools && rowCount > 0 && stacked ? gap : 0;
             int natural = (stacked ? rowCount * minimumRow + gridGap + toolHeight : Math.max(toolHeight, rowCount * minimumRow)) + hintHeight;
-            int height = resolveSize(natural, heightSpec); columns = maxColumns;
-            rows = Math.max(1, rowCount); gridHeight = rowCount == 0 ? 0 : stacked ? Math.max(1, height - hintHeight - gridGap - toolHeight) : height - hintHeight;
-            // A sparse row without tools stays near the header instead of floating mid-screen.
-            if (!tools && rowCount == 1) gridHeight = Math.min(gridHeight, minimumRow);
+            // Narrow rotation can wrap one label and enlarge every row. Fit the actual
+            // viewport before overflowing, while retaining readable labels and touch rows.
+            int compactRow = Math.max(Ui.dp(context, 48), labelHeight + Ui.dp(context, 27));
+            int minimum = (stacked ? rowCount * compactRow + gridGap + toolHeight : Math.max(toolHeight, rowCount * compactRow)) + hintHeight;
+            if (controlViewportHeight > 0) natural = Math.max(minimum, Math.min(natural, controlViewportHeight));
+            int height = resolveSize(natural, heightSpec); columns = requested;
+            gridHeight = rowCount == 0 ? 0 : stacked ? Math.max(1, height - hintHeight - gridGap - toolHeight) : height - hintHeight;
+            gridHeight = gridHeight / VISIBLE_ROWS * VISIBLE_ROWS;
             for (Tile tile : tiles) {
-                int cellHeight = gridHeight / rows; tile.label.getLayoutParams().height = labelHeight;
+                int cellHeight = gridHeight / VISIBLE_ROWS; tile.label.getLayoutParams().height = labelHeight;
                 int textHeight = labelHeight == 0 ? 0 : labelHeight + Ui.dp(context, 3);
                 int inset = cellWidth >= Ui.dp(context, 44) ? Ui.dp(context, switch (density) { case 0 -> 4; case 2 -> 12; default -> 8; }) : Ui.dp(context, 4);
                 int face = Math.max(1, Math.min(Ui.dp(context, switch (density) { case 0 -> 48; case 2 -> 64; default -> 56; }), Math.min(cellWidth - inset, cellHeight - textHeight)));
@@ -169,6 +194,7 @@ final class Panels {
                 LinearLayout.LayoutParams icon = (LinearLayout.LayoutParams) tile.face.getLayoutParams(); icon.width = icon.height = face;
                 tile.measure(MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(cellHeight, MeasureSpec.EXACTLY));
             }
+            gridScroll.measure(MeasureSpec.makeMeasureSpec(gridWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(gridHeight, MeasureSpec.EXACTLY));
             sliderHeight = sliders == null ? 0 : stacked ? toolHeight : Math.max(sliderMinimum, Math.min(Ui.dp(context, 136), Math.min(Math.round(height * .5f), height - hintHeight - betweenTools - mediaMinimum)));
             if (sliders != null) sliders.measure(MeasureSpec.makeMeasureSpec(sliderWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(sliderHeight, MeasureSpec.EXACTLY));
             int mediaHeight = stacked ? toolHeight : height - hintHeight - sliderHeight - betweenTools;
@@ -176,7 +202,7 @@ final class Panels {
         }
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
             int left = !stacked && owner.prefs.leftHand() ? toolWidth : 0;
-            for (int i = 0; i < tiles.size(); i++) { int x = left + i % columns * gridWidth / columns, y = i / columns * gridHeight / rows; Tile tile = tiles.get(i); tile.layout(x, y, x + tile.getMeasuredWidth(), y + tile.getMeasuredHeight()); }
+            gridScroll.layout(left, 0, left + gridWidth, gridHeight);
             if (stacked) {
                 int top = gridHeight + (tiles.isEmpty() ? 0 : gap), sliderX = owner.prefs.leftHand() ? 0 : getWidth() - sliderWidth, mediaX = owner.prefs.leftHand() && sliders != null ? sliderWidth + gap : 0;
                 if (sliders != null) sliders.layout(sliderX, top, sliderX + sliderWidth, top + sliderHeight);
@@ -207,7 +233,7 @@ final class Panels {
             float actual = Float.parseFloat(result.output);
             if (!Float.isFinite(actual) || actual < 0 || actual > 1) throw new IllegalStateException();
             confirmedBrightness = Math.round(actual * 100);
-            brightness.setEnabled(true); brightness.setValue(confirmedBrightness);
+            brightness.setEnabled(true); brightness.setValueAnimated(confirmedBrightness);
         } catch (RuntimeException e) { confirmedBrightness = null; brightness.setEnabled(false); }
     }
     void brightnessWritten(ShizukuBridge.Result result) {
@@ -219,7 +245,7 @@ final class Panels {
                 if (Float.isFinite(actual) && actual >= 0 && actual <= 1) { brightness(new ShizukuBridge.Result(true, result.message, result.output)); return; }
             } catch (RuntimeException ignored) { }
             // A rejected or busy write does not make a previously readable display unsupported.
-            if (confirmedBrightness != null) { brightness.setEnabled(true); brightness.setValue(confirmedBrightness); }
+            if (confirmedBrightness != null) { brightness.setEnabled(true); brightness.setValueAnimated(confirmedBrightness); }
         }
     }
     void chooseState(String id) {
@@ -249,13 +275,14 @@ final class Panels {
         Ui.add(body, Ui.text(context, "以系统方向为准。请关闭其他工具的自动旋转，避免互相覆盖。", 11, Ui.MUTED));
     }
     private void notifications() {
+        body.setClipChildren(false);
         notificationCenter = new NotificationCenterView(context, new NotificationCenterView.Actions() {
             @Override public void open(StatusBarNotification item) { owner.openNotification(item); }
             @Override public void settings(StatusBarNotification item) { owner.openNotificationSettings(item); }
             @Override public void permission() { owner.openSettings("permissions"); }
             @Override public void clear(List<StatusBarNotification> items) {
                 int requested = CoverNotifications.dismiss(items);
-                owner.message(requested < 0 ? "通知连接不可用，未能清除" : requested == 0 ? "通知已变化，未清除新的内容" : "已请求清除 " + requested + " 条通知");
+                if (requested <= 0) owner.message(requested < 0 ? "通知连接不可用，未能清除" : "通知已变化，未清除新的内容");
             }
         });
         body.addView(notificationCenter, new LinearLayout.LayoutParams(-1, -2)); refreshNotifications();

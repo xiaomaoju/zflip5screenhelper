@@ -22,7 +22,9 @@ import android.util.SizeF;
 import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.Display;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.RemoteViews;
 import org.json.JSONArray;
 import java.util.ArrayList;
@@ -40,6 +42,23 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
     private final Prefs prefs;
     private final AppWidgetManager manager;
     private final RelayHost host;
+    private final Set<Integer> inputVisible = new HashSet<>();
+    private long inputEpoch;
+    long inputEpoch() { return inputEpoch; }
+    private RemoteViews inputViews;
+    private int inputViewsId = -1;
+    int inputCard() { return inputVisible.size() == 1 ? inputVisible.iterator().next() : -1; }
+    RemoteViews inputViews() { return inputViewsId == inputCard() ? inputViews : null; }
+    void inputVisibility(int id, Bundle options) {
+        if (!owns(id) || !options.containsKey("visible")) return;
+        Display selected = Displays.selected(context, prefs);
+        if (selected != null && selected.getState() == Display.STATE_ON && selected.getDisplayId() != displayId) refresh();
+        boolean shown = options.getBoolean("visible", false) && selected != null && selected.getState() == Display.STATE_ON && selected.getDisplayId() == displayId;
+        if (shown ? inputVisible.add(id) : inputVisible.remove(id)) inputEpoch++;
+        if (inputViewsId != inputCard()) { inputViews = null; inputViewsId = -1; }
+        if (CoverService.instance != null) CoverService.instance.nativeInputChanged();
+    }
+    private void publishViews(int id, RemoteViews views) { manager.updateAppWidget(id, views); if (id == inputCard()) { inputViews = views; inputViewsId = id; if (CoverService.instance != null) CoverService.instance.nativeInputChanged(); } }
     private final Handler main = new Handler(Looper.getMainLooper());
     private final SparseArray<RelayView> views = new SparseArray<>();
     private final Set<IntConsumer> observers = new HashSet<>();
@@ -88,7 +107,23 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
     int pending(int outer) { return data.getInt("pending_" + outer, -1); }
     AppWidgetProviderInfo info(int id) { return id > 0 ? manager.getAppWidgetInfo(id) : null; }
     String label(int outer) { List<WidgetGrid.Item> items = items(outer); return items.isEmpty() ? "空白布局" : items.size() + "个组件 · 已用" + WidgetGrid.used(items) + "/16格"; }
-    String widgetLabel(int id) { AppWidgetProviderInfo info = info(id); return info == null ? "组件不可用" : info.loadLabel(context.getPackageManager()); }
+    String widgetLabel(int id) { return providerLabel(info(id)); }
+    String providerLabel(AppWidgetProviderInfo info) {
+        if (info == null) return "组件不可用";
+        var manager = context.getPackageManager(); String label = info.loadLabel(manager);
+        if (readableLabel(label)) return label.trim();
+        try { label = manager.getApplicationLabel(manager.getApplicationInfo(info.provider.getPackageName(), 0)).toString().trim(); if (readableLabel(label)) return label; }
+        catch (android.content.pm.PackageManager.NameNotFoundException ignored) { }
+        return info.provider.getShortClassName();
+    }
+    private static boolean readableLabel(String label) {
+        if (label == null) return false;
+        for (int i = 0; i < label.length();) {
+            int point = label.codePointAt(i), kind = Character.getType(point); i += Character.charCount(point);
+            if (!Character.isWhitespace(point) && !Character.isSpaceChar(point) && !Character.isISOControl(point) && kind != Character.FORMAT && kind != Character.NON_SPACING_MARK && kind != Character.COMBINING_SPACING_MARK && kind != Character.ENCLOSING_MARK) return true;
+        }
+        return false;
+    }
     List<WidgetGrid.Item> items(int outer) {
         String value = data.getString("layout_" + outer, null);
         if (value == null) { int legacy = data.getInt("inner_" + outer, -1); return legacy > 0 ? List.of(new WidgetGrid.Item(legacy, 0, 0, 4, 4)) : List.of(); }
@@ -152,6 +187,7 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
     // Retains the original one-widget migration/test path while the editor uses complete drafts.
     boolean save(int outer, int id) { return stage(outer, id) && commitLayout(outer, List.of(new WidgetGrid.Item(id, 0, 0, 4, 4))); }
     void remove(int outer) {
+        inputVisible.remove(outer); if (inputViewsId == outer) { inputViews = null; inputViewsId = -1; } if (CoverService.instance != null) CoverService.instance.nativeInputChanged();
         List<WidgetGrid.Item> old = items(outer); discardDraft(outer); data.edit().remove("inner_" + outer).remove("layout_" + outer).commit();
         for (WidgetGrid.Item item : old) { views.remove(item.id()); host.deleteAppWidgetId(item.id()); } refresh();
     }
@@ -159,7 +195,7 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
     void unobserve(IntConsumer observer) { observers.remove(observer); }
     RemoteViews preview(int id) { RelayView view = views.get(id); return view == null || view.latest == null ? null : new RemoteViews(view.latest); }
     void watchDraft(int id) { AppWidgetProviderInfo info = info(id); if (info != null && views.get(id) == null) views.put(id, (RelayView) host.createView(context, id, info)); }
-    void trim() { for (int i = 0; i < views.size(); i++) views.valueAt(i).latest = null; restoreBeforePublish = true; }
+    void trim() { for (int i = 0; i < views.size(); i++) views.valueAt(i).latest = null; inputViews = null; inputViewsId = -1; if (CoverService.instance != null) CoverService.instance.nativeInputChanged(); restoreBeforePublish = true; }
     void safeArea(Display display, int width, int height, DockGeometry.Box safe) {
         ChromeArea next = display == null || safe == null ? null : new ChromeArea(display.getDisplayId(), display.getRotation(), width, height, safe);
         if (java.util.Objects.equals(chromeArea, next)) return;
@@ -209,19 +245,24 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
         if (Build.VERSION.SDK_INT >= 31) options.putParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, new ArrayList<>(List.of(size))); return options;
     }
     private SizeF canvasSize(int outer) {
+        return canvasSize(outer, false);
+    }
+    private SizeF canvasSize(int outer, boolean launcher) {
         Bundle options = manager.getAppWidgetOptions(outer); Display display = Displays.selected(context, prefs); float maxWidth = 352, maxHeight = 339;
         if (display != null) { Point pixels = Displays.size(display); float density = context.createDisplayContext(display).getResources().getDisplayMetrics().density; maxWidth = pixels.x / density; maxHeight = pixels.y / density; }
         int width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, (int) maxWidth), height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, (int) maxHeight);
         if (maxWidth > maxHeight) { width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width); height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, height); }
-        return new SizeF(Math.max(1, Math.min(maxWidth, width)), Math.max(1, Math.min(maxHeight, height)));
+        boolean quarterTurn = launcher && display != null && (display.getRotation() == android.view.Surface.ROTATION_90 || display.getRotation() == android.view.Surface.ROTATION_270);
+        WidgetSafeArea.Frame canvas = WidgetSafeArea.canvas(width, height, maxWidth, maxHeight, quarterTurn);
+        return new SizeF(canvas.width(), canvas.height());
     }
-    WidgetSafeArea.Frame frame(int outer) { return frame(outer, null); }
+    WidgetSafeArea.Frame frame(int outer) { return frame(outer, null, false); }
     WidgetSafeArea.Frame launcherFrame(int outer) {
         Display selected = Displays.selected(context, prefs); CoverService service = CoverService.instance;
-        return frame(outer, selected == null || service == null ? null : service.launcherContentBounds(selected.getDisplayId()));
+        return frame(outer, selected == null || service == null ? null : service.launcherContentBounds(selected.getDisplayId()), true);
     }
-    private WidgetSafeArea.Frame frame(int outer, DockGeometry.Box launcherBounds) {
-        SizeF canvas = canvasSize(outer); Display display = Displays.selected(context, prefs);
+    private WidgetSafeArea.Frame frame(int outer, DockGeometry.Box launcherBounds, boolean launcher) {
+        SizeF canvas = canvasSize(outer, launcher); Display display = Displays.selected(context, prefs);
         if (display == null || Build.VERSION.SDK_INT < 31) return new WidgetSafeArea.Frame(0, 0, canvas.getWidth(), canvas.getHeight());
         Point pixels = Displays.size(display); float density = context.createDisplayContext(display).getResources().getDisplayMetrics().density;
         DockGeometry.Box safe = null;
@@ -272,7 +313,7 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
             WidgetSafeArea.Frame frame = frame(outer); SizeF canvas = canvasSize(outer);
             if (frame.width() < 1 || frame.height() < 1) { message(outer, "安全区空间不足", "请调整快捷栏大小或位置后重试"); return; }
             WidgetGrid.Item only = items.get(0); RemoteViews single = preview(only.id());
-            if (!frame.inset(canvas.getWidth(), canvas.getHeight()) && items.size() == 1 && only.width() == 4 && only.height() == 4 && single != null && fits(info(only.id()), size(outer))) { manager.updateAppWidget(outer, single); return; }
+            if (!frame.inset(canvas.getWidth(), canvas.getHeight()) && items.size() == 1 && only.width() == 4 && only.height() == 4 && single != null && fits(info(only.id()), size(outer))) { publishViews(outer, single); return; }
             RemoteViews grid = new RemoteViews(context.getPackageName(), R.layout.native_widget_grid); grid.removeAllViews(R.id.widget_grid_root); SizeF size = size(outer);
             for (int i = 0; i < items.size(); i++) {
                 WidgetGrid.Item item = items.get(i); int slot = R.id.widget_cell; RemoteViews cell = new RemoteViews(context.getPackageName(), R.layout.native_widget_cell);
@@ -284,9 +325,16 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
                 }
                 RemoteViews content = preview(item.id());
                 if (content == null || info(item.id()) == null) content = placeholder(outer, widgetLabel(item.id()), "点按编辑此卡片");
-                cell.removeAllViews(slot); cell.addView(slot, content); grid.addView(R.id.widget_grid_root, cell);
+                if (Build.VERSION.SDK_INT >= 31) {
+                    SizeF natural = views.get(item.id()) == null ? new SizeF(1, 1) : views.get(item.id()).minimumSize(display);
+                    WidgetContentLayout.Fit fitted = WidgetContentLayout.fit(Math.max(1, size.getWidth() * item.width() / 4 - .5f), Math.max(1, size.getHeight() * item.height() / 4 - .5f), natural.getWidth(), natural.getHeight());
+                    cell.setViewLayoutWidth(R.id.widget_content, fitted.width(), TypedValue.COMPLEX_UNIT_DIP); cell.setViewLayoutHeight(R.id.widget_content, fitted.height(), TypedValue.COMPLEX_UNIT_DIP);
+                    cell.setFloat(R.id.widget_content, "setPivotX", 0); cell.setFloat(R.id.widget_content, "setPivotY", 0);
+                    cell.setFloat(R.id.widget_content, "setScaleX", fitted.scale()); cell.setFloat(R.id.widget_content, "setScaleY", fitted.scale());
+                }
+                cell.removeAllViews(R.id.widget_content); cell.addView(R.id.widget_content, content); grid.addView(R.id.widget_grid_root, cell);
             }
-            manager.updateAppWidget(outer, grid);
+            publishViews(outer, grid);
         } catch (RuntimeException failure) { message(outer, "暂时无法组合这些组件", "内容或图片可能过大，点按调整布局"); }
     }
     private RemoteViews placeholder(int outer, String title, String detail) {
@@ -295,17 +343,35 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
         if (display != null) { Intent intent = new Intent(context, NativeWidgetActivity.class).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, outer).setData(android.net.Uri.parse("flipcover://widget/" + outer)); view.setOnClickPendingIntent(R.id.native_widget_message, PendingIntent.getActivity(context, outer, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE, ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle())); }
         return view;
     }
-    void message(int outer, String title, String detail) { manager.updateAppWidget(outer, placeholder(outer, title, detail)); }
+    void message(int outer, String title, String detail) { publishViews(outer, placeholder(outer, title, detail)); }
     private final class RelayView extends AppWidgetHostView {
         private final int id; private RemoteViews latest;
+        private int measuredLayout, measuredConfiguration; private SizeF minimum;
         RelayView(Context context, int id) { super(context); this.id = id; }
+        SizeF minimumSize(Display display) {
+            if (latest == null) return new SizeF(1, 1);
+            Context screen = context.createDisplayContext(display); int configuration = screen.getResources().getConfiguration().hashCode();
+            if (minimum != null && measuredLayout == latest.getLayoutId() && measuredConfiguration == configuration) return minimum;
+            try {
+                Context provider = context.createPackageContext(latest.getPackage(), Context.CONTEXT_IGNORE_SECURITY).createDisplayContext(display);
+                float density = provider.getResources().getDisplayMetrics().density;
+                LayoutInflater inflater = LayoutInflater.from(provider).cloneInContext(provider); inflater.setFilter(latest);
+                // XML only: do not apply actions or create another collection subscription.
+                View view = inflater.inflate(latest.getLayoutId(), new FrameLayout(provider), false);
+                // Initial artwork can be replaced/resized by RemoteViews actions (QQ Music).
+                // Only explicit minimums and a fixed root dimension constrain the host.
+                WidgetContentLayout.Minimum bounds = WidgetContentLayout.minimum(view);
+                minimum = new SizeF(Math.max(bounds.width(), Math.max(0, view.getLayoutParams().width)) / density, Math.max(bounds.height(), Math.max(0, view.getLayoutParams().height)) / density);
+            } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException failure) { minimum = new SizeF(1, 1); }
+            measuredLayout = latest.getLayoutId(); measuredConfiguration = configuration; return minimum;
+        }
         @Override public void updateAppWidget(RemoteViews remote) {
             latest = remote == null ? null : new RemoteViews(remote);
             for (int outer : cards()) if (items(outer).stream().anyMatch(item -> item.id() == id)) dirty.add(outer);
             main.removeCallbacks(publishDirty); main.post(publishDirty); for (IntConsumer observer : List.copyOf(observers)) observer.accept(id);
         }
     }
-    private void stop() { restoreBeforePublish = false; if (listening) try { host.stopListening(); } catch (RuntimeException ignored) { } listening = false; host.releaseViews(); views.clear(); displayId = -1; main.removeCallbacks(publishDirty); dirty.clear(); }
+    private void stop() { inputVisible.clear(); inputViews = null; inputViewsId = -1; if (CoverService.instance != null) CoverService.instance.nativeInputChanged(); restoreBeforePublish = false; if (listening) try { host.stopListening(); } catch (RuntimeException ignored) { } listening = false; host.releaseViews(); views.clear(); displayId = -1; main.removeCallbacks(publishDirty); dirty.clear(); }
     private void schedule() { main.removeCallbacks(reconcile); main.post(reconcile); }
     @Override public void onDisplayAdded(int id) { schedule(); }
     @Override public void onDisplayRemoved(int id) { schedule(); }

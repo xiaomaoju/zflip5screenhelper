@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "update": {
+    "catalogUrl": "https://pi.eternally.bid:38083/appversion/v1/ZFlip5/catalog.json",
+    "connectTimeoutMs": 15000,
+    "readTimeoutMs": 30000,
+    "maxCatalogBytes": 262144,
+    "maxApkBytes": 536870912,
+    "maxRedirects": 3,
+    "cacheRetentionHours": 24
+  },
+  "defaults": {
+    "settings": { "scale": 100 },
+    "dock": {
+      "actions": ["app_dock", "controls", "rotation", "notifications", "back", "home", "recents", "torch", "screenshot", "configure"],
+      "favorites": ["screenshot", "rotation", "notification_list"],
+      "pinnedAction": "app_hub",
+      "perPage": 4,
+      "damping": 1,
+      "widthRatio": 0.46,
+      "heightRatio": 0.088,
+      "autoHide": true,
+      "avoidKeyboard": true,
+      "haptics": true,
+      "gestures": true,
+      "homeAction": "cards"
+    },
+    "status": {
+      "enabled": true,
+      "scale": 70,
+      "safeLeftDp": 16,
+      "safeRightDp": 16,
+      "batteryPercent": false,
+      "chromeStyle": "contrast"
+    },
+    "controlCenter": {
+      "actions": ["wifi", "bluetooth", "data", "torch", "dnd", "airplane", "rotation", "screenshot", "lock", "media", "apps", "system_controls"],
+      "columns": 4,
+      "density": 1,
+      "labels": true,
+      "labelSize": 1,
+      "toolsPosition": "auto",
+      "brightness": true,
+      "volume": true,
+      "media": true,
+      "mediaIdle": false,
+      "blur": true
+    },
+    "launcher": {
+      "sort": "manual",
+      "labels": true,
+      "badges": false,
+      "density": "compact",
+      "locked": false,
+      "compact": false
+    }
+  },
+  "appearance": {
+    "settings": { "baseScale": 0.7 },
+    "launcher": {
+      "labelDp": 9,
+      "compactIconDp": 30,
+      "normalIconDp": 36,
+      "easyIconDp": 42,
+      "railWidthDp": 32,
+      "railGapDp": 4,
+      "railIconDp": 20,
+      "railFramePaddingDp": 4,
+      "panelPaddingXDp": 5,
+      "panelPaddingYDp": 6,
+      "surfaceInsetDp": 8,
+      "searchWidthFraction": 0.62,
+      "folderPaddingDp": 4,
+      "folderMemberIconDp": 30,
+      "folderMemberHeightDp": 52,
+      "dockRowDp": 34,
+      "dockIconDp": 28,
+      "dockAppsIconDp": 24,
+      "dockClearIconDp": 18,
+      "panelRadiusDp": 16,
+      "folderRadiusDp": 14,
+      "dockRadiusDp": 16
+    },
+    "panel": {
+      "controlCornerDp": 15,
+      "titleSp": 17,
+      "bodySp": 12,
+      "actionSp": 12,
+      "actionSlotDp": 36,
+      "actionIconDp": 20,
+      "compactLabelSp": 9,
+      "normalLabelSp": 10,
+      "easyLabelSp": 12
+    },
+    "status": { "clockDp": 11.5, "iconShadowRadiusDp": 1.5 },
+    "glass": { "softBlurDp": 18, "strongBlurDp": 28 }
+  },
+  "motion": {
+    "card": { "durationMs": 340, "initialDurationMs": 90 },
+    "taskReturn": { "durationMs": 560, "strength": 0.56 },
+    "control": { "stiffness": 180, "damping": 21 },
+    "launcher": { "stiffnessScale": 1, "dampingScale": 0.78, "splitWaitMs": 100, "splitDurationMs": 659 },
+    "detailSheet": { "stiffness": 350, "scaleXDamping": 0.56, "scaleYDamping": 0.66, "travelDamping": 0.72 },
+    "header": { "splitDurationMs": 507 },
+    "dock": { "fusionWaitMs": 300, "fusionDurationMs": 560 },
+    "handles": { "fadeInMs": 120, "fadeOutMs": 160, "hideDelayMs": 3000 }
+  }
+}

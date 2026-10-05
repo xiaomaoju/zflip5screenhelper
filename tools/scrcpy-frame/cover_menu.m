@@ -47,7 +47,7 @@ cover_menu_update(struct sc_screen *screen) {
     }
     char title[256];
     snprintf(title, sizeof(title),
-        "Z Flip5 外屏 · 投屏 %u° · 菜单「投屏方向」 · F8 外框 / F9 辅助线%s",
+        "Z Flip5 外屏 · 投屏 %u° · F7 顺时针 / F8 外框 / F9 辅助线%s",
         rotation * 90, screen->cover.guides ? "（已开）" : "");
     SDL_SetWindowTitle(screen->window, title);
 }
@@ -64,7 +64,7 @@ cover_menu_init(struct sc_screen *screen) {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"投屏方向"];
     menu.autoenablesItems = NO;
     menu.delegate = target;
-    NSArray<NSString *> *names = @[@"向左旋转 90°", @"向右旋转 90°", @"0°（复位）", @"90°", @"180°", @"270°"];
+    NSArray<NSString *> *names = @[@"向左旋转 90°", @"向右旋转 90°（F7）", @"0°（复位）", @"90°", @"180°", @"270°"];
     for (NSUInteger i = 0; i < names.count; ++i) {
         if (i == 2) {
             [menu addItem:NSMenuItem.separatorItem];
@@ -73,7 +73,7 @@ cover_menu_init(struct sc_screen *screen) {
         item.tag = i < 2 ? -(NSInteger) i - 1 : (NSInteger) i - 2;
         item.target = target;
         if (i < 2) {
-            item.toolTip = i == 0 ? @"快捷键：Option + 左方向键" : @"快捷键：Option + 右方向键";
+            item.toolTip = i == 0 ? @"快捷键：Option + 左方向键" : @"快捷键：F7 或 Option + 右方向键";
         }
         [menu addItem:item];
     }
@@ -88,14 +88,20 @@ cover_menu_init(struct sc_screen *screen) {
 
 bool
 cover_menu_handle_event(struct sc_screen *screen, const SDL_Event *event) {
-    if (event->type != SC_EVENT_COVER_ROTATION) {
+    bool rotate_key = (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP)
+                      && event->key.key == SDLK_F7;
+    if (!rotate_key && event->type != SC_EVENT_COVER_ROTATION) {
         return false;
     }
-    if (!target || target.screen != screen || event->user.data1 != screen
+    if (!target || target.screen != screen || (!rotate_key && event->user.data1 != screen)
             || !screen->window_shown || !screen->video || screen->disconnected) {
         return true;
     }
-    int rotation = event->user.code;
+    // One rotation per physical press; consume repeats and release locally.
+    if (rotate_key && (event->type != SDL_EVENT_KEY_DOWN || event->key.repeat)) {
+        return true;
+    }
+    int rotation = rotate_key ? -2 : event->user.code;
     if (rotation == -1 || rotation == -2) {
         rotation = (sc_orientation_get_rotation(screen->orientation)
                     + (rotation == -1 ? 3 : 1)) % 4;

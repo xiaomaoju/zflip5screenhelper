@@ -23,7 +23,13 @@ final class LevelSlider extends View {
     private final int minimum, maximum;
     private final IntConsumer commit;
     private int value, startValue;
+    private float displayedValue;
+    private android.animation.ValueAnimator valueAnimation;
     private GlassSurface glass;
+    private ControlFeedback control;
+    private float lastMotionY; private long lastMotionAt;
+    ControlFeedback controlFeedback() { if (control == null) control = new ControlFeedback(this, false); return control; }
+    @Override public void draw(Canvas canvas) { if (control == null) { super.draw(canvas); return; } int saved = control.save(canvas, getWidth() / 2f, getHeight() / 2f); super.draw(canvas); canvas.restoreToCount(saved); }
     void glass(GlassSurface surface) { glass = surface; invalidate(); }
     private float downX, downY;
     private boolean tracking, moving, held, canceled;
@@ -33,8 +39,20 @@ final class LevelSlider extends View {
         super(context); this.label = label; this.minimum = minimum; this.maximum = Math.max(minimum + 1, maximum); this.commit = commit;
         icon = Ui.icon(context, iconResource, Ui.TEXT); setFocusable(true); setClickable(true); setValue(value);
     }
-    void setValue(int value) { this.value = Math.max(minimum, Math.min(maximum, value)); updateDescription(); invalidate(); }
-    @Override public void setEnabled(boolean enabled) { super.setEnabled(enabled); updateDescription(); invalidate(); }
+    void setValue(int value) { stopValueAnimation(); this.value = Math.max(minimum, Math.min(maximum, value)); displayedValue = this.value; updateDescription(); invalidate(); }
+    void setValueAnimated(int target) {
+        if (tracking) return;
+        target = Math.max(minimum, Math.min(maximum, target));
+        if (!isAttachedToWindow() || !isShown() || !android.animation.ValueAnimator.areAnimatorsEnabled() || Math.abs(displayedValue - target) < .01f) { setValue(target); return; }
+        if (valueAnimation != null && value == target) return;
+        stopValueAnimation(); value = target; updateDescription();
+        valueAnimation = android.animation.ValueAnimator.ofFloat(displayedValue, target); valueAnimation.setDuration(300);
+        valueAnimation.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        valueAnimation.addUpdateListener(frame -> { displayedValue = (float) frame.getAnimatedValue(); invalidate(); });
+        valueAnimation.addListener(new android.animation.AnimatorListenerAdapter() { @Override public void onAnimationEnd(android.animation.Animator ended) { if (valueAnimation == ended) { valueAnimation = null; displayedValue = value; invalidate(); } } }); valueAnimation.start();
+    }
+    private void stopValueAnimation() { if (valueAnimation == null) return; android.animation.ValueAnimator stopped = valueAnimation; valueAnimation = null; stopped.removeAllListeners(); stopped.removeAllUpdateListeners(); stopped.cancel(); }
+    @Override public void setEnabled(boolean enabled) { super.setEnabled(enabled); if (!enabled) { stopValueAnimation(); displayedValue = 0; } updateDescription(); invalidate(); }
     private void updateDescription() { setContentDescription(label + (isEnabled() ? " " + Math.round(value * 100f / maximum) + "%" : "暂不可用")); }
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -45,31 +63,32 @@ final class LevelSlider extends View {
         if (isEnabled()) {
             outline.reset(); outline.addRoundRect(bounds, radius, radius, Path.Direction.CW);
             canvas.save(); canvas.clipPath(outline); paint.setColor(Ui.TEXT);
-            canvas.drawRect(0, bottom * (1 - value / (float) maximum), getWidth(), bottom, paint); canvas.restore();
+            canvas.drawRect(0, bottom * (1 - displayedValue / maximum), getWidth(), bottom, paint); canvas.restore();
         }
         float stroke = Math.max(1, getResources().getDisplayMetrics().density * .5f); bounds.inset(stroke / 2, stroke / 2);
         if (glass == null) { paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke); paint.setColor(isActivated() ? 0xFFAFD3FF : RuntimeVisuals.blend(0x24FFFFFF, 0xCCDBEAFF, emphasis.value)); canvas.drawRoundRect(bounds, radius, radius, paint); paint.setStyle(Paint.Style.FILL); }
         int size = Ui.dp(getContext(), 21), x = (getWidth() - size) / 2, y = Math.round(bottom) - size - Ui.dp(getContext(), 13);
         icon.setTint(Ui.TEXT); icon.setAlpha(isEnabled() ? 255 : 95); icon.setBounds(x, y, x + size, y + size); icon.draw(canvas);
         // Short tracks can put the fill boundary through the icon; tint each covered portion.
-        if (isEnabled()) { canvas.save(); canvas.clipRect(0, bottom * (1 - value / (float) maximum), getWidth(), bottom); icon.setTint(Ui.ON_ACTIVE); icon.draw(canvas); canvas.restore(); }
+        if (isEnabled()) { canvas.save(); canvas.clipRect(0, bottom * (1 - displayedValue / maximum), getWidth(), bottom); icon.setTint(Ui.ON_ACTIVE); icon.draw(canvas); canvas.restore(); }
         paint.setColor(RuntimeVisuals.blend(Ui.MUTED, Ui.TEXT, emphasis.value)); paint.setTextSize(Ui.dp(getContext(), 9)); paint.setTextAlign(Paint.Align.CENTER);
-        canvas.drawText(isEnabled() ? Math.round(value * 100f / maximum) + "%" : "—", getWidth() / 2f, getHeight() - Ui.dp(getContext(), 3), paint);
+        canvas.drawText(isEnabled() ? Math.round(displayedValue * 100f / maximum) + "%" : "—", getWidth() / 2f, getHeight() - Ui.dp(getContext(), 3), paint);
     }
     private void track(float y) { float height = Math.max(1, getHeight() - Ui.dp(getContext(), 18)); setValue(Math.round(maximum * (1 - Math.max(0, Math.min(height, y)) / height))); }
     @Override public boolean onTouchEvent(MotionEvent event) {
         if (!isEnabled()) return false;
         switch (event.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN -> { emphasis.set(true); startValue = value; downX = event.getX(); downY = event.getY(); tracking = true; moving = held = canceled = false; getParent().requestDisallowInterceptTouchEvent(true); if (isLongClickable()) postDelayed(hold, android.view.ViewConfiguration.getLongPressTimeout()); return true; }
-            case MotionEvent.ACTION_MOVE -> { if (!tracking || canceled || held) return true; if (Math.hypot(event.getX() - downX, event.getY() - downY) > android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop()) { moving = true; removeCallbacks(hold); } if (moving) track(event.getY()); return true; }
-            case MotionEvent.ACTION_POINTER_DOWN -> { emphasis.set(false); canceled = true; removeCallbacks(hold); setValue(startValue); return true; }
-            case MotionEvent.ACTION_UP -> { emphasis.set(false); removeCallbacks(hold); if (tracking && !held && !canceled) { track(event.getY()); performClick(); commit.accept(value); } tracking = false; getParent().requestDisallowInterceptTouchEvent(false); return true; }
-            case MotionEvent.ACTION_CANCEL -> { emphasis.set(false); removeCallbacks(hold); tracking = false; canceled = true; setValue(startValue); getParent().requestDisallowInterceptTouchEvent(false); return true; }
+            case MotionEvent.ACTION_DOWN -> { stopValueAnimation(); if (control != null) { control.pressed(true); lastMotionY = event.getY(); lastMotionAt = event.getEventTime(); } emphasis.set(true); startValue = value; downX = event.getX(); downY = event.getY(); tracking = true; moving = held = canceled = false; getParent().requestDisallowInterceptTouchEvent(true); if (isLongClickable()) postDelayed(hold, android.view.ViewConfiguration.getLongPressTimeout()); return true; }
+            case MotionEvent.ACTION_MOVE -> { if (!tracking || canceled || held) return true; if (Math.hypot(event.getX() - downX, event.getY() - downY) > android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop()) { moving = true; removeCallbacks(hold); } if (moving) { if (control != null) control.drag((event.getY() - lastMotionY) / getResources().getDisplayMetrics().density * 1000 / Math.max(8, event.getEventTime() - lastMotionAt)); track(event.getY()); } lastMotionY = event.getY(); lastMotionAt = event.getEventTime(); return true; }
+            case MotionEvent.ACTION_POINTER_DOWN -> { if (control != null) control.cancel(); emphasis.set(false); canceled = true; removeCallbacks(hold); setValue(startValue); return true; }
+            case MotionEvent.ACTION_UP -> { if (control != null) { control.pressed(false); control.releaseDrag(); } emphasis.set(false); removeCallbacks(hold); if (tracking && !held && !canceled) { track(event.getY()); performClick(); commit.accept(value); } tracking = false; getParent().requestDisallowInterceptTouchEvent(false); return true; }
+            case MotionEvent.ACTION_CANCEL -> { if (control != null) control.cancel(); emphasis.set(false); removeCallbacks(hold); tracking = false; canceled = true; setValue(startValue); getParent().requestDisallowInterceptTouchEvent(false); return true; }
         }
         return super.onTouchEvent(event);
     }
-    @Override public boolean performClick() { super.performClick(); return true; }
-    @Override protected void onDetachedFromWindow() { removeCallbacks(hold); tracking = false; super.onDetachedFromWindow(); }
+    @Override public boolean performClick() { if (control != null) control.pulse(); super.performClick(); return true; }
+    @Override protected void onVisibilityChanged(View changed, int visibility) { super.onVisibilityChanged(changed, visibility); if (!isShown()) { stopValueAnimation(); displayedValue = value; } }
+    @Override protected void onDetachedFromWindow() { removeCallbacks(hold); stopValueAnimation(); displayedValue = value; tracking = false; super.onDetachedFromWindow(); }
     @Override public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
         super.onInitializeAccessibilityNodeInfo(info); info.setClassName("android.widget.SeekBar");
         info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_INT, minimum, maximum, value));

@@ -47,12 +47,17 @@ final class AppWorkspaceView extends ViewGroup {
     private int columns = AppLauncherStyle.GRID_COLUMNS, rows = AppLauncherStyle.GRID_ROWS, page, manualSlot, pendingSlot = -1, target = -1, bindingGeneration;
     private int measuredWidth, measuredGridHeight;
     private boolean manual, compact, deferred, disposed, dirty = true, editing;
+    private boolean browsing = true, restoringPage = true;
     boolean editing() { return editing; }
     void editing(boolean value) { cancelInteraction(); editing = value; invalidate(); setStateDescription(value ? "正在整理，长按拖动；排序菜单可完成或撤销" : "浏览应用"); }
     private String dragged, settling;
     private View shadow;
     private float dragX, dragY, offset, shadowScale = 1.10f;
     private ValueAnimator pager, landing;
+    private LauncherForce launcherForce;
+    private Runnable forceWake;
+    void launcherForce(LauncherForce force, Runnable wake) { launcherForce = force; forceWake = wake; }
+    private void pageForce(float delta) { if (delta == 0) return; for (int i = 0; i < getChildCount(); i++) if (getChildAt(i) instanceof AppFolderTile folder) folder.invalidateMaterial(); if (launcherForce != null && ValueAnimator.areAnimatorsEnabled()) { launcherForce.page(delta / getResources().getDisplayMetrics().density); forceWake.run(); } }
     private final Runnable refreshDeferred = this::refresh;
     private final DataSetObserver observer = new DataSetObserver() { @Override public void onChanged() { refresh(); } };
     AppWorkspaceView(Context context, Prefs prefs, CellAdapter adapter, Listener listener) {
@@ -67,6 +72,18 @@ final class AppWorkspaceView extends ViewGroup {
     int capacity() { return columns * rows; }
     int page() { return page; }
     int pageCount() { return displayed.pages(capacity()); }
+    List<InputNavigation.Target> inputTargets() {
+        List<InputNavigation.Target> result = new ArrayList<>();
+        for (Map.Entry<String, View> entry : cells.entrySet()) {
+            int slot = visibleLayout().slot(entry.getKey()); View cell = entry.getValue();
+            if (slot < 0 || slot / capacity() != page || !cell.isShown() || !cell.isEnabled()) continue;
+            String id = entry.getKey(); result.add(new InputNavigation.Target(cell, "workspace:" + id, InputNavigation.Region.APPS, () -> listener.launch(id), null));
+        }
+        result.sort(java.util.Comparator.comparingInt(t -> visibleLayout().slot(t.key.substring("workspace:".length()))));
+        InputNavigation.Target pager = new InputNavigation.Target(this, "workspace:pages", InputNavigation.Region.PAGE, () -> { }, null);
+        pager.local = new android.graphics.Rect(0, gridHeight(), getWidth(), getHeight()); result.add(pager); return result;
+    }
+    void inputPage(int delta) { if (canTurn(delta, false)) turnPage(delta); }
     int gridHeight() { return Math.max(1, getMeasuredHeight() - dp(AppLauncherStyle.WORKSPACE_PAGER_HEIGHT)); }
     int edgeWidth() { return Math.min(dp(24), getWidth() / 6); }
     boolean editable() { return manual && !prefs.workspaceLocked(); }
@@ -87,7 +104,9 @@ final class AppWorkspaceView extends ViewGroup {
     }
     private void save(AppWorkspaceLayout next) { if (compact) next = next.compact(); if (!next.equals(saved)) { undo = saved; undoCompact = compact; saved = next; prefs.saveWorkspace(saved, compact); } }
     State state() { return new State(page * capacity(), manual ? page * capacity() : manualSlot); }
-    void restore(State state) { if (state != null) { pendingSlot = state.slot(); manualSlot = state.manualSlot(); requestLayout(); } }
+    void restore(State state) { if (state != null) { restoringPage = false; pendingSlot = state.slot(); manualSlot = state.manualSlot(); requestLayout(); } }
+    void browsing(boolean value) { if (browsing != value) { browsing = value; if (value) restoringPage = true; } }
+    private void rememberPage() { if (browsing && !restoringPage && !dragging() && adapter.getCount() > 0) prefs.launcherPage(page); }
     void mode(boolean value) {
         if (manual == value) return; cancelInteraction();
         if (manual) manualSlot = page * capacity();
@@ -109,7 +128,11 @@ final class AppWorkspaceView extends ViewGroup {
             if (!reconciled.equals(saved)) { undo = null; saved = reconciled; prefs.saveWorkspace(saved, compact); }
         }
         displayed = manual ? projected() : AppWorkspaceLayout.sequential(ids).project(columns, rows);
+        if (browsing && restoringPage && catalog.ready() && !catalog.failed()) {
+            page = Math.min(prefs.launcherPage(), pageCount() - 1); pendingSlot = page * capacity(); manualSlot = pendingSlot; restoringPage = false;
+        }
         page = Math.min(page, pageCount() - 1); dirty = true; requestLayout(); invalidate();
+        rememberPage();
     }
     private AppCatalogCache.Entry entry(int index) { return (AppCatalogCache.Entry) adapter.getItem(index); }
     void preferencesChanged() {
@@ -122,7 +145,7 @@ final class AppWorkspaceView extends ViewGroup {
     }
     void moveTo(String id, int slot) {
         if (!editable() || saved.slot(id) < 0) return;
-        change(projected().move(id, slot, compact)); page = projected().slot(id) / capacity(); dirty = true; requestLayout(); invalidate(); announceForAccessibility("已移动");
+        change(projected().move(id, slot, compact)); page = projected().slot(id) / capacity(); rememberPage(); dirty = true; requestLayout(); invalidate(); announceForAccessibility("已移动");
     }
     private AppWorkspaceLayout visibleLayout() { return preview == null ? displayed : preview; }
     private int columnWidth() { return AppLauncherStyle.cellWidth(getMeasuredWidth(), columns); }
@@ -133,6 +156,7 @@ final class AppWorkspaceView extends ViewGroup {
         setMeasuredDimension(width, height);
     }
     private void layoutGeometry(int width, int height) {
+        int previousPage = page;
         // Stable page/row/column identity takes priority over fitting extra rows into free space.
         int nextColumns = AppLauncherStyle.GRID_COLUMNS, nextRows = AppLauncherStyle.GRID_ROWS;
         if (width != measuredWidth || height - dp(AppLauncherStyle.WORKSPACE_PAGER_HEIGHT) != measuredGridHeight || nextColumns != columns || nextRows != rows) {
@@ -142,6 +166,7 @@ final class AppWorkspaceView extends ViewGroup {
         }
         if (pendingSlot >= 0) { page = pendingSlot / capacity(); pendingSlot = -1; dirty = true; }
         page = Math.max(0, Math.min(page, (dragging() ? dragPageCount() : pageCount()) - 1));
+        if (page != previousPage) rememberPage();
         if (dirty) bindPages();
         for (Map.Entry<String, View> item : cells.entrySet()) { int span = visibleLayout().span(item.getKey()); item.getValue().measure(MeasureSpec.makeMeasureSpec(columnWidth() * span, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(rowHeight() * span, MeasureSpec.EXACTLY)); }
         if (shadow != null) { int span = displayed.span(dragged == null ? settling : dragged); shadow.measure(MeasureSpec.makeMeasureSpec(columnWidth() * span, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(rowHeight() * span, MeasureSpec.EXACTLY)); }
@@ -171,10 +196,18 @@ final class AppWorkspaceView extends ViewGroup {
             if (animate && ValueAnimator.areAnimatorsEnabled()) { cell.setTranslationX(oldX - x); cell.setTranslationY(oldY - y); cell.animate().translationX(0).translationY(0).setDuration(150).start(); }
             else { cell.setTranslationX(0); cell.setTranslationY(0); }
         }
-        if (shadow != null) shadow.layout(0, 0, shadow.getMeasuredWidth(), shadow.getMeasuredHeight());
+        if (shadow != null) { shadow.layout(0, 0, shadow.getMeasuredWidth(), shadow.getMeasuredHeight()); positionShadow(); }
     }
+    @Override protected boolean drawChild(Canvas canvas, View child, long drawingTime) { return child == shadow || super.drawChild(canvas, child, drawingTime); }
+    private void positionShadow() {
+        if (shadow == null) return;
+        shadow.setTranslationX(dragX - shadow.getWidth() / 2f); shadow.setTranslationY(dragY - shadow.getHeight() / 2f); shadow.setScaleX(shadowScale); shadow.setScaleY(shadowScale);
+        if (shadow instanceof AppFolderTile folder) folder.invalidateMaterial();
+    }
+    private void releaseShadow() { if (shadow != null) { removeViewInLayout(shadow); shadow = null; } }
     @Override protected void dispatchDraw(Canvas canvas) {
-        int checkpoint = canvas.save(); canvas.clipRect(0, 0, getWidth(), gridHeight()); canvas.translate(offset, 0);
+        int checkpoint = canvas.save(); canvas.clipRect(0, 0, getWidth(), gridHeight());
+        float density = getResources().getDisplayMetrics().density; canvas.translate(offset + (launcherForce == null ? 0 : launcherForce.x[LauncherForce.GRID] * density), launcherForce == null ? 0 : launcherForce.y[LauncherForce.GRID] * density);
         if (dragging() && target >= 0) {
             int local = target % capacity(); float x = (target / capacity() - page) * getWidth() + local % columns * columnWidth(), y = local / columns * rowHeight();
             int span = visibleLayout().span(mergeReady ? visibleLayout().parent(dragged) : dragged); paint.setColor(0x406EA8CE); canvas.drawRoundRect(x + dp(2), y + dp(2), x + columnWidth() * span - dp(2), y + rowHeight() * span - dp(2), dp(10), dp(10), paint);
@@ -202,7 +235,7 @@ final class AppWorkspaceView extends ViewGroup {
     void menu(String id) { View anchor = cells.get(id); listener.menu(anchor == null ? this : anchor, id); }
     void drawDragVisual(Canvas canvas) {
         if (!dragging() || shadow == null) return;
-        int checkpoint = canvas.save(); canvas.translate(dragX - shadow.getWidth() / 2f, dragY - shadow.getHeight() / 2f); canvas.scale(shadowScale, shadowScale, shadow.getWidth() / 2f, shadow.getHeight() / 2f); shadow.draw(canvas); canvas.restoreToCount(checkpoint);
+        int checkpoint = canvas.save(); canvas.translate(dragX - shadow.getWidth() / 2f, dragY - shadow.getHeight() / 2f); canvas.scale(shadowScale * (launcherForce == null ? 1 : launcherForce.scaleX(LauncherForce.GRID)), shadowScale * (launcherForce == null ? 1 : launcherForce.scaleY(LauncherForce.GRID)), shadow.getWidth() / 2f, shadow.getHeight() / 2f); shadow.draw(canvas); canvas.restoreToCount(checkpoint);
     }
     void beginDrag(String id, float x, float y) {
         beginDrag(id, x, y, false);
@@ -210,14 +243,18 @@ final class AppWorkspaceView extends ViewGroup {
     void beginDockDrag(String id, float x, float y) { beginDrag(id, x, y, true); }
     private void beginDrag(String id, float x, float y, boolean fromDock) {
         if (!draggable()) return;
+        if (launcherForce != null) { launcherForce.impulse(LauncherForce.GRID, 0, -130); forceWake.run(); }
         if (fromDock) { for (AppCatalogCache.Entry entry : CoverApp.catalog(getContext()).snapshot()) if (entry.id().equals(id)) entries.put(id, entry); if (!entries.containsKey(id)) return; }
         else if (!indices.containsKey(id) && saved.folder(id) == null) return;
         finishLanding(); shadowScale = 1.10f;
         dockOnly = fromDock || !editable(); dockSource = fromDock;
-        dragged = id; preview = displayed; target = dockOnly ? -1 : displayed.slot(id); shadow = bind(id, null, displayed); dragX = x; dragY = y; dirty = true; requestLayout(); invalidate(); listener.dragVisualChanged();
+        dragged = id; preview = displayed; target = dockOnly ? -1 : displayed.slot(id);
+        // Keep the existing tile and its glass in the tree while the host draws it above the grid.
+        shadow = cells.remove(id); if (shadow == null) { shadow = bind(id, null, displayed); addViewInLayout(shadow, -1, new LayoutParams(-2, -2), true); }
+        shadow.setPressed(false); shadow.layout(0, 0, shadow.getWidth(), shadow.getHeight()); dragX = x; dragY = y; positionShadow(); dirty = true; requestLayout(); invalidate(); listener.dragVisualChanged();
     }
     void dragTo(float x, float y) {
-        if (!dragging()) return; dragX = x; dragY = y; listener.dragVisualChanged();
+        if (!dragging()) return; dragX = x; dragY = y; positionShadow(); listener.dragVisualChanged();
         dockDrop = displayed.folder(dragged) == null && listener.dockDrag(dragged, x, y, false);
         if (dockDrop) { clearMerge(); target = -1; preview = displayed; dirty = true; requestLayout(); invalidate(); return; }
         if (dockOnly) { target = -1; preview = displayed; invalidate(); return; }
@@ -235,12 +272,13 @@ final class AppWorkspaceView extends ViewGroup {
         if (commit && preview != null) { save(preview); displayed = projected(); String owner = saved.parent(id); page = displayed.slot(owner == null ? id : owner) / capacity(); announceForAccessibility(mergeReady ? "已合并到文件夹" : "已移动应用"); }
         else page = Math.min(origin, pageCount() - 1);
         clearMerge(); dockDrop = false; dragged = null; preview = null; target = -1; stopPaging(); offset = 0; listener.changed();
+        rememberPage();
         if (commit && saved.slot(id) >= 0 && shadow != null && isAttachedToWindow() && ValueAnimator.areAnimatorsEnabled()) {
             settling = id; int local = displayed.slot(id) % capacity(), span = displayed.span(id); float startX = dragX, startY = dragY, endX = (local % columns + span / 2f) * columnWidth(), endY = (local / columns + span / 2f) * rowHeight();
             landing = ValueAnimator.ofFloat(0, 1); landing.setDuration(150); landing.setInterpolator(new android.view.animation.DecelerateInterpolator());
-            landing.addUpdateListener(value -> { float progress = (float) value.getAnimatedValue(); dragX = startX + (endX - startX) * progress; dragY = startY + (endY - startY) * progress; shadowScale = 1.10f - .10f * progress; invalidate(); });
+            landing.addUpdateListener(value -> { float progress = (float) value.getAnimatedValue(); dragX = startX + (endX - startX) * progress; dragY = startY + (endY - startY) * progress; shadowScale = 1.10f - .10f * progress; positionShadow(); invalidate(); });
             landing.addListener(new AnimatorListenerAdapter() { @Override public void onAnimationEnd(Animator animation) { finishLanding(); } }); landing.start();
-        } else shadow = null;
+        } else releaseShadow();
         dockOnly = dockSource = false; dirty = true; requestLayout(); invalidate(); listener.dragVisualChanged();
     }
     private boolean mergeAt(float x, float y) {
@@ -273,7 +311,7 @@ final class AppWorkspaceView extends ViewGroup {
     int dropSlot(float x, float y) { return Math.min(AppWorkspaceLayout.MAX_SLOTS - 1, page * capacity() + Math.min(columns - 1, Math.max(0, (int) x / columnWidth())) + Math.min(rows - 1, Math.max(0, (int) y / rowHeight())) * columns); }
     private void finishLanding() {
         if (landing != null) { landing.removeAllListeners(); landing.removeAllUpdateListeners(); landing.cancel(); landing = null; }
-        if (settling != null) { settling = null; shadow = null; dirty = true; requestLayout(); invalidate(); }
+        if (settling != null) { settling = null; releaseShadow(); dirty = true; requestLayout(); invalidate(); }
     }
     private int dragPageCount() { return Math.min((AppWorkspaceLayout.MAX_SLOTS + capacity() - 1) / capacity(), pageCount() + (compact ? 0 : 1)); }
     boolean canTurn(int direction, boolean drag) { return page + direction >= 0 && page + direction < (drag ? dragPageCount() : pageCount()); }
@@ -281,11 +319,13 @@ final class AppWorkspaceView extends ViewGroup {
     void pageOffset(float origin, float distance) { pageOffset(page, origin, distance); }
     void pageOffset(int originPage, float origin, float distance) {
         int width = Math.max(1, getWidth());
+        float previous = offset - (page - originPage) * width;
         float minimum = -(pageCount() - 1 - originPage) * width, maximum = originPage * width;
         // Unwind existing edge resistance before adding a new finger delta.
         float raw = origin < minimum ? minimum + (origin - minimum) / .22f : origin > maximum ? maximum + (origin - maximum) / .22f : origin;
         raw += distance;
         offset = raw < minimum ? minimum + (raw - minimum) * .22f : raw > maximum ? maximum + (raw - maximum) * .22f : raw;
+        pageForce(offset - previous);
         offset += (page - originPage) * width;
         // Rebase only after crossing a whole page, retaining the same visible position
         // while keeping the existing current/previous/next three-page mount limit.
@@ -299,12 +339,16 @@ final class AppWorkspaceView extends ViewGroup {
         return fling ? speed < 0 ? (int) Math.floor(position) + 1 : (int) Math.ceil(position) - 1 : Math.round(position);
     }
     float freezePaging() { if (pager != null) { pager.cancel(); pager = null; } return offset; }
+    float visualX() { return offset + (launcherForce == null ? 0 : launcherForce.x[LauncherForce.GRID] * getResources().getDisplayMetrics().density); }
+    float visualY() { return launcherForce == null ? 0 : launcherForce.y[LauncherForce.GRID] * getResources().getDisplayMetrics().density; }
+    View folderSource(String id) { return cells.get(id); }
     void stopPaging() { if (pager != null) { pager.cancel(); pager = null; } offset = 0; }
     void settlePage(int requested, boolean animate) {
         int next = Math.max(0, Math.min(requested, (dragging() ? dragPageCount() : pageCount()) - 1));
         float from = offset + (next - page) * getWidth(); stopPaging(); page = next; dirty = true; requestLayout();
+        rememberPage();
         if (animate && ValueAnimator.areAnimatorsEnabled() && Math.abs(from) > 1) {
-            offset = from; pager = ValueAnimator.ofFloat(from, 0); pager.setDuration(220); pager.setInterpolator(new android.view.animation.DecelerateInterpolator()); pager.addUpdateListener(value -> { offset = (float) value.getAnimatedValue(); invalidate(); }); pager.start();
+            offset = from; pager = ValueAnimator.ofFloat(from, 0); pager.setDuration(280); pager.setInterpolator(new android.view.animation.OvershootInterpolator(.6f)); pager.addUpdateListener(value -> { float nextOffset = (float) value.getAnimatedValue(); pageForce(nextOffset - offset); offset = nextOffset; invalidate(); }); pager.start();
         }
         invalidate(); setStateDescription("第 " + (page + 1) + " 页，共 " + (dragging() ? dragPageCount() : pageCount()) + " 页");
     }

@@ -73,6 +73,7 @@ final class HubMotionChecks {
                 hub.dispose(); root.removeAllViews();
                 hub = new AppHubView(activity, prefs, new AppHubView.Listener() { public void action(String id) { } public void editFavorites() { } public void editPinned() { } public void expand(boolean expanded) { } public void close() { } }); hub.setExpanded(false); root.addView(hub, new FrameLayout.LayoutParams(-1, -1));
             });
+            main(() -> checkDismissal(prefs));
             main(() -> {
                 CoverService owner = new CoverService(); owner.screenContext = activity; owner.prefs = prefs; field(owner, "hub", hub);
                 owner.act("app_dock");
@@ -86,6 +87,70 @@ final class HubMotionChecks {
             });
             return "PASS: hub-motion; " + assertions + " assertions; animations=" + ValueAnimator.areAnimatorsEnabled() + "; native frames and service transition boundaries, not Samsung frame-rate validation";
         } finally { main(() -> { if (hub != null) hub.dispose(); activity.finish(); }); }
+    }
+    private void checkDismissal(Prefs prefs) {
+        hub.dispose(); root.removeAllViews();
+        hub = new AppHubView(activity, prefs, new AppHubView.Listener() { public void action(String id) { launches++; } public void editFavorites() { } public void editPinned() { } public void expand(boolean expanded) { } public void close() { closes++; hub.dismiss(() -> { }); } });
+        root.addView(hub, new FrameLayout.LayoutParams(-1, -1));
+        root.measure(View.MeasureSpec.makeMeasureSpec(root.getWidth(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(root.getHeight(), View.MeasureSpec.EXACTLY)); root.layout(root.getLeft(), root.getTop(), root.getRight(), root.getBottom());
+        View grid = hub.findViewWithTag("hub-grid"); int[] location = new int[2], origin = new int[2]; grid.getLocationOnScreen(location); hub.getLocationOnScreen(origin);
+        float x = location[0] + grid.getWidth() / 2f, y = location[1] + grid.getHeight() / 2f, small = Ui.dp(activity, 20), large = Ui.dp(activity, 64);
+        View dock = (View) field(hub, "dockHost"), content = (View) field(hub, "appContent");
+        float dockTop = dock.getY(), appTravel = dock.getTop() - content.getY();
+        long time = android.os.SystemClock.uptimeMillis(); int before = closes, beforeLaunches = launches;
+        touch(time, 0, MotionEvent.ACTION_DOWN, x, y); touch(time, 200, MotionEvent.ACTION_MOVE, x, y + small);
+        require(near(hub.getTranslationY(), small) && hub.getAlpha() == 1, "launcher follows a slow pull in screen pixels while remaining opaque");
+        require(near(hub.getTranslationY() + dock.getY(), dockTop), "Dock stays fixed during the application's first-stage pull");
+        frame("two-stage-app");
+        touch(time, 400, MotionEvent.ACTION_MOVE, x, y + small / 2);
+        require(near(hub.getTranslationY(), small / 2), "reversing the pull follows the finger immediately");
+        require(near(hub.getTranslationY() + dock.getY(), dockTop), "Dock stays fixed while reversing the first-stage pull");
+        touch(time, 800, MotionEvent.ACTION_UP, x, y + small / 2); if (motion() != null) motion().end();
+        require(closes == before && near(hub.getTranslationY(), 0), "short slow pull returns to the original position");
+        require(near(dock.getTranslationY(), 0), "rebound restores the original Dock transform");
+        touch(time, 1000, MotionEvent.ACTION_DOWN, x, y); touch(time, 1200, MotionEvent.ACTION_MOVE, x, y + large);
+        require(near(hub.getTranslationY(), large), "long slow pull follows before release");
+        touch(time, 1400, MotionEvent.ACTION_CANCEL, x, y + large); if (motion() != null) motion().end();
+        require(closes == before && near(hub.getTranslationY(), 0), "system cancellation restores launcher without closing");
+        touch(time, 1450, MotionEvent.ACTION_DOWN, x, y); touch(time, 1500, MotionEvent.ACTION_MOVE, x, y + appTravel - small);
+        require(near(hub.getTranslationY() + dock.getY(), dockTop), "Dock remains fixed until the application page reaches it");
+        touch(time, 1520, MotionEvent.ACTION_MOVE, x, y + appTravel + small);
+        require(near(hub.getTranslationY() + dock.getY(), dockTop + small), "Dock follows only the travel beyond the application stage");
+        frame("two-stage-dock");
+        touch(time, 1540, MotionEvent.ACTION_MOVE, x, y + appTravel - small);
+        require(near(hub.getTranslationY() + dock.getY(), dockTop), "reversing across the stage boundary fixes Dock in place again");
+        touch(time, 1560, MotionEvent.ACTION_CANCEL, x, y); if (motion() != null) motion().end();
+        touch(time, 1570, MotionEvent.ACTION_DOWN, x, y); touch(time, 1580, MotionEvent.ACTION_MOVE, x, y + appTravel + dock.getHeight() * .39f); touch(time, 1780, MotionEvent.ACTION_UP, x, y + appTravel + dock.getHeight() * .39f); if (motion() != null) motion().end();
+        require(closes == before && near(hub.getTranslationY(), 0), "the Dock stage uses its own forty-percent threshold after the application page slides away");
+        touch(time, 1800, MotionEvent.ACTION_DOWN, x, y); touch(time, 2000, MotionEvent.ACTION_MOVE, x, y + appTravel + dock.getHeight() * .41f); touch(time, 2400, MotionEvent.ACTION_UP, x, y + appTravel + dock.getHeight() * .41f);
+        require(closes == before + 1 && hub.closing(), "the Dock stage closes beyond forty percent independently of the application travel");
+        before++; hub.reopen(); if (motion() != null) motion().end(); time += 1000;
+        touch(time, 1600, MotionEvent.ACTION_DOWN, x, y); touch(time, 1800, MotionEvent.ACTION_MOVE, x, y + large); touch(time, 2000, MotionEvent.ACTION_UP, x, y + large);
+        require(closes == before + 1, "long slow release requests closure once");
+        hub.reopen(); if (motion() != null) motion().end();
+        touch(time, 2200, MotionEvent.ACTION_DOWN, x, y); touch(time, 2210, MotionEvent.ACTION_MOVE, x, y + small); touch(time, 2220, MotionEvent.ACTION_UP, x, y + small * 1.5f);
+        require(closes == before + 2 && launches == beforeLaunches, "short fast downward fling closes without launching the touched app");
+        hub.reopen(); if (motion() != null) motion().end(); hub.setExpanded(false);
+        ValueAnimator collapse = (ValueAnimator) field(hub, "contentAnimation"); if (collapse != null) collapse.end();
+        root.measure(View.MeasureSpec.makeMeasureSpec(root.getWidth(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(root.getHeight(), View.MeasureSpec.EXACTLY)); root.layout(root.getLeft(), root.getTop(), root.getRight(), root.getBottom());
+        dock.getLocationOnScreen(location); x = location[0] + dock.getWidth() / 2f; y = location[1] + dock.getHeight() / 2f;
+        float below = dock.getHeight() * .39f, above = dock.getHeight() * .41f; int dockBefore = closes;
+        touch(time, 2400, MotionEvent.ACTION_DOWN, x, y); touch(time, 2600, MotionEvent.ACTION_MOVE, x, y + below); touch(time, 3000, MotionEvent.ACTION_UP, x, y + below);
+        require(closes == dockBefore && !hub.closing(), "Dock-only slow pull below forty percent returns without closing"); if (motion() != null) motion().end();
+        require(near(hub.getTranslationY(), 0), "short Dock pull returns exactly to its original position");
+        touch(time, 3200, MotionEvent.ACTION_DOWN, x, y); touch(time, 3400, MotionEvent.ACTION_MOVE, x, y + above); touch(time, 3800, MotionEvent.ACTION_UP, x, y + above);
+        require(closes == dockBefore + 1 && hub.closing(), "Dock-only slow pull beyond forty percent closes without velocity"); if (motion() != null) motion().end();
+        require(hub.getTranslationY() + dock.getTop() >= hub.getHeight() - 1, "Dock exit travels fully below the screen");
+        hub.reopen(); if (motion() != null) motion().end();
+        touch(time, 4000, MotionEvent.ACTION_DOWN, x, y); touch(time, 4010, MotionEvent.ACTION_MOVE, x, y + below * .7f); touch(time, 4020, MotionEvent.ACTION_UP, x, y + below);
+        require(closes == dockBefore + 2 && hub.closing(), "Dock-only downward fling closes below the distance threshold");
+        hub.reopen(); if (motion() != null) motion().end();
+        touch(time, 4200, MotionEvent.ACTION_DOWN, x, y); touch(time, 4400, MotionEvent.ACTION_MOVE, x, y + above); touch(time, 4600, MotionEvent.ACTION_CANCEL, x, y + above); if (motion() != null) motion().end();
+        require(closes == dockBefore + 2 && near(hub.getTranslationY(), 0), "system cancellation keeps Dock even beyond its distance threshold");
+    }
+    private void touch(long down, int offset, int action, float x, float y) {
+        int[] origin = new int[2]; hub.getLocationOnScreen(origin);
+        MotionEvent event = MotionEvent.obtain(down, down + offset, action, x, y, 0); event.setLocation(x - origin[0], y - origin[1]); hub.dispatchTouchEvent(event); event.recycle();
     }
     private void frame(String name) {
         Bitmap bitmap = Bitmap.createBitmap(root.getWidth(), root.getHeight(), Bitmap.Config.ARGB_8888); root.draw(new Canvas(bitmap)); File directory = new File(test.getTargetContext().getFilesDir(), "ui-smoke"); directory.mkdirs();

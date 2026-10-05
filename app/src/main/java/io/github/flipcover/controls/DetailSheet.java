@@ -19,12 +19,14 @@ final class DetailSheet extends FrameLayout {
     final TextView title;
     private final Card card;
     private final LinearLayout header;
+    private final View closeButton;
     private final ScrollView scroll;
     private View footer;
     private boolean compactGlassControls;
     private boolean panelStyle;
     void panelStyle() {
         panelStyle=true; title.setTextSize(PanelUi.TITLE); title.setSingleLine(); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
+        header.removeView(closeButton); header.setMinimumHeight(Ui.dp(getContext(),PanelUi.SLOT));
         header.setPadding(Ui.dp(getContext(),PanelUi.INSET),0,Ui.dp(getContext(),2),0); content.setPadding(Ui.dp(getContext(),PanelUi.INSET),0,Ui.dp(getContext(),PanelUi.INSET),Ui.dp(getContext(),PanelUi.GAP));
         for (int i=0;i<header.getChildCount();i++) if (header.getChildAt(i)!=title) { View action=header.getChildAt(i); action.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(getContext(),PanelUi.SLOT),Ui.dp(getContext(),PanelUi.SLOT))); action.setPadding(Ui.dp(getContext(),8),Ui.dp(getContext(),8),Ui.dp(getContext(),8),Ui.dp(getContext(),8)); }
     }
@@ -43,6 +45,7 @@ final class DetailSheet extends FrameLayout {
     private java.util.function.BooleanSupplier closeRequest;
     void onBack(Runnable action) { backAction = action; }
     void onCloseRequest(java.util.function.BooleanSupplier action) { closeRequest = action; }
+    boolean inputClosing() { return closing; }
     void back() { if (backAction != null) backAction.run(); else close(); }
     private int maximumWidthDp = 296;
     private float widthFraction = 1;
@@ -67,9 +70,9 @@ final class DetailSheet extends FrameLayout {
         super(context); this.dismiss = dismiss; setTag("detail-sheet"); setBackgroundColor(0x55000000); setClickable(true); setFocusableInTouchMode(true);
         setOnClickListener(v -> close()); setOnKeyListener((v, key, event) -> { if (key != KeyEvent.KEYCODE_BACK && key != KeyEvent.KEYCODE_ESCAPE) return false; if (event.getAction() == KeyEvent.ACTION_UP) back(); return true; });
         card = new Card(context); card.setTag("detail-card"); card.setBackground(Ui.background(context, 0xF222252B, 18)); card.setClipToOutline(true); card.setClickable(true); card.setElevation(Ui.dp(context, 6));
-        header = Ui.row(context); header.setPadding(Ui.dp(context, 10), Ui.dp(context, 3), Ui.dp(context, 4), Ui.dp(context, 2));
+        header = Ui.row(context); header.setTag("detail-header"); header.setPadding(Ui.dp(context, 10), Ui.dp(context, 3), Ui.dp(context, 4), Ui.dp(context, 2));
         title = Ui.heading(context, name, 13); header.addView(title, new LinearLayout.LayoutParams(-2, -2, 1));
-        View close = Ui.iconButton(context, R.drawable.ic_ms_close, "关闭详情", this::close); close.setTag("detail-close"); close.setPadding(Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14)); header.addView(close, new LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48))); card.addView(header);
+        closeButton = Ui.iconButton(context, R.drawable.ic_ms_close, "关闭详情", this::close); closeButton.setTag("detail-close"); closeButton.setPadding(Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14)); header.addView(closeButton, new LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48))); card.addView(header);
         content = Ui.column(context); content.setPadding(Ui.dp(context, 10), 0, Ui.dp(context, 10), Ui.dp(context, 5));
         scroll = new ScrollView(context); scroll.setTag("detail-scroll"); scroll.setFillViewport(false); scroll.addView(content); card.addView(scroll);
         addView(card, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER)); setAccessibilityPaneTitle(name);
@@ -98,19 +101,27 @@ final class DetailSheet extends FrameLayout {
     void stableViewport(int heightDp) { stableWidth = true; viewportHeightDp = heightDp; card.requestLayout(); }
     void stableWidth() { if (!stableWidth) { stableWidth = true; card.requestLayout(); } }
     void handleWindowBack() { handlesWindowBack = true; }
+    /** Launcher sheets share the control detail spring, with compact chrome and outside dismissal. */
+    void launcherStyle() {
+        panelStyle = true; header.removeView(closeButton); header.setMinimumHeight(Ui.dp(getContext(), 36));
+        title.setTextSize(11); title.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        header.setPadding(Ui.dp(getContext(), 10), 0, Ui.dp(getContext(), 4), 0);
+        content.setPadding(Ui.dp(getContext(), 8), 0, Ui.dp(getContext(), 8), Ui.dp(getContext(), 6));
+        compactWidth(AppLauncherStyle.FOLDER_ACTION_WIDTH, 1); stableWidth();
+    }
     /** Folder-only hierarchy: compact text and glyphs, with full-sized header touch targets. */
     void folderStyle(String name, int count, View edit) {
-        compactWidth(240, .76f); title.setTextSize(11);
+        launcherStyle(); compactWidth(AppLauncherStyle.FOLDER_SHEET_WIDTH, 1); title.setTextSize(11);
         android.text.SpannableString label = new android.text.SpannableString(name + "  " + count + "/9");
         label.setSpan(new android.text.style.RelativeSizeSpan(.82f), name.length(), label.length(), 0);
         label.setSpan(new android.text.style.ForegroundColorSpan(Ui.MUTED), name.length(), label.length(), 0); title.setText(label);
         header.setPadding(Ui.dp(getContext(), 12), 0, Ui.dp(getContext(), 2), 0);
-        header.addView(edit, header.getChildCount() - 1);
-        for (int i = 0; i < header.getChildCount(); i++) if (header.getChildAt(i) != title) { View button = header.getChildAt(i); button.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(getContext(), 48), Ui.dp(getContext(), 48))); int pad = Ui.dp(getContext(), 16); button.setPadding(pad, pad, pad, pad); }
+        edit.setTag("folder-edit"); header.addView(edit);
+        for (int i = 0; i < header.getChildCount(); i++) if (header.getChildAt(i) != title) { View button = header.getChildAt(i); button.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(getContext(), 36), Ui.dp(getContext(), 36))); int pad = Ui.dp(getContext(), 10); button.setPadding(pad, pad, pad, pad); }
         content.setPadding(Ui.dp(getContext(), 6), 0, Ui.dp(getContext(), 6), Ui.dp(getContext(), 6));
         card.setBackground(Ui.background(getContext(), 0xFA22252B, 18));
     }
-    void extraHeader(View view) { header.addView(view, header.getChildCount() - 1); }
+    void extraHeader(View view) { header.addView(view, closeButton.getParent() == header ? header.indexOfChild(closeButton) : header.getChildCount()); }
     /** Settings opt into their own typography without changing runtime control sheets. */
     void settingsStyle() {
         runtimeTouch = false;
@@ -168,7 +179,7 @@ final class DetailSheet extends FrameLayout {
         animate().alpha(0).setDuration(240).setInterpolator(reverse).start();
         card.animate().scaleX(originScale).scaleY(originScale).translationX(originX).translationY(originY).setDuration(240).setInterpolator(reverse).withEndAction(dismiss).start();
     }
-    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); if (handlesWindowBack && android.os.Build.VERSION.SDK_INT >= 33) { backDispatcher = findOnBackInvokedDispatcher(); if (backDispatcher != null) { backCallback = this::back; backDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback); } } }
+    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); if (handlesWindowBack && android.os.Build.VERSION.SDK_INT >= 33) { backDispatcher = findOnBackInvokedDispatcher(); if (backDispatcher != null) { backCallback = () -> { InputSurface input = InputNavigation.parent(this, InputSurface.class); if (input != null) input.cancelCommand(); else back(); }; backDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback); } } }
     @Override protected void onDetachedFromWindow() { if (android.os.Build.VERSION.SDK_INT >= 33 && backDispatcher != null) { backDispatcher.unregisterOnBackInvokedCallback(backCallback); backDispatcher = null; backCallback = null; } closing = true; cancelEntrance(); if (motion != null) motion.cancel(); animate().cancel(); card.animate().withEndAction(null).cancel(); super.onDetachedFromWindow(); }
     private final class Card extends ViewGroup {
         Card(Context context) { super(context); }

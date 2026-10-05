@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 /** One explicit-app launch policy for the floating launcher and native card. */
 final class AppLauncher {
     private boolean busy;
+    static Intent applicationIntent(ComponentName component) { return Intent.makeMainActivity(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED); }
     static boolean ready(Context context, Prefs prefs, int target) {
         Display selected = Displays.selected(context, prefs);
         return target > 0 && selected != null && selected.getDisplayId() == target && selected.getState() == Display.STATE_ON && !context.getSystemService(KeyguardManager.class).isKeyguardLocked();
@@ -20,7 +21,7 @@ final class AppLauncher {
         ComponentName component = ActionCatalog.component(id);
         if (component == null || !ready(context, prefs, target) || !ownerReady.getAsBoolean()) { message.accept("所选外屏不可用，请解锁后重试"); completed.accept(false); return; }
         if (busy) { message.accept("正在打开应用，请稍候"); completed.accept(false); return; }
-        Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        Intent intent = applicationIntent(component);
         Runnable start = () -> {
             if (!ready(context, prefs, target) || !ownerReady.getAsBoolean()) { message.accept("外屏状态已改变，请重新打开应用"); completed.accept(false); return; }
             try { context.startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle()); completed.accept(true); }

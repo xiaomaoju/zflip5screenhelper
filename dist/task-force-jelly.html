@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>多任务 · 弹性牵动设计</title><style>body{margin:0;padding:24px 16px 32px;background:light-dark(#f4f6fa,#111a27);color:light-dark(#273a50,#e0e8f4);color-scheme:light dark;font:14px/1.6 system-ui,sans-serif}main{max-width:740px;margin:auto}h1{font-size:24px;font-weight:500;margin:0 0 8px}.intro{margin:0 0 6px;opacity:.8}.details{max-width:600px;margin:20px auto 0;padding-top:16px;border-top:1px solid #7d8ca533}.details p{margin:8px 0}</style><style>.motion-links{max-width:1180px;margin:0 auto;padding:18px 20px 0;display:flex;gap:8px 16px;align-items:center;flex-wrap:wrap;font:12px/1.6 system-ui,sans-serif}.motion-links a{color:inherit;text-underline-offset:4px}.motion-links [aria-current]{font-weight:700}.motion-links span{opacity:.65;margin-left:auto}@media(max-width:520px){.motion-links span{width:100%;margin-left:0}}</style></head><body><nav class="motion-links" aria-label="教程与界面动效"><a target="_top" href="flipcover-tutorial.html">← 互动教程</a><a target="_top" href="index.html">全部页面</a><a target="_top" href="notification-force-jelly.html" >通知</a><a target="_top" href="control-force-jelly.html" >控制</a><a target="_top" href="task-force-jelly.html" aria-current="page">任务</a><a target="_top" href="launcher-force-jelly.html" >启动器</a><span>0.17.4 · 2026-10-02</span></nav><main><h1>多任务 · 弹性牵动</h1><p class="intro">20个示例后台任务，从右到左为从新到老，最新一张默认居中，向右滑到最早一张时也居中；连续横滑与惯性滚动；可见卡片弹性联动，同一背景与4个卡片槽持续复用。</p><div id="task-force-jelly" aria-label="多任务页面弹性联动设计">
+<style>
+#task-force-jelly{--fg:light-dark(#25354b,#e3e9f4);--dim:light-dark(#536279,#a4b2ca);--control:light-dark(#edf1f7,#253247);color:var(--fg);font:14px/1.55 system-ui,-apple-system,sans-serif;color-scheme:light dark}
+#task-force-jelly *{box-sizing:border-box}
+#task-force-jelly .preview{width:min(100%,440px);margin:0 auto;position:relative;aspect-ratio:836/992;overflow:hidden}
+#task-force-jelly .device{width:836px;height:992px;position:absolute;left:0;top:0;transform-origin:0 0}
+#task-force-jelly .screen{position:absolute;left:44px;top:98px;width:748px;height:720px;overflow:hidden;touch-action:none;background:#111c30;clip-path:path('M49 0 H699 Q748 0 748 49 V610 Q748 654 704 654 H424 C399 654 389 668 379 683 L365 701 Q352 720 326 720 H49 Q0 720 0 671 V49 Q0 0 49 0 Z');color:#f4f7ff}
+#task-force-jelly .wallpaper{position:absolute;inset:-40px;background:radial-gradient(ellipse at 15% 12%,#4b6179 0,transparent 55%),radial-gradient(ellipse at 85% 65%,#716579 0,transparent 60%),linear-gradient(130deg,#152b42,#2a2037);filter:blur(18px);opacity:.7;pointer-events:none}
+#task-force-jelly .glass{position:absolute;inset:0;border-radius:48px;box-shadow:inset 0 0 0 2px #ffffff18;background:#09101c16;pointer-events:none}
+#task-force-jelly .task{position:absolute;width:230px;height:402px;top:124px;left:14px;padding:0;border:0;color:inherit;background:transparent;font:inherit;text-align:center;touch-action:none;user-select:none;cursor:grab}
+#task-force-jelly .task[hidden]{display:none}
+#task-force-jelly .stats{text-align:center;color:var(--dim);font-size:12px;min-height:22px;margin:0 0 7px}
+#task-force-jelly .task:active{cursor:grabbing}
+#task-force-jelly .caption{height:48px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:28px;white-space:nowrap}
+#task-force-jelly .app-icon{width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:21px;background:#486695}
+#task-force-jelly .lens{height:345px;position:relative;overflow:hidden;border-radius:43px;transform-origin:50% 50%;background:#24364b;box-shadow:0 12px 30px #020a1818,inset 0 0 0 2px #ffffff66}
+#task-force-jelly .lens::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;box-shadow:inset 2px 3px 3px #effbff99,inset -2px -3px 4px #9edcff44,inset 0 0 0 2px #ffffff45;background:linear-gradient(135deg,#d9f4ff0c,transparent 35%,transparent 65%,#9de7ff12)}
+#task-force-jelly .lock{position:absolute;right:16px;top:61px;font-size:26px;z-index:2;pointer-events:none;text-shadow:0 1px 4px #000}
+#task-force-jelly .lock[hidden]{display:none}
+#task-force-jelly .task.locked .lens{outline:2px solid #ffd390}
+#task-force-jelly .mock{height:100%;padding:22px 17px;font-size:20px;text-align:left;color:#dfe9f7;pointer-events:none}
+#task-force-jelly .mock h4{font-size:27px;font-weight:500;margin:0 0 20px}
+#task-force-jelly .chat{background:#213a37}
+#task-force-jelly .bubble{padding:12px;margin:12px 0;border-radius:18px;background:#597b7355;line-height:1.5}
+#task-force-jelly .bubble.reply{margin-left:25px;background:#78a58a55}
+#task-force-jelly .music{background:linear-gradient(#434266,#172533)}
+#task-force-jelly .album{height:150px;border-radius:16px;background:radial-gradient(ellipse at 30% 25%,#a898b8,transparent 65%),linear-gradient(150deg,#637e94,#d09a83);margin-bottom:19px}
+#task-force-jelly .song{font-size:25px}.meta{opacity:.7}
+#task-force-jelly .track{height:3px;background:#ffffff35;margin:16px 0}.track span{display:block;width:45%;height:100%;background:#e5eeff}
+#task-force-jelly .play{text-align:center;font-size:36px}
+#task-force-jelly .notes{background:#302f3b}.note{margin:18px 0;border-bottom:1px solid #ffffff25;padding-bottom:12px}
+#task-force-jelly .clear-hit{position:absolute;left:330px;top:554px;width:88px;height:88px;display:grid;place-items:center;padding:0;border:0;background:transparent;color:#f2f7ff;cursor:pointer;touch-action:none}
+#task-force-jelly .clear-surface{width:60px;height:60px;border-radius:30px;display:grid;place-items:center;background:#bccddb22;box-shadow:inset 1px 1px 2px #ffffff88,inset 0 0 0 1px #ffffff33,0 5px 15px #0002;backdrop-filter:blur(18px);font:36px/1 system-ui;pointer-events:none}
+#task-force-jelly .forces{position:absolute;inset:0;width:748px;height:720px;pointer-events:none;z-index:6}
+#task-force-jelly .overlay{position:absolute;inset:0;width:836px;height:992px;pointer-events:none;z-index:10}
+#task-force-jelly .controls{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin:8px auto 10px;max-width:540px}
+#task-force-jelly .controls button{font:inherit;border:0;border-radius:10px;padding:9px 13px;background:var(--control);color:var(--fg);cursor:pointer;min-height:44px}
+#task-force-jelly .controls label{display:flex;align-items:center;gap:7px;padding:8px;color:var(--dim);min-height:44px}
+#task-force-jelly .status{text-align:center;color:var(--dim);min-height:24px;font-size:13px;margin:0}
+#task-force-jelly button:focus-visible{outline:3px solid #78aef4;outline-offset:3px}
+#task-force-jelly .empty-tasks{position:absolute;inset:0;display:grid;place-items:center;font-size:28px;pointer-events:none}#task-force-jelly .empty-tasks[hidden]{display:none}
+#task-force-jelly .exited{position:absolute;inset:0;display:grid;place-items:center;font-size:30px;background:#101b3070;pointer-events:none}
+#task-force-jelly .exited[hidden],#task-force-jelly .clear-hit[hidden]{display:none}
+</style>
+<div class="preview viz-dotted-background"><div class="device">
+<div class="screen" aria-label="示例外屏多任务页，左右拉动，上滑关闭，下滑锁定">
+<div class="wallpaper"></div><div class="glass"></div>
+<button class="task" data-index="0" style="left:14px" aria-label="微信示例任务；方向键体验拖动，回车体验打开">
+<span class="caption"><span class="app-icon" style="background:#448666">聊</span>微信</span><span class="lock" hidden>🔒</span>
+<div class="lens"><div class="mock chat"><h4>周末出行</h4><div class="bubble">明天见呀 ☀</div><div class="bubble reply">好，十点出发</div><div class="bubble">路上慢慢听歌</div><div class="bubble reply">已经准备好啦</div></div></div></button>
+<button class="task" data-index="1" style="left:14px" aria-label="音乐示例任务；方向键体验拖动，回车体验打开">
+<span class="caption"><span class="app-icon" style="background:#715c9c">♫</span>音乐</span><span class="lock" hidden>🔒</span>
+<div class="lens"><div class="mock music"><div class="album"></div><div class="song">落日之后</div><div class="meta">旅途播放列表</div><div class="track"><span></span></div><div class="play">‹　Ⅱ　›</div></div></div></button>
+<button class="task locked" data-index="2" style="left:14px" aria-label="备忘录示例任务，已锁定；下方向键体验解锁">
+<span class="caption"><span class="app-icon" style="background:#b58a53">记</span>备忘录</span><span class="lock">🔒</span>
+<div class="lens"><div class="mock notes"><h4>今天的小事</h4><div class="note">✓ 整理旅行清单</div><div class="note">○ 买一束花</div><div class="note">○ 收藏喜欢的歌</div><div class="note">○ 晚上散步</div></div></div></button>
+<button class="clear-hit" aria-label="模拟关闭所有未锁定任务"><span class="clear-surface">×</span></button>
+<canvas class="forces" width="748" height="720" aria-hidden="true"></canvas><div class="empty-tasks" hidden>当前没有后台任务</div><div class="exited" hidden>演示已收起</div>
+</div>
+<svg class="overlay" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="836" height="992" viewBox="0 0 836 992" data-screen="44 98 748 720" role="img">
+  <title>Z Flip5 外屏：真机像素与参考照片校准框</title>
+  <desc>屏幕映射矩形 44,98,748,720。像素尺寸与49px圆角来自设备；底部斜向弧线、镜头、铰链及机身外观按用户照片描绘，并非工业测量。外观开孔不能替代系统缺口与完整窗口安全边距。</desc>
+  <defs>
+    <linearGradient id="hinge" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#242b32"/><stop offset=".12" stop-color="#aab3ba"/><stop offset=".28" stop-color="#e2e6e8"/>
+      <stop offset=".45" stop-color="#67747d"/><stop offset=".72" stop-color="#c0c7cb"/><stop offset="1" stop-color="#222c34"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#a3afb5"/><stop offset=".05" stop-color="#303b43"/><stop offset=".45" stop-color="#101820"/>
+      <stop offset=".9" stop-color="#3b464e"/><stop offset=".97" stop-color="#adb7bd"/><stop offset="1" stop-color="#202b32"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#080d11"/><stop offset=".55" stop-color="#101416"/><stop offset="1" stop-color="#181c1e"/>
+    </linearGradient>
+    <radialGradient id="lens"><stop stop-color="#14243b"/><stop offset=".23" stop-color="#071322"/><stop offset=".52" stop-color="#05080d"/><stop offset=".76" stop-color="#101b2b"/><stop offset="1" stop-color="#010305"/></radialGradient>
+    <linearGradient id="camera-ring" x1="0" y1="0" x2=".7" y2="1"><stop stop-color="#98a2a8"/><stop offset=".25" stop-color="#35434e"/><stop offset=".57" stop-color="#080c12"/><stop offset=".82" stop-color="#2d3942"/><stop offset="1" stop-color="#7a858c"/></linearGradient>
+    <radialGradient id="flash"><stop stop-color="#f7f5d9"/><stop offset=".65" stop-color="#e4e6d0"/><stop offset="1" stop-color="#929d90"/></radialGradient>
+    <mask id="opening" maskUnits="userSpaceOnUse" x="0" y="0" width="836" height="992">
+      <rect width="836" height="992" fill="white"/>
+      <path transform="translate(44 98)" d="M49 0 H699 Q748 0 748 49 V610 Q748 654 704 654 H424 C399 654 389 668 379 683 L365 701 Q352 720 326 720 H49 Q0 720 0 671 V49 Q0 0 49 0 Z" fill="black"/>
+    </mask>
+  </defs>
+  <g mask="url(#opening)">
+    <rect x="16" y="5" width="804" height="51" rx="21" fill="url(#hinge)" stroke="#343c43" stroke-width="3"/>
+    <path d="M30 36 H806 Q832 36 832 64 V901 Q832 988 745 988 H91 Q4 988 4 901 V64 Q4 36 30 36Z" fill="url(#rim)"/>
+    <path d="M31 45 H805 Q824 45 824 66 V900 Q824 980 744 980 H92 Q12 980 12 900 V66 Q12 45 31 45Z" fill="url(#glass)"/>
+    <path d="M28 55 H808" stroke="#4d5960" stroke-width="2" opacity=".65"/>
+    <path d="M17 85 V898 Q17 972 92 975" fill="none" stroke="#526168" stroke-width="2" opacity=".4"/>
+    <path d="M820 89 V896 Q820 971 745 975" fill="none" stroke="#111a21" stroke-width="3"/>
+  </g>
+  <g>
+    <circle cx="558" cy="850" r="62" fill="#020406"/><circle cx="710" cy="850" r="62" fill="#020406"/>
+    <circle cx="558" cy="850" r="58" fill="url(#camera-ring)"/><circle cx="710" cy="850" r="58" fill="url(#camera-ring)"/>
+    <circle cx="558" cy="850" r="50" fill="#020508"/><circle cx="710" cy="850" r="50" fill="#020508"/>
+    <circle cx="558" cy="850" r="42" fill="url(#lens)"/><circle cx="710" cy="850" r="42" fill="url(#lens)"/>
+    <g fill="#5b89b4" opacity=".35"><ellipse cx="548" cy="837" rx="10" ry="6"/><ellipse cx="700" cy="837" rx="10" ry="6"/></g>
+    <g fill="#8aabc5" opacity=".12"><circle cx="566" cy="860" r="8"/><circle cx="718" cy="860" r="8"/></g>
+    <circle cx="435" cy="850" r="21" fill="#444e49"/><circle cx="435" cy="850" r="18" fill="url(#flash)"/>
+  </g>
+</svg>
+
+</div></div>
+<div class="controls" aria-label="设计演示控制"><button type="button" data-demo="horizontal">浏览更早</button><button type="button" data-demo="end">回到最新</button><button type="button" data-demo="close">上滑关闭</button><button type="button" data-demo="rapid">连续关闭6张</button><button type="button" data-demo="failure">关闭失败回弹</button><button type="button" data-demo="empty">空任务页</button><button type="button" data-demo="clear">按压 ×</button><button type="button" data-demo="reset">恢复演示</button><label><input type="checkbox" data-force>受力关系</label></div>
+<p class="stats" aria-label="卡片复用状态"></p>
+<p class="status" aria-live="polite">20个示例任务 · 左右连续滑动，上滑关闭，下滑锁定</p>
+<script>
+(()=>{
+const root=document.getElementById('task-force-jelly'),screen=root.querySelector('.screen'),device=root.querySelector('.device'),preview=root.querySelector('.preview'),clear=root.querySelector('.clear-hit'),clearSurface=root.querySelector('.clear-surface'),wallpaper=root.querySelector('.wallpaper'),glass=root.querySelector('.glass'),canvas=root.querySelector('canvas'),ctx=canvas.getContext('2d'),status=root.querySelector('.status'),stats=root.querySelector('.stats'),exited=root.querySelector('.exited');
+const reduced=matchMedia('(prefers-reduced-motion: reduce)'),config={coupling:.24,damping:16},names=['微信','音乐','备忘录','浏览器','相册','地图','日历','文件','邮件','阅读','天气','时钟','计算器','录音','视频','播客','购物','翻译','运动','设置'];
+const initialCards=[...root.querySelectorAll('.task')],templates=initialCards.map(card=>({element:card.querySelector('.lens').firstElementChild.cloneNode(true),color:card.querySelector('.app-icon').style.background}));
+const clone=initialCards[0].cloneNode(true);screen.insertBefore(clone,clear);const cards=[...initialCards,clone];
+const slots=cards.map((card,index)=>{const lens=card.querySelector('.lens'),caption=card.querySelector('.caption'),icon=caption.querySelector('.app-icon'),name=document.createTextNode(''),kind=index===3?0:index,views=[];caption.replaceChildren(icon,name);views[kind]={element:lens.firstElementChild,title:lens.querySelector('h4'),song:lens.querySelector('.song')};return {card,lens,caption,icon,name,badge:card.querySelector('.lock'),views,id:null,index:-1,node:index,base:0,template:kind,locked:null,blocked:null,height:lens.clientHeight||345,layoutOffset:0,layoutVelocity:0}});
+const nodes=Array.from({length:6},()=>({x:0,y:0,vx:0,vy:0,tx:0,ty:0})),ax=new Float64Array(6),ay=new Float64Array(6),edges=[];
+let tasks=[],scroll=0,scrollVelocity=0,pointer=null,gesture=null,animation=0,last=0,motion=null,snapPending=false,snapAt=0,inFrame=false,lastStats=-Infinity,activeId=null,press=0,pulse=0,forceVisible=false,pendingClear=false,session=0,nextClose=0,burst=null,exiting=false,rangeKey='',bindingCount=0,frameCount=0,frameCpu=0,blockedTouch=false;
+const touching=new Set(),closings=new Map();
+function announce(text){status.textContent=text}
+function maxScroll(){return Math.max(0,(tasks.length-1)*245)}
+function base(index){return (748-230)/2+index*245-scroll}
+function layoutTarget(slot){if(closings.has(slot.id))return 0;let before=0,total=0;for(const operation of closings.values()){const index=tasks.findIndex(task=>task.id===operation.id);if(index>=0){total++;if(index<slot.index)before++}}const count=tasks.length-total,index=slot.index-before,nextScroll=Math.max(0,Math.min(scroll-total*245,Math.max(0,(count-1)*245))),left=(748-230)/2+index*245-nextScroll;return left-base(slot.index)}
+function resetNode(n){n.x=0;n.y=0;n.vx=0;n.vy=0;n.tx=0;n.ty=0}
+function resetTargets(){nodes.forEach((n,i)=>{n.tx=i<4&&gesture?.id===slots[i].id&&gesture.axis==='y'?n.x:0;n.ty=i<4&&(closings.has(slots[i].id)||pendingClear&&!tasks.find(t=>t.id===slots[i].id)?.locked)?-420:0});activeId=null;press=0}
+function updateEdges(){edges.length=0;const visible=slots.filter(s=>s.id!==null&&!closings.has(s.id)).sort((a,b)=>a.index-b.index);for(let i=0;i<visible.length;i++){const s=visible[i];if(i)edges.push([visible[i-1].node,s.node,.24]);edges.push([s.node,4,.045],[s.node,5,.025])}edges.push([4,5,.022])}
+function syncSlot(slot,task){if(slot.locked!==task.locked){slot.locked=task.locked;slot.card.classList.toggle('locked',task.locked);slot.badge.hidden=!task.locked}const blocked=exiting||closings.has(slot.id)||pendingClear;if(slot.blocked!==blocked){slot.blocked=blocked;slot.card.disabled=blocked}style(slot.card,'zIndex',closings.has(slot.id)?'3':'1')}
+function style(element,key,value){if(element.style[key]!==value)element.style[key]=value}
+function bind(slot,task,index){
+ slot.id=task.id;slot.index=index;slot.card.dataset.taskId=task.id;slot.card.dataset.index=index;slot.card.hidden=false;slot.name.nodeValue=task.name;
+ let view=slot.views[task.kind];if(!view){const element=templates[task.kind].element.cloneNode(true);view={element,title:element.querySelector('h4'),song:element.querySelector('.song')};slot.views[task.kind]=view}
+ if(slot.template!==task.kind){slot.lens.replaceChildren(view.element);slot.template=task.kind;slot.icon.style.background=templates[task.kind].color}slot.icon.textContent=task.name.slice(0,1);
+ if(view.title)view.title.textContent=task.kind===0?'会话 '+task.id:'任务 '+task.id;if(view.song)view.song.textContent='旅途 · '+task.id;
+ slot.card.setAttribute('aria-label',task.name+'，示例任务'+task.id+'；左右键浏览，上键关闭，下键锁定');syncSlot(slot,task);resetNode(nodes[slot.node]);slot.layoutOffset=0;slot.layoutVelocity=0;const operation=closings.get(task.id);if(operation){Object.assign(nodes[slot.node],operation.visual);slot.layoutOffset=operation.visual.layoutOffset||0;slot.layoutVelocity=operation.visual.layoutVelocity||0;nodes[slot.node].ty=-420}bindingCount++;
+}
+function pool(force=false,preserve=false,previous=null){
+ let first=Math.max(0,Math.floor((scroll-489)/245)+1),end=Math.min(tasks.length,Math.ceil((scroll+489)/245));const refilling=closings.size>0||slots.some(slot=>slot.id!==null&&(Math.abs(slot.layoutOffset)>.03||Math.abs(slot.layoutVelocity)>.03));if(refilling){const reserve=4-(end-first);first=Math.max(0,first-reserve);if(end-first<4&&first===0)end=Math.min(tasks.length,4)}const key=first+':'+end+':'+tasks.length;
+ if(!force&&key===rangeKey)return;rangeKey=key;
+ const desired=tasks.slice(first,end),ids=new Set(desired.map(t=>t.id));
+ for(const slot of slots)if(slot.id!==null&&!ids.has(slot.id)){const operation=closings.get(slot.id);if(operation)Object.assign(operation.visual,nodes[slot.node],{layoutOffset:slot.layoutOffset,layoutVelocity:slot.layoutVelocity});slot.id=null;slot.index=-1;slot.card.hidden=true;resetNode(nodes[slot.node])}
+ for(let index=first;index<end;index++){const task=tasks[index];let slot=slots.find(s=>s.id===task.id);if(!slot){slot=slots.find(s=>s.id===null);bind(slot,task,index);if(preserve&&previous?.has(task.id))slot.layoutOffset=previous.get(task.id)-base(index)}else{const oldBase=previous?.get(task.id)??slot.base;slot.index=index;if(preserve){slot.layoutOffset=oldBase-base(index)}}slot.base=base(index)}
+ updateEdges();
+}
+function updateStats(force=false){
+ const now=performance.now();if(!force&&now-lastStats<250)return;lastStats=now;let first=Infinity,end=-1,count=0;for(const slot of slots)if(slot.id!==null){first=Math.min(first,slot.index);end=Math.max(end,slot.index);count++}const range=count?(tasks.length-end)+'–'+(tasks.length-first):'0',text='当前 '+range+' / '+tasks.length+' 个任务 · 卡片池 4 · 受力节点 6 · 背景 1';if(stats.textContent!==text)stats.textContent=text;
+ root.dataset.taskCount=tasks.length;root.dataset.poolSize=4;root.dataset.boundCount=count;root.dataset.bindings=bindingCount;root.dataset.activeNodes=6;root.dataset.backgroundCount=1;root.dataset.scroll=scroll.toFixed(2);root.dataset.maxScroll=maxScroll();root.dataset.animationActive=animation||motion?'true':'false';root.dataset.animationFrames=frameCount;root.dataset.averageUpdateMs=frameCount?(frameCpu/frameCount).toFixed(3):'0';
+}
+function draw(){root.querySelector('.empty-tasks').hidden=tasks.length>0||exiting;clear.hidden=tasks.length===0;
+ pool();for(const slot of slots){if(slot.id===null)continue;const task=tasks[slot.index],n=nodes[slot.node],b=base(slot.index)+slot.layoutOffset;slot.base=b;const elastic=Math.min(motion?.fast ? .022 : .055,(Math.abs(n.vx)+Math.abs(n.vy))/6500+Math.abs(n.y)/2100+Math.abs(n.x)/700+Math.abs(scrollVelocity)/48000+Math.min(.009,Math.abs(slot.layoutVelocity)/90000)),horizontal=gesture?.axis==='x'||motion?.kind==='snap'||Math.abs(n.x)>Math.abs(n.y),closing=closings.has(slot.id)||pendingClear&&!task.locked;
+ style(slot.card,'transform',`translate(${b-14+n.x}px,${n.y}px)`);style(slot.lens,'transform',`scale(${1+(horizontal?elastic:-elastic*.55)},${1+(horizontal?-elastic*.55:elastic)}) rotate(${Math.max(motion?.fast ? -.6 : -1.2,Math.min(motion?.fast ? .6 : 1.2,(n.vx-scrollVelocity*.025)/280))}deg)`);style(slot.card,'opacity',String(closing?Math.max(0,1-Math.abs(n.y)/260):1));syncSlot(slot,task);
+ }
+ const c=nodes[4],b=nodes[5];style(clearSurface,'transform',`translate(${c.x}px,${c.y}px) scale(${1-press*.13+pulse*.09})`);const blocked=exiting||closings.size>0||pendingClear||!tasks.some(t=>!t.locked);if(clear.disabled!==blocked)clear.disabled=blocked;style(wallpaper,'transform',`translate(${b.x}px,${b.y}px)`);style(glass,'transform',`translate(${b.x*.22}px,${b.y*.22}px)`);
+ if(forceVisible){ctx.clearRect(0,0,748,720);function point(index){return index<4?[slots[index].base+115+nodes[index].x,342+nodes[index].y]:index===4?[374+c.x,598+c.y]:[374+b.x,84+b.y]}ctx.lineWidth=2;ctx.setLineDash([6,7]);for(const[a,b,w]of edges){ctx.strokeStyle=`rgba(188,221,255,${Math.min(.8,.25+w*2)})`;ctx.beginPath();ctx.moveTo(...point(a));ctx.lineTo(...point(b));ctx.stroke()}ctx.setLineDash([]);for(let i=0;i<6;i++){if(i<4&&slots[i].id===null)continue;const p=point(i);ctx.fillStyle=i<4&&slots[i].id===activeId?'#ffd58e':'#badaff';ctx.beginPath();ctx.arc(...p,i<4&&slots[i].id===activeId?7:4,0,Math.PI*2);ctx.fill()}}
+ updateStats();
+}
+let failureId=null;
+function respondClose(operation,success){if(operation.session!==session||closings.get(operation.id)!==operation||operation.answered)return false;operation.answered=true;if(success){operation.accepted=true;pool(true)}else{closings.delete(operation.id);const slot=slots.find(s=>s.id===operation.id);if(slot){nodes[slot.node].ty=0;syncSlot(slot,tasks[slot.index])}updateEdges();announce('模拟关闭失败 · 从当前位置回弹，保留任务')}wake();return true}
+function completeClose(force=false){
+ const done=[];for(const operation of closings.values()){const slot=slots.find(s=>s.id===operation.id);if(operation.accepted&&(force||!slot||nodes[slot.node].y<-285))done.push(operation.id)}if(!done.length)return;
+ const previous=new Map(tasks.map((task,index)=>[task.id,base(index)]));for(const slot of slots)if(slot.id!==null)previous.set(slot.id,base(slot.index)+slot.layoutOffset);for(const id of done)closings.delete(id);tasks=tasks.filter(task=>!done.includes(task.id));scroll=Math.max(0,Math.min(scroll-done.length*245,maxScroll()));
+ // Keep the same task and horizontal drag anchor when the list shrinks under a finger.
+ if(gesture?.axis==='x')gesture.startScroll=scroll+gesture.dx;
+ pool(true,true,previous);nodes[4].vy=Math.max(-150,nodes[4].vy-45);announce('已模拟关闭 '+done.length+' 个任务 · 补位从当前位置接续');if(!tasks.length)exit();
+}
+function completeClear(){tasks=tasks.filter(t=>t.locked);pendingClear=false;scroll=0;pool(true);exit();announce('已模拟清理，保留 '+tasks.length+' 个锁定任务，页面收起')}
+// Centering is a rest-state invariant, including interrupted and cancelled gestures.
+function canSnap(){return tasks.length>0&&pointer===null&&!touching.size&&!motion&&!burst&&!closings.size&&!exiting&&!pendingClear&&!document.hidden}
+function needsSnap(){return tasks.length>0&&scroll!==Math.round(scroll/245)*245}
+function snapTarget(){return Math.max(0,Math.min(maxScroll(),Math.round((scroll+scrollVelocity/5)/245)*245))}
+function requestSnap(delay=0){if(exiting||pendingClear)return;snapPending=true;snapAt=performance.now()+delay;wake()}
+function startSnap(t){const target=snapTarget();snapPending=false;resetTargets();if(reduced.matches||Math.abs(target-scroll)<.05&&Math.abs(scrollVelocity)<1){scroll=target;scrollVelocity=0;pool();return}motion={kind:'snap',target,id:tasks[Math.round(target/245)].id,fast:Math.abs(scrollVelocity)>600};activeId=motion.id}
+function step(t){animation=0;inFrame=true;const started=performance.now(),dt=Math.min(.032,last?(t-last)/1000:1/60);last=t;
+ for(const operation of closings.values())if(!operation.answered&&t>=operation.readyAt){respondClose(operation,operation.id!==failureId);if(operation.id===failureId)failureId=null;}if(burst&&t>=burst.next){const slot=slots.filter(s=>s.id!==null&&!closings.has(s.id)&&!tasks[s.index].locked&&base(s.index)+s.layoutOffset+nodes[s.node].x<620&&base(s.index)+s.layoutOffset+nodes[s.node].x+230>128).sort((a,b)=>Math.abs(base(a.index)+a.layoutOffset+nodes[a.node].x-259)-Math.abs(base(b.index)+b.layoutOffset+nodes[b.node].x-259))[0];if(slot){finish(slot.id,-175,'y');burst.remaining--;burst.next=t+110}if(burst.remaining<=0||!slot&&!closings.size&&!slots.some(s=>s.id!==null&&!tasks[s.index].locked&&!closings.has(s.id)))burst=null}
+ if(motion?.kind==='snap'){resetTargets();activeId=motion.id}else if(motion){const current=motion,f=Math.min(1,(t-current.started)/current.duration);if(current.kind==='browse'){const ease=1-Math.pow(1-f,3);scrollVelocity=f<1?(current.target-current.from)*3*Math.pow(1-f,2)/current.duration*1000:0;horizontal(current.from+(current.target-current.from)*ease)}else vertical(current.id,-175*Math.sin(f*Math.PI/2));if(f===1){motion=null;if(current.kind==='browse'){scrollVelocity=0;announce('已浏览到 '+(current.target===maxScroll()?'最新任务':'更早的任务')+' · 同一组卡片持续复用')}else finish(current.id,-175,'y')}}pool();
+ if(pointer===null&&!touching.size&&!motion&&Math.abs(scrollVelocity)>1){const next=scroll+scrollVelocity*dt;scroll=Math.max(0,Math.min(maxScroll(),next));scrollVelocity*=Math.exp(-dt*5);if(next<0||next>maxScroll()){const edge=next-scroll;for(const slot of slots)if(slot.id!==null)nodes[slot.node].vx-=edge*15;scrollVelocity=0}pool()}else if(Math.abs(scrollVelocity)<=1)scrollVelocity=0;
+ if(canSnap()&&(snapPending||needsSnap())&&(!snapPending||t>=snapAt)&&Math.abs(scrollVelocity)<=300)startSnap(t);
+ // The centered card and row share a spring. Its acceleration loads the jelly node;
+ // adjacency springs pass that load to neighbors and the clear control, with background reaction.
+ const anchor=motion?.kind==='snap'?slots.find(s=>s.id===motion.id):null;
+ for(let sub=0;sub<4;sub++){const h=dt/4;let load=0;if(motion?.kind==='snap'){const n=anchor?nodes[anchor.node]:null,acceleration=-(scroll-motion.target-(n?.x||0))*484-scrollVelocity*(motion.fast?43:31.68);scrollVelocity+=acceleration*h;const next=scroll+scrollVelocity*h;scroll=Math.max(0,Math.min(maxScroll(),next));if(next!==scroll)scrollVelocity=0;load=Math.max(-6000,Math.min(6000,acceleration*.40))}for(let i=0;i<6;i++){const n=nodes[i];ax[i]=(n.tx-n.x)*(i===4?60:i===5?100:220)-n.vx*(i===4?9:i===5?12:config.damping);ay[i]=(n.ty-n.y)*220-n.vy*config.damping}if(anchor){ax[anchor.node]+=load*(motion.fast?.45:1);ax[5]-=load*.18}for(const[a,b,w]of edges){const k=220*w*config.coupling/.24,fx=(nodes[b].x-nodes[a].x)*k,fy=(nodes[b].y-nodes[a].y)*k;ax[a]+=fx;ay[a]+=fy;ax[b]-=fx;ay[b]-=fy}for(let i=0;i<6;i++){const n=nodes[i];n.vx+=ax[i]*h;n.vy+=ay[i]*h;n.x+=n.vx*h;n.y+=n.vy*h}for(const slot of slots)if(slot.id!==null){if(gesture?.id===slot.id&&gesture.axis==='y'){slot.layoutVelocity=0;continue}const target=layoutTarget(slot);slot.layoutVelocity+=((target-slot.layoutOffset)*420-slot.layoutVelocity*42)*h;slot.layoutOffset+=slot.layoutVelocity*h}}
+ if(motion?.kind==='snap'){const n=anchor?nodes[anchor.node]:null;if(Math.abs(scroll-motion.target)<.02&&Math.abs(scrollVelocity)<.5&&(!n||Math.abs(n.x)<.02&&Math.abs(n.vx)<.5)){scroll=motion.target;scrollVelocity=0;motion=null;resetTargets();announce('果冻受力消散 · 当前任务已居中')}pool()}
+ if(pointer===null){press*=Math.exp(-dt*14);pulse*=Math.exp(-dt*10)}
+ completeClose();
+ if(pendingClear&&slots.every(s=>s.id===null||tasks[s.index]?.locked||nodes[s.node].y<-285))completeClear();
+ if(reduced.matches){for(const n of nodes){n.x=n.tx;n.y=n.ty;n.vx=0;n.vy=0}for(const slot of slots){slot.layoutOffset=layoutTarget(slot);slot.layoutVelocity=0}}
+ frameCount++;const moving=canSnap()&&needsSnap()||snapPending||motion!==null||burst!==null||closings.size>0||slots.some(slot=>slot.id!==null&&!(gesture?.id===slot.id&&gesture.axis==='y')&&(Math.abs(slot.layoutOffset-layoutTarget(slot))+Math.abs(slot.layoutVelocity)>.09))||nodes.some(n=>Math.abs(n.vx)+Math.abs(n.vy)+Math.abs(n.x-n.tx)+Math.abs(n.y-n.ty)>.09)||Math.abs(scrollVelocity)>1||press>.002||pulse>.002;
+ if(moving)animation=requestAnimationFrame(step);else{nodes.forEach(n=>{n.x=n.tx;n.y=n.ty;n.vx=0;n.vy=0});for(const slot of slots)if(!(gesture?.id===slot.id&&gesture.axis==='y')){slot.layoutOffset=layoutTarget(slot);slot.layoutVelocity=0}last=0}draw();frameCpu+=performance.now()-started;if(!moving)updateStats(true);inFrame=false;
+}
+function wake(){if(document.hidden||inFrame)return;if(reduced.matches){if(snapPending&&performance.now()<snapAt){if(!animation){last=0;animation=requestAnimationFrame(step)}return}if(canSnap()&&(snapPending||needsSnap())){scroll=snapTarget();scrollVelocity=0;snapPending=false;pool()}nodes.forEach(n=>{n.x=n.tx;n.y=n.ty;n.vx=0;n.vy=0});press=0;pulse=0;for(const slot of slots){slot.layoutOffset=layoutTarget(slot);slot.layoutVelocity=0}for(const operation of closings.values()){operation.answered=true;operation.accepted=true}completeClose(true);for(const slot of slots){slot.layoutOffset=layoutTarget(slot);slot.layoutVelocity=0}if(pendingClear)completeClear();if(canSnap()&&needsSnap()){scroll=snapTarget();scrollVelocity=0;pool()}draw();updateStats(true);return}if(!animation){last=0;animation=requestAnimationFrame(step)}}
+function vertical(id,dy){resetTargets();activeId=id;const slot=slots.find(s=>s.id===id),task=tasks.find(t=>t.id===id);if(!slot||!task||closings.has(id))return;const limit=dy<0&&task.locked?15:105;nodes[slot.node].ty=Math.sign(dy)*limit*(1-Math.exp(-Math.abs(dy)/130));nodes[4].ty=nodes[slot.node].ty*.06;nodes[5].ty=-nodes[slot.node].ty*.04;wake()}
+function horizontal(next){scroll=Math.max(0,Math.min(maxScroll(),next));pool();resetTargets();const excess=next-scroll,pull=-Math.sign(excess)*85*(1-Math.exp(-Math.abs(excess)/170));for(const slot of slots)if(slot.id!==null)nodes[slot.node].tx=pull;nodes[4].tx=pull*.025;nodes[5].tx=-pull*.06;wake()}
+function validUp(slot,dy,velocity=0){return dy<0&&(-dy>slot.height*.30||-dy>=12&&velocity<=-600)}
+function finish(id,dy,axis,cancel=false,velocity=0){if(axis==='x'){resetTargets();if(cancel)scrollVelocity=0;announce('松手减速 · 果冻受力回弹到中央');requestSnap();return}if(axis==='y'&&motion?.kind==='snap'){motion=null;snapPending=false;scrollVelocity=0}if(closings.has(id)){wake();return;}resetTargets();activeId=null;const task=tasks.find(t=>t.id===id),slot=slots.find(s=>s.id===id);if(cancel){scrollVelocity=0;announce('手势已取消，回到原位')}else if(axis==='y'&&task&&slot&&validUp(slot,dy,velocity)&&!task.locked){const operation={id,session,token:++nextClose,readyAt:performance.now()+[80,180,110][id%3],answered:false,accepted:false,visual:{x:nodes[slot.node].x,y:nodes[slot.node].y,vx:nodes[slot.node].vx,vy:nodes[slot.node].vy}};closings.set(id,operation);nodes[slot.node].ty=-420;nodes[slot.node].vy=Math.min(nodes[slot.node].vy,-360);updateEdges();nodes[4].vy=Math.max(-150,nodes[4].vy-25);announce('模拟关闭中 · 其他卡片可继续操作')}else if(axis==='y'&&dy>115&&task&&!closings.has(id)){task.locked=!task.locked;nodes[slot.node].vy=-170;announce(task.locked?'已模拟锁定，清理会保留此任务':'已模拟解锁')}else if(axis==='y'&&task?.locked&&slot&&validUp(slot,dy,velocity))announce('已锁定 · 卡片回弹保留');else announce('连续跟手浏览 · 松手惯性滑行，边界弹回');if(slot&&task)syncSlot(slot,task);wake()}
+function exit(){snapPending=false;exiting=true;exited.hidden=false;scrollVelocity=0}
+function clearTasks(){if(closings.size||pendingClear||exiting)return;snapPending=false;motion=null;resetTargets();scrollVelocity=0;pendingClear=true;pulse=1;nodes[4].vy=-150;for(const slot of slots)if(slot.id!==null&&!tasks[slot.index].locked){nodes[slot.node].ty=-420;nodes[slot.node].vy=-250}announce('模拟清理全部 '+tasks.filter(t=>!t.locked).length+' 个未锁定任务…');wake()}
+function cancelDemo(){motion=null;snapPending=false;burst=null}
+function cancelGesture(){if(pointer!==null){pointer=null;gesture=null;resetTargets();scrollVelocity=0;wake()}cancelDemo()}
+function restore(){failureId=null;cancelGesture();if(animation)cancelAnimationFrame(animation);animation=0;last=0;tasks=names.map((name,i)=>({id:i+1,name,kind:i%3,locked:i===2||i===8||i===14})).reverse();scroll=maxScroll();scrollVelocity=0;session++;closings.clear();burst=null;pendingClear=false;exiting=false;exited.hidden=true;press=0;pulse=0;bindingCount=0;frameCount=0;frameCpu=0;lastStats=-Infinity;for(const slot of slots){slot.id=null;slot.card.hidden=true}nodes.forEach(resetNode);pool(true);for(const slot of slots){slot.layoutOffset=0;slot.layoutVelocity=0}announce('最新任务居中 · 向右滑浏览更早任务，首尾均居中');draw();updateStats(true)}
+screen.addEventListener('pointerdown',e=>{touching.add(e.pointerId);if(touching.size>1){blockedTouch=true;cancelGesture();announce('多指已取消');return}if(blockedTouch||exiting||pendingClear)return;const card=e.target.closest('.task'),button=e.target.closest('.clear-hit');if(card&&closings.has(Number(card.dataset.taskId))||button&&clear.disabled)return;cancelDemo();scrollVelocity=0;pointer=e.pointerId;gesture={id:card?Number(card.dataset.taskId):null,clear:!!button,startX:e.clientX,startY:e.clientY,startScroll:scroll,dx:0,dy:0,axis:null,lastX:e.clientX,lastTime:e.timeStamp,vy:0,samples:[{y:e.clientY,time:e.timeStamp}]};screen.setPointerCapture(pointer);if(button){press=1;nodes[4].ty=5;wake()}e.preventDefault()});
+screen.addEventListener('pointermove',e=>{if(e.pointerId!==pointer||!gesture||blockedTouch)return;if(e.pointerType==='mouse'&&e.buttons===0){release(e);return}const g=gesture,scale=preview.clientWidth/836;g.dx=(e.clientX-g.startX)/scale;g.dy=(e.clientY-g.startY)/scale;if(g.clear)return;if(!g.axis&&Math.hypot(g.dx,g.dy)<12)return;g.axis=g.axis||(g.id===null||Math.abs(g.dx)>Math.abs(g.dy)?'x':'y');if(g.axis==='x'){const deltaTime=Math.max(1,e.timeStamp-g.lastTime);scrollVelocity=scrollVelocity*.55+((g.lastX-e.clientX)/scale/deltaTime*1000)*.45;g.lastX=e.clientX;g.lastTime=e.timeStamp;horizontal(g.startScroll-g.dx)}else{g.samples.push({y:e.clientY,time:e.timeStamp});while(g.samples.length>6||g.samples.length>2&&e.timeStamp-g.samples[0].time>80)g.samples.shift();const first=g.samples[0],elapsed=e.timeStamp-first.time;g.vy=elapsed>0?(e.clientY-first.y)/scale/elapsed*1000:0;g.lastTime=e.timeStamp;vertical(g.id,g.dy)}});
+function release(e,cancel=false){touching.delete(e.pointerId);if(!touching.size)blockedTouch=false;if(e.pointerId!==pointer||!gesture){if(!touching.size&&!exiting&&!pendingClear){resetTargets();requestSnap()}return}const g=gesture;pointer=null;gesture=null;if(g.clear){resetTargets();if(!cancel&&Math.hypot(g.dx,g.dy)<20)clearTasks();else requestSnap()}else if(!g.axis){resetTargets();const slot=slots.find(s=>s.id===g.id);if(slot&&!cancel)nodes[slot.node].vy=-65;if(!cancel&&slot)exit();announce(cancel?'手势已取消 · 回弹居中':'模拟恢复成功 · 页面收起');scrollVelocity=0;requestSnap()}else{if(cancel||g.axis==='x'&&e.timeStamp-g.lastTime>100)scrollVelocity=0;finish(g.id,g.dy,g.axis,cancel,e.timeStamp-g.lastTime<=100?g.vy:0)}}
+screen.addEventListener('pointerup',e=>release(e));screen.addEventListener('pointercancel',e=>release(e,true));screen.addEventListener('lostpointercapture',e=>{if(e.pointerId===pointer)release(e,true)});
+screen.addEventListener('wheel',e=>{if(exiting||pendingClear||pointer!==null||touching.size)return;e.preventDefault();cancelDemo();scrollVelocity=0;requestSnap(110);horizontal(scroll+(Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY)*836/preview.clientWidth);resetTargets();wake()},{passive:false});
+for(const slot of slots){slot.card.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)||slot.id===null||exiting||closings.has(slot.id)||pendingClear)return;e.preventDefault();if(e.key==='ArrowLeft'||e.key==='ArrowRight')browse(scroll+(e.key==='ArrowLeft'?-245:245));else{vertical(slot.id,e.key==='ArrowUp'?-170:170);finish(slot.id,e.key==='ArrowUp'?-170:170,'y')}});slot.card.addEventListener('click',e=>{if(e.detail===0&&!exiting&&!closings.has(slot.id)){nodes[slot.node].vy=-90;wake();exit();announce('模拟恢复成功 · 页面收起')}})}
+clear.addEventListener('click',e=>{if(e.detail===0)clearTasks()});
+function browse(target){cancelGesture();scrollVelocity=0;target=Math.max(0,Math.min(maxScroll(),Math.round(target/245)*245));if(reduced.matches){scroll=target;pool();draw();updateStats(true);return}motion={kind:'browse',from:scroll,target,started:performance.now(),duration:Math.min(2000,Math.max(450,Math.abs(target-scroll)*.45))};wake()}
+function demo(kind){if(kind==='reset'){restore();return}if(kind==='empty'){restore();tasks=[];scroll=0;pool(true);announce('当前没有后台任务 · 保留页面，等待刷新');draw();updateStats(true);return}if(kind==='failure'){restore();const slot=slots.find(s=>s.id!==null&&!tasks[s.index].locked);if(!slot)return;if(reduced.matches){announce('模拟关闭失败 · 减弱动效，保留任务');return}finish(slot.id,-175,'y');const operation=closings.get(slot.id);if(operation)operation.readyAt=performance.now()+120;failureId=slot.id;return}if(exiting||pendingClear)restore();if(kind==='horizontal'||kind==='end'){browse(kind==='end'?maxScroll():Math.max(0,scroll-620));return}if(kind==='clear'){clearTasks();return}if(kind==='rapid'){cancelGesture();if(reduced.matches){for(let i=0;i<6;i++){const slot=slots.find(s=>s.id!==null&&!tasks[s.index].locked);if(!slot)break;finish(slot.id,-175,'y')}return}burst={remaining:6,next:performance.now()};announce('连续关闭演示 · 前一张退场期间继续关闭下一张');wake();return}const slot=slots.filter(s=>s.id!==null&&!closings.has(s.id)).sort((a,b)=>Math.abs(base(a.index)+a.layoutOffset+nodes[a.node].x-259)-Math.abs(base(b.index)+b.layoutOffset+nodes[b.node].x-259))[0]||slots.find(s=>s.id!==null&&!closings.has(s.id));if(!slot)return;if(reduced.matches){finish(slot.id,-170,'y');return}cancelGesture();scrollVelocity=0;motion={kind:'close',id:slot.id,started:performance.now(),duration:750};wake()}
+root.querySelectorAll('[data-demo]').forEach(b=>b.addEventListener('click',()=>demo(b.dataset.demo)));
+root.querySelector('[data-force]').addEventListener('change',e=>{forceVisible=e.target.checked;if(!forceVisible)ctx.clearRect(0,0,748,720);wake();if(window.openai?.setWidgetState)window.openai.setWidgetState({modelContent:{forceRelationshipsVisible:forceVisible,taskCount:tasks.length},privateContent:null}).catch(()=>{})});
+const saved=window.openai?.widgetState?.modelContent;if(saved?.forceRelationshipsVisible){forceVisible=true;root.querySelector('[data-force]').checked=true}
+window.addEventListener('openai:set_globals',e=>{const value=e.detail?.globals?.widgetState?.modelContent?.forceRelationshipsVisible;if(typeof value==='boolean'){forceVisible=value;root.querySelector('[data-force]').checked=value;if(!value)ctx.clearRect(0,0,748,720);wake()}});
+function stop(){cancelGesture();touching.clear();blockedTouch=false;if(animation)cancelAnimationFrame(animation);animation=0;scrollVelocity=0;resetTargets();nodes.forEach(n=>{n.x=n.tx;n.y=n.ty;n.vx=0;n.vy=0});completeClose(true);for(const slot of slots){slot.layoutOffset=layoutTarget(slot);slot.layoutVelocity=0}if(pendingClear)completeClear();draw();updateStats(true)}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();else wake()});window.addEventListener('pagehide',stop);reduced.addEventListener('change',()=>{stop();wake()});
+let width=0;new ResizeObserver(()=>{const next=preview.clientWidth;device.style.transform=`scale(${next/836})`;if(width&&next!==width)stop();width=next}).observe(preview);
+if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:()=>{nodes[4].vy=-120;wake()}});tweak.addSlider(config,'coupling',{label:'元素牵动强度',min:.1,max:.4,step:.02});tweak.addSlider(config,'damping',{label:'回弹阻尼',min:13,max:22,step:1})}
+restore();
+})();
+</script>
+</div>
+<div class="details"><p>首尾：最新任务默认停在屏幕中央；连续向右滑动到最早任务，它也停在中央。中间保持连续跟手与惯性滚动，拖动或甩动结束后，必有一张卡片居中；减速时由居中卡片受力，牵动邻卡与清理 ×，背景产生反作用，果冻回弹逐渐消散；首尾留白用于居中，继续拖动会弹回边界。</p><p>上滑关闭判定：距离超过预览高度30%，或松手时有明确向上惯性；短距离快速上滑也可关闭，微小误触与松手前停顿会被排除。<br>连续关闭：每张任务独立退场，其他卡片继续跟手；左侧更早的任务从松手时就随退场提前靠拢，失败时沿原轨迹回到原位，补位使用独立的平滑减速，不把整格移动传成果冻牵扯；同帧完成的移除合并补位，保留当前位置与速度。模拟回调按任务身份和会话校验，失败回弹，迟到结果不改写已复用卡片。实际操作关闭任务窗口，不保证结束应用的全部服务进程。</p><p>复用：20条任务数据，固定4个卡片槽，只换绑视口相交项；最多6个受力节点，沿用1个页面背景。浏览更早、关闭补位和回到最新均不重建页面。</p><p>受力：卡片 → 相邻卡片 → 清理 × → 背景。弹簧传递力，阻尼逐步消散；静止时回到原布局。</p><p>上滑关闭：卡片拉伸退出，邻卡补位并轻弹；下滑锁定：卡片回弹，锁标记只切换状态。</p><p>清理：× 先受压，再把余震传给未锁定任务；模拟成功后收起页面。锁定卡片保留。</p><p>四卡槽、六节点受力、连续关闭与失败回弹已接入 Android。此 HTML 使用示例任务和模拟结果。浏览器演示不代表物理真机性能与触摸验证。</p></div></main></body></html>

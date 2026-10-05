@@ -37,16 +37,19 @@ final class AppRecentTasks {
     static void dismiss(Context context, Prefs prefs, RecentTasks.Task task, BooleanSupplier active, Consumer<Response> callback) {
         request(context, prefs, task.displayId(), List.of(task), true, active, callback);
     }
+    static void clearPage(Context context, Prefs prefs, int display, List<RecentTasks.Task> tasks, BooleanSupplier active, Consumer<Response> callback) {
+        request(context, prefs, display, tasks, true, active, callback);
+    }
     private static void request(Context context, Prefs prefs, int display, List<RecentTasks.Task> clearing, boolean explicitTask, BooleanSupplier active, Consumer<Response> callback) {
         if (!active.getAsBoolean() || !AppLauncher.ready(context, prefs, display)) { callback.accept(new Response(null, "所选外屏不可用，请解锁后重试")); return; }
         String request = "";
         if (clearing != null) {
             clearing = clearTargets(context, prefs, clearing, explicitTask);
-            if (clearing.isEmpty()) { callback.accept(new Response(null, "没有可清理的后台任务", true)); return; }
+            if (clearing.isEmpty()) { callback.accept(new Response(null, "没有可清理的任务", true)); return; }
             try { request = encode(clearing); } catch (Exception error) { callback.accept(new Response(null, "任务数据无效")); return; }
         }
         boolean clean = clearing != null;
-        CoverApp.bridge(context).run(clean ? "recent_clear" : "recent_tasks", display, 0, request, result -> {
+        CoverApp.bridge(context).runTask(clean ? explicitTask ? "recent_dismiss" : "recent_clear" : "recent_tasks", display, request, () -> active.getAsBoolean() && AppLauncher.ready(context, prefs, display), result -> {
             if (!active.getAsBoolean() || !AppLauncher.ready(context, prefs, display)) { callback.accept(new Response(null, "外屏状态已改变")); return; }
             if (!result.ok) { callback.accept(new Response(null, result.message)); return; }
             Snapshot snapshot;
@@ -56,11 +59,11 @@ final class AppRecentTasks {
         });
     }
     static List<RecentTasks.Task> clearTargets(Context context, Prefs prefs, List<RecentTasks.Task> tasks, boolean explicitTask) {
-        return CoverApp.taskLocks(context).unlocked(RecentTasks.backgroundTargets(tasks, explicitTask ? java.util.Set.of() : AppDockLayout.packages(prefs.hubPins())));
+        return CoverApp.taskLocks(context).unlocked(explicitTask ? tasks : RecentTasks.backgroundTargets(tasks, AppDockLayout.packages(prefs.hubPins())));
     }
     static void open(Context context, Prefs prefs, RecentTasks.Task task, BooleanSupplier active, ShizukuBridge.Callback callback) {
         if (!active.getAsBoolean() || !AppLauncher.ready(context, prefs, task.displayId())) { callback.accept(new ShizukuBridge.Result(false, "所选外屏不可用，请解锁后重试", "")); return; }
-        try { CoverApp.bridge(context).run("recent_open", task.displayId(), 0, SystemRecentTasks.json(task).toString(), result -> {
+        try { CoverApp.bridge(context).runTask("recent_open", task.displayId(), SystemRecentTasks.json(task).toString(), () -> active.getAsBoolean() && AppLauncher.ready(context, prefs, task.displayId()), result -> {
             if (!active.getAsBoolean() || !AppLauncher.ready(context, prefs, task.displayId())) { callback.accept(new ShizukuBridge.Result(false, "外屏状态已改变", "")); return; }
             callback.accept(result);
         }); }

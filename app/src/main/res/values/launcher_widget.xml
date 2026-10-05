@@ -1,12 +1,11 @@
 <resources>
     <!-- A fresh host layout identity prevents Samsung from reapplying actions to the
          old tree containing removed buttons. Keep the actual layout source shared. -->
-    <item type="layout" name="launcher_widget_native_hub">@layout/launcher_widget_hub</item>
+    <item type="layout" name="launcher_widget_native_hub_settings">@layout/launcher_widget_hub</item>
+    <item type="layout" name="launcher_widget_native_hub_compact_search">@layout/launcher_widget_hub</item>
     <string name="launcher_widget_label">应用启动器 · 外屏卡片</string>
     <string name="launcher_widget_description">与浮窗启动器共用应用、文件夹、侧栏和 Dock；编辑请到浮窗启动器。</string>
-    <dimen name="launcher_panel_radius">20dp</dimen>
-    <dimen name="launcher_folder_radius">14dp</dimen>
-    <dimen name="launcher_dock_radius">16dp</dimen>
+    <dimen name="launcher_rail_fade">8dp</dimen>
     <dimen name="launcher_header_height">24dp</dimen>
     <dimen name="launcher_header_text">12dp</dimen>
     <dimen name="launcher_page_height">18dp</dimen>

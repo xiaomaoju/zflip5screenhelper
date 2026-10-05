@@ -18,10 +18,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Native-card lifecycle and ephemeral navigation only. All durable content belongs to Prefs. */
+/** Native-card lifecycle; the shared workspace page belongs to Prefs, folders remain ephemeral. */
 final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
     static final class State {
-        int page, pages = 1, workspacePage; String folder;
+        int page, pages = 1, workspacePage, pendingPage = -1; String folder;
         void openFolder(String id) { if (folder == null) workspacePage = page; folder = id; page = 0; }
         boolean closeFolder() { if (folder == null) return false; folder = null; page = workspacePage; return true; }
     }
@@ -32,6 +32,14 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
     private final AppWidgetManager manager;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Map<Integer, State> states = new HashMap<>();
+    private final Set<Integer> visibleCards = new HashSet<>();
+    private long inputEpoch;
+    long inputEpoch() { return inputEpoch; }
+    String inputFolder(int id) { State state = states.get(id); return state == null || state.folder == null ? "desktop" : state.folder; }
+    private android.widget.RemoteViews inputViews;
+    private int inputViewsId = -1;
+    int inputCard() { return visibleCards.size() == 1 ? visibleCards.iterator().next() : -1; }
+    android.widget.RemoteViews inputViews() { return inputViewsId == inputCard() ? inputViews : null; }
     private final Set<String> shownIcons = new HashSet<>();
     private final Set<String> requestedIcons = new HashSet<>();
     // Only current card pages; at most the 1000-app catalog plus four stale pins, sharing catalog-resolution bitmaps.
@@ -57,13 +65,31 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
         public void onReceive(Context c, Intent intent) { if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) { stop(); reset(); } else schedule(); }
     };
     LauncherWidgetBridge(Context context) { this.context = context.getApplicationContext(); prefs = new Prefs(context); catalog = CoverApp.catalog(context); manager = AppWidgetManager.getInstance(context); }
+    private State state(int id) { return states.computeIfAbsent(id, ignored -> { State value = new State(); value.page = value.pendingPage = prefs.launcherPage(); return value; }); }
     int[] cards() { return manager.getAppWidgetIds(new ComponentName(context, LauncherWidgetProvider.class)); }
     boolean owns(int id) { for (int card : cards()) if (card == id) return true; return false; }
     void schedule() { if (observing && !main.hasCallbacks(update)) main.postDelayed(update, 60); }
     void recent(List<RecentTasks.Task> value, boolean open, boolean clear) { tasks = List.copyOf(value); recentKnown = true; canOpen = open; canClear = clear; recentError = ""; schedule(); }
     void recentFailure(String reason) { recentKnown = false; recentError = reason == null ? "最近任务不可用" : reason; schedule(); }
-    void trim() { recentGeneration++; pendingWidget = -1; tasks = List.of(); recentKnown = false; recentBusy = false; recentError = ""; shownIcons.clear(); requestedIcons.clear(); visibleIcons.clear(); }
-    private void reset() { cancelToast(); states.clear(); trim(); displayId = -1; }
+    void trim() { recentGeneration++; pendingWidget = -1; tasks = List.of(); recentKnown = false; recentBusy = false; recentError = ""; shownIcons.clear(); requestedIcons.clear(); visibleIcons.clear(); inputViews = null; inputViewsId = -1; if (CoverService.instance != null) CoverService.instance.nativeInputChanged(); }
+    private void reset() { cancelToast(); states.clear(); trim(); displayId = -1; visibleCards.clear(); notifyVisibility(); }
+    boolean visible(int target) { return target != Display.DEFAULT_DISPLAY && target == displayId && !visibleCards.isEmpty(); }
+    private void notifyVisibility() { inputEpoch++; if (inputViewsId != inputCard()) { inputViews = null; inputViewsId = -1; } if (CoverService.instance != null) CoverService.instance.launcherVisibilityChanged(); }
+    void optionsChanged(int id, android.os.Bundle options) {
+        if (!owns(id)) return;
+        Display selected = Displays.selected(context, prefs);
+        if (selected != null && selected.getState() == Display.STATE_ON && selected.getDisplayId() != displayId) refresh();
+        // Samsung opts this provider into per-instance options callbacks. Never infer
+        // visibility from the host package, a card click, or cached options on restart.
+        if (options.containsKey("visible")) {
+            boolean visible = options.getBoolean("visible", false) && selected != null && selected.getDisplayId() == displayId && selected.getState() == Display.STATE_ON;
+            if (visible ? visibleCards.add(id) : visibleCards.remove(id)) {
+                notifyVisibility();
+                if (visible && CoverService.instance != null) CoverService.instance.launcherCardVisible(selected.getDisplayId());
+            }
+        }
+        resize(id);
+    }
     private void cancelToast() { if (editToast != null) { editToast.cancel(); editToast = null; } }
     private void observe(boolean enabled) {
         if (observing == enabled) return; observing = enabled;
@@ -79,6 +105,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
     void refresh() {
         main.removeCallbacks(update); int[] cards = cards(); observe(cards.length > 0);
         Set<Integer> retained = new HashSet<>(); for (int id : cards) retained.add(id); states.keySet().retainAll(retained);
+        if (visibleCards.retainAll(retained)) notifyVisibility();
         if (cards.length == 0) { stop(); reset(); return; }
         Display selected = Displays.selected(context, prefs);
         if (selected == null) {
@@ -89,19 +116,21 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
         if (!listening) { listening = true; catalog.observe(apps); }
         shownIcons.clear();
         for (int id : cards) {
-            State state = states.computeIfAbsent(id, ignored -> new State());
-            try { manager.updateAppWidget(id, new LauncherWidgetViews(context, prefs, selected, id, state, new Recents(tasks, recentKnown, recentBusy, canOpen, canClear, recentError), shownIcons, requestedIcons, visibleIcons).render()); }
+            State state = state(id);
+            if (state.folder == null && state.pendingPage >= 0 && catalog.ready() && !catalog.failed()) { state.page = state.pendingPage; state.pendingPage = -1; }
+            try { android.widget.RemoteViews rendered = new LauncherWidgetViews(context, prefs, selected, id, state, new Recents(tasks, recentKnown, recentBusy, canOpen, canClear, recentError), shownIcons, requestedIcons, visibleIcons).render(); manager.updateAppWidget(id, rendered); if (id == inputCard()) { inputViews = rendered; inputViewsId = id; if (CoverService.instance != null) CoverService.instance.nativeInputChanged(); } }
             catch (RuntimeException error) { manager.updateAppWidget(id, LauncherWidgetViews.message(context, "卡片暂不可用，请重新打开或调整尺寸")); android.util.Log.w("LauncherWidget", "Unable to render card", error); }
         }
         visibleIcons.keySet().retainAll(shownIcons);
         requestedIcons.retainAll(shownIcons);
     }
     void resize(int id) { cancelToast(); requestedIcons.clear(); schedule(); }
-    void remove(int id) { cancelToast(); states.remove(id); if (pendingWidget == id) { recentGeneration++; pendingWidget = -1; recentBusy = false; } schedule(); }
+    void remove(int id) { cancelToast(); states.remove(id); if (visibleCards.remove(id)) notifyVisibility(); if (pendingWidget == id) { recentGeneration++; pendingWidget = -1; recentBusy = false; } schedule(); }
+    boolean inputBack(int id, int target) { State current = states.get(id); if (current == null || current.folder == null) return false; action(id, target, "back", null); return true; }
     void action(int id, int target, String operation, String item) {
         Display selected = Displays.selected(context, prefs);
         if (!owns(id) || selected == null || selected.getDisplayId() != target || selected.getState() != Display.STATE_ON || operation == null) return;
-        State state = states.computeIfAbsent(id, ignored -> new State());
+        State state = state(id);
         switch (operation) {
             case "surface" -> {
                 if (item == null || !Set.of("search", "sort", "tasks").contains(item)) return;
@@ -112,7 +141,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
                 if (service == null || !service.launcherSurface(item, target)) notice(selected, "请开启浮窗服务后使用此功能");
                 return;
             }
-            case "edit" -> { cancelToast(); editToast = android.widget.Toast.makeText(context.createDisplayContext(selected), AppLauncherModel.EDIT_HINT, android.widget.Toast.LENGTH_SHORT); editToast.show(); return; }
+            case "edit" -> { notice(selected, AppLauncherModel.EDIT_HINT); return; }
             case "apps" -> { return; } // Ignore stale Dock toggle PendingIntents from older card views.
             case "side" -> {
                 if (!prefs.actions("favorites").contains(item) || !ActionCatalog.valid(item)) return;
@@ -132,6 +161,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
             case "back" -> state.closeFolder();
             default -> { return; }
         }
+        if (state.folder == null && state.pendingPage < 0 && (operation.equals("next") || operation.equals("previous"))) prefs.launcherPage(state.page);
         requestedIcons.clear();
         schedule();
     }
@@ -145,7 +175,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
             if (result.unchanged()) schedule();
             else if (result.ok()) { AppRecentTasks.Snapshot snapshot = result.snapshot(); recent(snapshot.tasks(), snapshot.canOpen(), snapshot.canClear()); }
             else recentFailure(result.message());
-            Display selected = Displays.selected(context, prefs); if ((clearing != null || !result.ok()) && selected != null && selected.getDisplayId() == target) notice(selected, result.message() == null ? "最近应用已刷新" : result.message());
+            Display selected = Displays.selected(context, prefs); if (selected != null && selected.getDisplayId() == target && selected.getState() == Display.STATE_ON) notice(selected, result.message() == null ? "最近应用已刷新" : result.message());
         });
     }
     @Override public void onDisplayAdded(int id) { schedule(); }

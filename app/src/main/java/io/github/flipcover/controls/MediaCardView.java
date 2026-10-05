@@ -27,6 +27,11 @@ final class MediaCardView extends LinearLayout {
     private final Runnable update = this::render;
     private Bitmap displayedArtwork;
     private boolean attached;
+    private ControlFeedback control;
+    ControlFeedback controlFeedback() { if (control == null) { control = new ControlFeedback(this, false); RuntimeVisuals.control(previous); RuntimeVisuals.control(play); RuntimeVisuals.control(next); View output = findViewWithTag("media-output"); if (output != null) RuntimeVisuals.control(output); } return control; }
+    @Override public void draw(android.graphics.Canvas canvas) { if (control == null) { super.draw(canvas); return; } int saved = control.save(canvas, getWidth() / 2f, getHeight() / 2f); super.draw(canvas); canvas.restoreToCount(saved); }
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) { if (control != null) { int action = event.getActionMasked(); if (action == android.view.MotionEvent.ACTION_DOWN) control.pressed(true); else if (action == android.view.MotionEvent.ACTION_UP) control.pressed(false); else if (action == android.view.MotionEvent.ACTION_CANCEL || event.getPointerCount() > 1) control.cancel(); } return super.dispatchTouchEvent(event); }
+    @Override public boolean performClick() { if (control != null) control.pulse(); return super.performClick(); }
     MediaCardView(CoverService owner, boolean compact) { this(owner, compact, false); }
     MediaCardView(CoverService owner, boolean compact, boolean preview) {
         super(owner.screenContext); this.owner = owner; this.compact = compact; this.preview = preview; sessions = preview ? null : owner.mediaSessions();
@@ -41,6 +46,7 @@ final class MediaCardView extends LinearLayout {
         }
         addView(artRow, new LayoutParams(-1, -2));
         title = Ui.heading(getContext(), "", compact ? 10 : 11); title.setTag("media-title"); title.setMaxLines(1); title.setEllipsize(TextUtils.TruncateAt.END); title.setPadding(0, Ui.dp(getContext(), 4), 0, 0); addView(title, new LayoutParams(-1, -2));
+        if (!preview) InputNavigation.bind(title, "media:detail", InputNavigation.Region.TOOLS, this::openMedia, null);
         artist = Ui.text(getContext(), "", compact ? 8 : 9, Ui.MUTED); artist.setTag("media-artist"); artist.setMaxLines(1); artist.setEllipsize(TextUtils.TruncateAt.END); artist.setPadding(0, Ui.dp(getContext(), 2), 0, 0); addView(artist, new LayoutParams(-1, -2));
         spacer = new View(getContext()); addView(spacer, new LayoutParams(1, Ui.dp(getContext(), 3), compact ? 1 : 0));
         transport = Ui.row(getContext()); transport.setTag("media-transport");

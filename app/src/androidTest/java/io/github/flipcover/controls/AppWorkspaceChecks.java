@@ -72,9 +72,40 @@ final class AppWorkspaceChecks {
             require(workspace.getNumColumns() == 5 && workspace.capacity() == 15, "reference cover viewport fits five columns and three complete rows");
             require(workspace.gridHeight() / 3 >= ((AppWorkspaceView.CellAdapter) workspace.getAdapter()).minimumHeight(workspace.getWidth() / 5), "three rows preserve full icon and measured label height");
             android.graphics.Rect dock = new android.graphics.Rect(); compact.findViewWithTag("hub-dock").getDrawingRect(dock); compact.offsetDescendantRectToMyCoords(compact.findViewWithTag("hub-dock"), dock);
-            require(dock.bottom == height, "Dock background reaches the supplied safe bottom edge");
+            require(dock.bottom == height - Ui.dp(context, AppLauncherStyle.SURFACE_INSET), "Dock background preserves the reserved safe bottom gutter");
             compact.dispose();
         });
+    }
+    String runPageMemory(String phase) throws Exception {
+        activity = test.startActivitySync(new Intent(test.getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        prefs = new Prefs(activity);
+        List<AppCatalogCache.Entry> apps = CoverApp.catalog(activity).entriesBlocking(); require(apps.size() >= 3, "catalog provides page fixtures");
+        try {
+            if (!phase.isEmpty()) {
+                int expected = phase.equals("reboot") ? 0 : 1;
+                require(prefs.launcherPage() == expected, "page survives process restart and expires after emulator reboot"); mount(null);
+                require(grid.page() == expected, "new process restores the page for the current system boot");
+            } else {
+                prefs.data.edit().clear().putString("hub_sort", "manual").commit();
+                java.util.Map<String, Integer> slots = new java.util.LinkedHashMap<>(); for (int i = 0; i < 3; i++) slots.put(apps.get(i).id(), i * AppLauncherStyle.GRID_COLUMNS * AppLauncherStyle.GRID_ROWS);
+                prefs.saveWorkspace(new AppWorkspaceLayout(slots), false); mount(null);
+                require(grid.page() == 0 && grid.pageCount() >= 3, "first open starts on the first page");
+                main(() -> grid.settlePage(1, false)); require(new Prefs(activity).launcherPage() == 1, "completed paging saves shared navigation");
+                mount(null); require(grid.page() == 1, "closing and reopening restores the page without an explicit view snapshot");
+                main(() -> { hub.setExpanded(false); hub.setExpanded(true); }); require(grid.page() == 1, "Dock collapse and expansion preserve the page");
+                main(() -> ((EditText) hub.findViewWithTag("hub-search")).setText("__missing_page_fixture__"));
+                require(grid.getCount() == 0 && prefs.launcherPage() == 1, "empty search does not overwrite workspace navigation");
+                main(() -> ((EditText) hub.findViewWithTag("hub-search")).setText("")); require(grid.page() == 1, "clearing search restores the browsing page");
+                prefs.data.edit().putString("hub_sort", "name").commit(); mount(null); require(grid.page() == Math.min(1, grid.pageCount() - 1), "automatic sorting restores a valid remembered page");
+                prefs.data.edit().putString("hub_sort", "manual").commit(); prefs.launcherPage(9999); mount(null);
+                require(grid.page() == grid.pageCount() - 1 && prefs.launcherPage() == grid.page(), "out-of-range page clamps to the current last page");
+                int boot = android.provider.Settings.Global.getInt(activity.getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1); require(boot >= 0, "system supplies a reboot identity");
+                prefs.data.edit().putInt("launcher_page_boot", boot + 1).commit(); require(new Prefs(activity).launcherPage() == 0, "a changed boot identity invalidates the previous page");
+                mount(null); require(grid.page() == 0, "first open after a reboot identity change starts on page one");
+                main(() -> grid.settlePage(1, false)); prefs.data.edit().putInt("launcher_page", 1).commit();
+            }
+            return "PASS: launcher-page-memory" + (phase.isEmpty() ? "" : "-" + phase) + "; " + assertions + " assertions; disposable emulator, not Samsung hardware validation";
+        } finally { main(() -> { if (hub != null) hub.dispose(); activity.finish(); }); }
     }
     String run() throws Exception {
         activity = test.startActivitySync(new Intent(test.getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -114,7 +145,7 @@ final class AppWorkspaceChecks {
             main(() -> grid.compact(true)); require(prefs.workspaceCompact() && prefs.workspace().equals(prefs.workspace().compact()), "automatic packing removes gaps but retains order");
             main(() -> grid.moveTo(second, 0)); require(prefs.workspace().slot(second) == 0 && prefs.workspace().size() == apps.size(), "accessible movement inserts without losing an app");
             main(() -> grid.compact(false)); JSONObject exported = ((MainActivity) activity).exportConfigurationData();
-            require(exported.getInt("version") == 13 && exported.getJSONObject("layout").getInt("version") == 9, "current configuration envelope contains the workspace layout");
+            require(exported.getInt("version") == 15 && exported.getJSONObject("layout").getInt("version") == 11, "current configuration envelope contains the workspace layout");
             AppWorkspaceLayout exportedLayout = prefs.workspace(); main(() -> prefs.saveWorkspace(new AppWorkspaceLayout(), false));
             main(() -> { try { ((MainActivity) activity).applyConfigurationData(exported); } catch (Exception error) { throw new AssertionError(error); } }); require(exportedLayout.equals(prefs.workspace()), "configuration round-trip preserves every placement");
             for (Object invalid : new Object[]{-1, 4096, 1.5, "1"}) {

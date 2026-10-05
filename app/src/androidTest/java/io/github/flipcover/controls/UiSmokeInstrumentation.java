@@ -37,27 +37,68 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         Bundle result = new Bundle();
         try {
             if (!android.os.Build.HARDWARE.equals("ranchu") && !android.os.Build.HARDWARE.equals("goldfish")) throw new IllegalStateException("Run only on a disposable Android emulator");
+            if (scenario.equals("app-launch-reuse")) { result.putString("result", new AppLaunchChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("lock-wake")) { result.putString("result", new LockWakeChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("shortcut-apps")) { if (expectedRotation >= 0) { require(getUiAutomation().setRotation(expectedRotation), "shortcut application settings rotation accepted"); SystemClock.sleep(500); waitForIdleSync(); } result.putString("result", new SettingsVisibilityChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("status-apps")) { if (expectedRotation >= 0) require(getUiAutomation().setRotation(expectedRotation), "status application settings rotation accepted"); result.putString("result", new StatusAppChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("six-key")) { result.putString("result", new SixKeyChecks(this, expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("external-input")) { result.putString("result", new ExternalInputChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("external-input-capture")) { result.putString("result", new ExternalInputChecks(this).capture()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("liquid-highlight")) { result.putString("result", new LiquidTensionChecks(this).runHighlight()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("liquid-tension")) { result.putString("result", new LiquidTensionChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("liquid-tension-motion")) { result.putString("result", new LiquidTensionChecks(this).runMotion()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("liquid-tension-static-merge")) { result.putString("result", new LiquidTensionChecks(this).runStaticMerge()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("liquid-tension-curvature")) { result.putString("result", new LiquidTensionCurvatureChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("liquid-tension-component")) { result.putString("result", new LiquidTensionComponentChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("notifications-inertia")) { result.putString("result", new NotificationCenterChecks(this).runInertia()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("notification-force")) { result.putString("result", new NotificationCenterChecks(this).runForce()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("notification-reading-force")) { result.putString("result", new NotificationCenterChecks(this).runReadingForce()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("notification-threshold-delete")) { result.putString("result", new LiquidTensionChecks(this).runDelete()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("notification-glass")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runNotifications()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("control-motion-reduced")) { result.putString("result", new ControlMotionChecks(this).runReduced()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("control-level-loading")) { result.putString("result", new ControlMotionChecks(this).runLevels()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("control-motion")) { result.putString("result", new ControlMotionChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("control-dashboard")) { result.putString("result", ControlDashboardChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("interface-card")) { result.putString("result", new InterfaceCardChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("cover-home")) { result.putString("result", new InterfaceCardChecks(this).runHome()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("task-fullscreen")) { result.putString("result", new InterfaceCardChecks(this).runFullscreenTasks()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("panel-header-split")) { result.putString("result", new InterfaceCardChecks(this).runHeaderSplit()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("panel-actions")) { result.putString("result", new InterfaceCardChecks(this).runPanelActions()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("panel-blank-tap")) { result.putString("result", new InterfaceCardChecks(this).runBlankTaps()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("home-return")) { result.putString("result", new HomeReturnChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-glass")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-glass-tabs")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runOriginalTabs()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("recent-tasks-glass")) { result.putString("result", new RecentTasksGlassChecks(this,expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("task-force")) { result.putString("result", new TaskForceChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("task-close-failure")) { result.putString("result", new TaskForceChecks(this).runCloseFailure()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("task-requests")) { result.putString("result", new TaskRequestChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("task-restore")) { result.putString("result", new TaskRestoreChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("detail-motion")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runMotionChecks()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("detail-content")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runContentChecks()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-glass-capture")) { result.putString("result", new PanelGlassChecks(this,expectedRotation).runCaptureChecks()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("connectivity")) { result.putString("result", new ConnectivityChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("settings-update-actions")) { if (expectedRotation >= 0) require(getUiAutomation().setRotation(expectedRotation), "settings update rotation accepted"); result.putString("result", new SettingsUpdateActionsChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("app-update")) { result.putString("result", new AppUpdateChecks().run(this)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("configuration")) { result.putString("result", new ConfigurationChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("app-config")) { result.putString("result", new AppConfigChecks().run(this)); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("control-rotation")) { result.putString("result", ControlRotationChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("runtime-geometry")) { result.putString("result", new RuntimeGeometryChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("runtime-safe-area")) { result.putString("result", RuntimeSafeAreaChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("runtime-feedback")) { result.putString("result", new RuntimeFeedbackChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("settings-scale")) { result.putString("result", new SettingsScaleChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("oneui-settings")) { result.putString("result", new SettingsUiChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("settings-order")) { result.putString("result", new SettingsOrderChecks(this).run(false)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("shortcut-editor")) { result.putString("result", new SettingsOrderChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("control-grid") || scenario.equals("control-grid-layout")) { if (expectedRotation >= 0) require(getUiAutomation().setRotation(expectedRotation), "grid rotation accepted"); result.putString("result", new ControlGridChecks(this).run(scenario.equals("control-grid-layout"))); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("shortcut-editor-layout")) { if (expectedRotation >= 0) require(getUiAutomation().setRotation(expectedRotation), "editor layout rotation accepted"); result.putString("result", new SettingsOrderChecks(this).runLayout()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("app-workspace")) { result.putString("result", new AppWorkspaceChecks(this, expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("launcher-page-memory") || scenario.equals("launcher-page-memory-restart") || scenario.equals("launcher-page-memory-reboot")) { result.putString("result", new AppWorkspaceChecks(this, expectedRotation).runPageMemory(scenario.equals("launcher-page-memory") ? "" : scenario.endsWith("-reboot") ? "reboot" : "restart")); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("app-folders")) { result.putString("result", new AppFolderChecks(this, expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("folder-layout")) { result.putString("result", new AppFolderChecks(this, expectedRotation).runLayout()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("folder-tools")) { result.putString("result", new AppFolderChecks(this, expectedRotation).runTools()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("workspace-dock-menu")) { result.putString("result", new AppFolderChecks(this, expectedRotation).runDockMenu()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("native-widgets-narrow")) { result.putString("result", new NativeWidgetChecks(this, 640, 748).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("native-widgets-dense")) { result.putString("result", new NativeWidgetChecks(this, 720, 748, 440).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("native-widgets-wide")) { result.putString("result", new NativeWidgetChecks(this, 800, 748).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("native-widgets-landscape")) { result.putString("result", new NativeWidgetChecks(this, 748, 640).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("native-widgets")) { result.putString("result", new NativeWidgetChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
@@ -66,13 +107,18 @@ public final class UiSmokeInstrumentation extends Instrumentation {
             if (scenario.equals("panel-entry")) { result.putString("result", new PanelEntryChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("dock-input")) { result.putString("result", new DockInputChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("standalone-dock")) { result.putString("result", new AppDockChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("dock-pin-placement")) { result.putString("result", new AppDockChecks(this).run(true)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("hub-motion")) { result.putString("result", new HubMotionChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("dock-fusion")) { result.putString("result", new DockFusionChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("launcher-force")) { result.putString("result", new LauncherForceChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("launcher-polish")) { result.putString("result", new LauncherPolishChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("hub-window")) { result.putString("result", new HubWindowChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("recent-tasks")) { if (expectedRotation >= 0) require(getUiAutomation().setRotation(expectedRotation), "task page rotation request accepted"); result.putString("result", new RecentTasksChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("readability")) { if (expectedRotation >= 0) require(getUiAutomation().setRotation(expectedRotation), "readability rotation request accepted"); result.putString("result", new ReadabilityChecks(this, expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("motion-continuity")) { result.putString("result", new MotionContinuityChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("blur-policy")) { checkBlurPolicy(); result.putString("result", "PASS: blur policy; " + assertions + " assertions; component hardware rendering, not Samsung overlay validation"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("brightness-flow")) { result.putString("result", BrightnessChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("chrome-shadow")) { result.putString("result", ChromeShadowChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("status-safe-area")) { result.putString("result", StatusSafeAreaChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-settings")) { result.putString("result", "PASS: panel settings; " + PanelSettingsChecks.run(getTargetContext()) + " assertions"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-layout")) { result.putString("result", PanelLayoutChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
@@ -82,6 +128,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
             if (scenario.equals("settings-personalization")) { Prefs prefs = new Prefs(getTargetContext()); prefs.data.edit().clear().commit(); open("main"); checkPersonalization(prefs); result.putString("result", "PASS: settings personalization and configuration; " + assertions + " assertions"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("control-settings")) { checkControlSettings(); result.putString("result", "PASS: control settings; " + assertions + " assertions"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("hub-performance")) { result.putString("result", new HubPerformanceChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("notification-swipe")) { result.putString("result", new NotificationSwipeChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("notification-center")) { result.putString("result", new NotificationCenterChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("notification-regression")) { checkNotificationUpdates(new Prefs(getTargetContext())); checkPanelSurface(); result.putString("result", "PASS: " + assertions + " existing notification and panel gesture assertions"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("control-reference")) { checkMediaCard(); result.putString("result", "PASS: control reference layout; " + assertions + " assertions"); finish(Activity.RESULT_OK, result); return; }
@@ -163,7 +210,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         chooseSetting("panel-preset", "easy"); chooseSetting("panel-option-toolsPosition", "side"); clickPanelSetting("panel-option-media"); clickPanelSetting("panel-option-mediaIdle");
         require(prefs.panelMediaIdle() && prefs.panelToolsPosition().equals("side"), "tool position and idle option saved from UI");
         org.json.JSONObject config = ((MainActivity) activity).exportConfigurationData(), expected = prefs.panelSnapshot();
-        require(config.getInt("version") == 13 && config.getJSONObject("layout").getInt("version") == 9, "configuration and layout schemas are current");
+        require(config.getInt("version") == 15 && config.getJSONObject("layout").getInt("version") == 11, "configuration and layout schemas are current");
         prefs.resetPanelSettings(); ((MainActivity) activity).applyConfigurationData(config);
         require(prefs.panelSnapshot().toString().equals(expected.toString()) && !prefs.hasPanelUndo(), "configuration restores every option and invalidates local undo");
         for (int version = 1; version <= 8; version++) {
@@ -199,7 +246,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         chooseSetting("panel-option-columns", "5");
         require(prefs.panelColumns() == 5 && findText(activity.findViewById(android.R.id.content).findViewWithTag("panel-option-columns"), "5 列") != null, "setting saves five columns and shows selection"); screenshot("control-settings");
         org.json.JSONObject config = ((MainActivity) activity).exportConfigurationData();
-        require(config.getInt("version") == 13 && config.getJSONObject("layout").getInt("panelColumns") == 5, "export includes column count");
+        require(config.getInt("version") == 15 && config.getJSONObject("layout").getInt("panelColumns") == 5, "export includes column count");
         prefs.data.edit().putInt("panel_columns", 3).commit(); ((MainActivity) activity).applyConfigurationData(config); require(prefs.panelColumns() == 5, "full configuration restores columns");
         for (Object invalid : new Object[]{2, 6, 3.5, "4"}) {
             java.util.Map<String, ?> before = prefs.data.getAll(); org.json.JSONObject bad = prefs.layoutSnapshot().put("panelColumns", invalid); boolean rejected = false;
@@ -219,10 +266,10 @@ public final class UiSmokeInstrumentation extends Instrumentation {
             prefs.data.edit().putString("hand_side", hand).putInt("panel_columns", columns).commit(); renderPanel("controls", prefs);
             require(expectedRotation < 0 || activity.getDisplay().getRotation() == expectedRotation, "display retains requested rotation throughout layout checks");
             runOnMainSync(() -> {
-                ViewGroup dashboard = activity.findViewById(android.R.id.content).findViewWithTag("control-dashboard"); int firstRow = 0, count = prefs.actions("panel").size();
+                ViewGroup dashboard = activity.findViewById(android.R.id.content).findViewWithTag("control-dashboard"), grid = dashboard.findViewWithTag("control-tile-grid"); int firstRow = 0, count = prefs.actions("panel").size();
                 for (int i = 0; i < count; i++) {
-                    ViewGroup tile = (ViewGroup) dashboard.getChildAt(i); if (tile.getTop() == 0) firstRow++;
-                    require(tile.getLeft() >= 0 && tile.getRight() <= dashboard.getWidth() && tile.getBottom() <= dashboard.getHeight(), "tile stays inside layout");
+                    ViewGroup tile = (ViewGroup) grid.getChildAt(i); if (tile.getTop() == 0) firstRow++;
+                    require(tile.getLeft() >= 0 && tile.getRight() <= grid.getWidth() && tile.getBottom() <= grid.getHeight(), "tile stays inside scrollable grid");
                     ViewGroup face = (ViewGroup) tile.getChildAt(0); View symbol = face.getChildAt(0);
                     require(symbol.getLeft() >= 0 && symbol.getTop() >= 0 && symbol.getRight() <= face.getWidth() && symbol.getBottom() <= face.getHeight(), "adaptive icon is not clipped");
                     View marker = face.getChildAt(1);
@@ -636,7 +683,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
             require(favorites.getScrollY() > 0, "favorites list scrolls"); require(pinned.getY() == before, "Dock stays outside sidebar scroll");
         }); waitForIdleSync(); SystemClock.sleep(350);
         require(hub[0].expanded(), "hub can expand app grid");
-        View rail = hub[0].findViewWithTag("hub-rail"); require(prefs.handSide().equals("right") ? rail.getRight() == hub[0].getWidth() : rail.getLeft() == 0, "app rail respects chosen side"); screenshot(prefs.handSide().equals("right") ? "hub-right-expanded" : "hub-expanded");
+        View rail = hub[0].findViewWithTag("hub-sidebar"); android.graphics.Rect railBounds = new android.graphics.Rect(0, 0, rail.getWidth(), rail.getHeight()); hub[0].offsetDescendantRectToMyCoords(rail, railBounds); AppLauncherStyle.HubGeometry geometry = AppLauncherStyle.hubGeometry(hub[0].getWidth(), hub[0].getHeight(), activity.getResources().getDisplayMetrics().density, prefs.handSide().equals("right"), false); require(railBounds.left == geometry.railLeft() && railBounds.width() == geometry.railWidth(), "app rail centers in the chosen side's reserved gap inside the shared surface inset"); screenshot(prefs.handSide().equals("right") ? "hub-right-expanded" : "hub-expanded");
         runOnMainSync(() -> {
             AppWorkspaceView grid = find(hub[0], AppWorkspaceView.class); EditText search = find(hub[0], EditText.class);
             int original = grid.getCount(); require(original > 0, "installed apps are loaded"); require(grid.getNumColumns() >= 3, "grid adapts to cover width with at least three columns");
@@ -879,13 +926,14 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         CoverApp.catalog(getTargetContext()).entriesBlocking(); open("orientations");
         runOnMainSync(() -> ((EditText) activity.findViewById(android.R.id.content).findViewWithTag("settings-query")).setText(getTargetContext().getPackageName())); waitForIdleSync();
         android.widget.ListView applications = activity.findViewById(android.R.id.content).findViewWithTag("settings-app-list");
-        require(applications.getAdapter().getCount() == 2 && applications.getChildCount() >= 1, "rotation settings find the app through package search"); runOnMainSync(() -> applications.setSelection(1)); waitForIdleSync(); runOnMainSync(() -> applications.findViewWithTag(((AppCatalogCache.Entry) applications.getAdapter().getItem(1)).id()).performClick()); waitForIdleSync();
+        int exactApp = -1; for (int index = 1; index < applications.getAdapter().getCount(); index++) { AppCatalogCache.Entry entry = (AppCatalogCache.Entry) applications.getAdapter().getItem(index); if (entry.packageName().equals(getTargetContext().getPackageName())) { exactApp = index; break; } }
+        require(exactApp > 0 && applications.getChildCount() >= 1, "rotation settings find the exact app through package search even when test packages also match"); final int selectedApp = exactApp; runOnMainSync(() -> applications.setSelection(selectedApp)); waitForIdleSync(); runOnMainSync(() -> applications.findViewWithTag(((AppCatalogCache.Entry) applications.getAdapter().getItem(selectedApp)).id()).performClick()); waitForIdleSync();
         runOnMainSync(() -> activity.findViewById(android.R.id.content).findViewWithTag("orientation-choice-1").performClick()); waitForIdleSync();
         require(prefs.appRotation(getTargetContext().getPackageName()) == 1, "rotation choice saves without applying system operation"); SystemClock.sleep(4000); screenshot("app-orientation");
         prefs.data.edit().putString("hand_side", "left").putBoolean("haptics", false).putInt("display", 0).commit();
         require(Displays.selected(getTargetContext(), prefs) == null, "primary display cannot be selected as a cover");
         org.json.JSONObject config = ((MainActivity) activity).exportConfigurationData();
-        require(config.getInt("version") == 13 && !config.has("display") && !config.has("enabled"), "export v13 excludes device and runtime activation");
+        require(config.getInt("version") == 15 && !config.has("display") && !config.has("enabled"), "export v15 excludes device and runtime activation");
         prefs.data.edit().putString("hand_side", "auto").putString("app_rotations", "{}").putBoolean("haptics", true).commit(); ((MainActivity) activity).applyConfigurationData(config);
         require(prefs.leftHand() && !prefs.haptics() && prefs.appRotation(getTargetContext().getPackageName()) == 1 && prefs.displayId() == 0, "configuration roundtrip preserves new choices and device selection");
         java.util.Map<String, ?> before = prefs.data.getAll(); org.json.JSONObject invalid = new org.json.JSONObject(config.toString()); invalid.getJSONObject("rotations").put("invalid.package", 2.5);
@@ -981,7 +1029,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
             }); waitForIdleSync(); screenshot("chrome-" + scale);
         }
         prefs.data.edit().putInt("status_scale", 70).putInt("navigation_gap", 17).putString("chrome_style", "dark").putBoolean("battery_percent", true).commit();
-        org.json.JSONObject snapshot = prefs.layoutSnapshot(); require(snapshot.getInt("version") == 9, "layout schema carries hub and chrome preferences"); prefs.data.edit().putInt("status_scale", 150).commit(); prefs.prepareLayout(snapshot, prefs.data.edit()).commit();
+        org.json.JSONObject snapshot = prefs.layoutSnapshot(); require(snapshot.getInt("version") == 11, "layout schema carries hub and chrome preferences"); prefs.data.edit().putInt("status_scale", 150).commit(); prefs.prepareLayout(snapshot, prefs.data.edit()).commit();
         require(prefs.statusScale() == 70 && prefs.batteryPercent() && prefs.navigationGap() == 17 && prefs.chromeStyle().equals("dark"), "new chrome configuration roundtrip");
         java.util.Map<String, ?> before = prefs.data.getAll(); snapshot.put("statusScale", 151); boolean rejected = false; try { prefs.prepareLayout(snapshot, prefs.data.edit()).commit(); } catch (IllegalArgumentException expected) { rejected = true; }
         require(rejected && before.equals(prefs.data.getAll()), "invalid scale atomically rejects layout");

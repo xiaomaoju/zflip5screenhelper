@@ -1,5 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:label="组件验证示例">
+        <activity android:name="io.github.flipcover.controls.AppLaunchFixtureActivity" android:exported="true" android:resizeableActivity="true" android:theme="@android:style/Theme.Material.NoActionBar">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity>
+        <activity android:name="io.github.flipcover.controls.AppLaunchFixtureActivity$Detail" android:exported="true" android:resizeableActivity="true" android:theme="@android:style/Theme.Material.NoActionBar" />
         <activity android:name="io.github.flipcover.controls.LauncherLaunchFixtureActivity" android:exported="true" android:resizeableActivity="true" android:label="启动卡片验证" android:theme="@android:style/Theme.Material.NoActionBar">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>

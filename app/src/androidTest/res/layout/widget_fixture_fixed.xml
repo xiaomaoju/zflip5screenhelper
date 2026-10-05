@@ -1,0 +1,4 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:minWidth="280dp" android:minHeight="322dp" android:background="#FFF0EFEA">
+    <TextView android:id="@id/fixture_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="固定高度组件" />
+    <Button android:id="@id/fixture_button" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="274dp" android:text="底部原生按钮" />
+</FrameLayout>

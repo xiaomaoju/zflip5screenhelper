@@ -34,7 +34,7 @@ public final class NativeWidgetActivity extends Activity {
     private int templatePage;
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved); bridge = CoverApp.widgets(this); setResult(RESULT_CANCELED);
-        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
+        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::inputBack);
         outer = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
         if (outer > 0 && !bridge.owns(outer)) { finish(); return; }
         if (saved == null) saved = getIntent().getBundleExtra("editor_state");
@@ -62,7 +62,8 @@ public final class NativeWidgetActivity extends Activity {
     private boolean ready() { Display d = selected(); return bridge.editing(outer, owner) && d != null && d.getDisplayId() > 0 && d.getState() == Display.STATE_ON && getDisplay() != null && getDisplay().getDisplayId() == d.getDisplayId(); }
     private boolean dirty() { return outer > 0 && !draft.equals(bridge.items(outer)); }
     @android.annotation.SuppressLint("GestureBackNavigation") // API 30–32 fallback; newer versions use the dispatcher.
-    @Override public void onBackPressed() { back(); }
+    @Override public void onBackPressed() { inputBack(); }
+    private void inputBack() { if (root != null && root.getParent() instanceof InputSurface input) input.cancelCommand(); else back(); }
     private void back() {
         if (awaiting) return;
         if (page.equals("template-restore")) { go("template-stop"); return; }
@@ -81,13 +82,16 @@ public final class NativeWidgetActivity extends Activity {
         if (picker != null) { picker.saveState(pickerState); picker = null; }
         root = SettingsUi.column(this); root.setBackgroundColor(SettingsUi.BACKGROUND);
         root.setOnApplyWindowInsetsListener((v, insets) -> { android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout()); v.setPadding(safe.left, safe.top, safe.right, safe.bottom); return insets; });
-        LinearLayout header = SettingsUi.row(this); header.setMinimumHeight(SettingsUi.dp(this, 52)); header.addView(SettingsUi.iconButton(this, R.drawable.ic_ms_arrow_back, "返回", this::back));
+        LinearLayout header = SettingsUi.row(this); header.setMinimumHeight(SettingsUi.dp(this, 40)); header.addView(NativeWidgetUi.iconButton(this, R.drawable.ic_ms_arrow_back, "返回", this::back));
         String title = outer <= 0 ? "组合卡片" : page.equals("picker") ? "添加小组件" : page.equals("place") ? "尺寸与位置" : "组合卡片" + bridge.slot(outer);
-        android.widget.TextView heading = SettingsUi.heading(this, title, 20); heading.setAccessibilityHeading(true); header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        if (outer > 0 && page.equals("editor") && ready()) { android.widget.Button done = SettingsUi.button(this, "完成", this::done); done.setTag("widget-done"); done.setEnabled(!awaiting); header.addView(done); }
-        root.addView(header); setContentView(root);
+        android.widget.TextView heading = NativeWidgetUi.heading(this, title, 16); heading.setAccessibilityHeading(true); header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        if (outer > 0 && page.equals("editor") && ready()) {
+            android.widget.ImageButton add = NativeWidgetUi.iconButton(this, R.drawable.ic_ms_add, "添加小组件", () -> go("picker")); add.setTag("widget-open-picker"); add.setEnabled(!awaiting); header.addView(add);
+            android.widget.Button done = NativeWidgetUi.button(this, "完成", this::done); done.setTag("widget-done"); done.setEnabled(!awaiting); header.addView(done);
+        }
+        root.addView(header); InputSurface inputRoot = new InputSurface(this); inputRoot.navigation(this::back, () -> { }); inputRoot.shortcuts(id -> { if ("back".equals(id)) back(); else if (outer > 0) android.widget.Toast.makeText(this, "请先完成或取消卡片编辑", android.widget.Toast.LENGTH_SHORT).show(); else { CoverService service = CoverService.instance; if (service != null && getDisplay() != null) service.inputShortcut(id, getDisplay().getDisplayId()); } }); inputRoot.addView(root, new android.widget.FrameLayout.LayoutParams(-1, -1)); setContentView(inputRoot);
         if (outer > 0 && ready() && page.equals("picker")) { picker = new WidgetPickerView(this, bridge, outer, List.copyOf(draft), pickerState, this::choose); root.addView(picker, new LinearLayout.LayoutParams(-1, 0, 1)); return; }
-        ScrollView scroll = new ScrollView(this); pageScroll = scroll; scroll.setTag("widget-scroll"); body = SettingsUi.column(this); body.setPadding(SettingsUi.dp(this, 12), SettingsUi.dp(this, 8), SettingsUi.dp(this, 12), SettingsUi.dp(this, 20)); scroll.addView(body); root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1)); restoringScroll = true; if (positions.getBundle(page) != null) SettingsNavigator.restoreViews(scroll, body, positions.getBundle(page)); scroll.post(() -> { if (pageScroll == scroll) restoringScroll = false; });
+        ScrollView scroll = new ScrollView(this); pageScroll = scroll; scroll.setTag("widget-scroll"); body = SettingsUi.column(this); body.setPadding(SettingsUi.dp(this, 8), SettingsUi.dp(this, 2), SettingsUi.dp(this, 8), SettingsUi.dp(this, 8)); scroll.addView(body); root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1)); restoringScroll = true; if (positions.getBundle(page) != null) SettingsNavigator.restoreViews(scroll, body, positions.getBundle(page)); scroll.post(() -> { if (pageScroll == scroll) restoringScroll = false; });
         if (!notice.isEmpty()) addText(notice, SettingsUi.ACCENT);
         if (outer <= 0) { management(); return; }
         if (!bridge.owns(outer)) { addText("此卡片已移除，请从三星外屏重新添加。", SettingsUi.TEXT); return; }
@@ -100,7 +104,7 @@ public final class NativeWidgetActivity extends Activity {
         }
         if (page.equals("help")) {
             addText("每张卡片有4×4格。只要有连续空位，就能继续放组件；同一应用的组件也能添加多次。", SettingsUi.TEXT);
-            addText("点按组件编辑尺寸和位置，或直接拖动。红色表示放不下，松手会恢复。点击完成后，整张卡片才会保存。", SettingsUi.MUTED);
+            addText("点按组件编辑尺寸和位置，长按后拖动；直接上下滑动可浏览页面。红色表示放不下，松手会恢复。点击完成后，整张卡片才会保存。", SettingsUi.MUTED);
             addText("预览由组件应用提供，实际样式可能随尺寸变化。组合或安全区内显示时，部分自适应组件会使用紧凑样式；旧式滚动列表可能不兼容。布局会随屏幕方向避让实际缺口、状态栏、快捷按钮和手势入口。", SettingsUi.MUTED);
             addText("组件内容可能在锁屏外屏可见，解锁与应用打开由三星系统控制。移除整张卡片请使用三星原生操作。", SettingsUi.MUTED); return;
         }
@@ -119,18 +123,17 @@ public final class NativeWidgetActivity extends Activity {
         if (page.equals("template-restore") && template != null) { restoreTemplatePage(); return; }
         page = "editor"; editor();
     }
-    private void addText(String text, int color) { SettingsUi.add(body, SettingsUi.text(this, text, 14, color)); }
-    private android.widget.Button addButton(String label, Runnable action) { android.widget.Button b = SettingsUi.button(this, label, action); SettingsUi.add(body, b); return b; }
-    private android.widget.Button footer(String label, Runnable action) { LinearLayout bar = SettingsUi.column(this); bar.setPadding(SettingsUi.dp(this, 12), SettingsUi.dp(this, 4), SettingsUi.dp(this, 12), SettingsUi.dp(this, 8)); android.widget.Button b = SettingsUi.button(this, label, action); bar.addView(b, new LinearLayout.LayoutParams(-1, -2)); root.addView(bar); return b; }
+    private void addText(String text, int color) { NativeWidgetUi.add(body, NativeWidgetUi.text(this, text, 12, color)); }
+    private android.widget.Button addButton(String label, Runnable action) { android.widget.Button b = NativeWidgetUi.button(this, label, action); NativeWidgetUi.add(body, b); return b; }
+    private int previewWidth(int width) { android.util.SizeF size = bridge.size(outer); return Math.max(1, Math.min(width, Math.round(SettingsUi.dp(this, 144) * size.getWidth() / Math.max(1, size.getHeight())))); }
     private void editor() {
         addText(draft.size() + "个组件 · 已用" + WidgetGrid.used(draft) + "/16格", SettingsUi.ACCENT);
-        WidgetGridEditor grid = new WidgetGridEditor(this, bridge, outer, draft, null, item -> { draft = new ArrayList<>(WidgetGrid.replace(draft, item)); show(); }, this::edit); SettingsUi.add(body, grid);
-        addText(draft.isEmpty() ? "从下方添加第一个组件" : "点按编辑 · 拖动移动 · 完成后保存", SettingsUi.MUTED);
-        android.widget.Button add = footer("＋ 添加小组件", () -> go("picker")); add.setTag("widget-open-picker"); add.setEnabled(!awaiting && WidgetGrid.used(draft) < 16);
+        WidgetGridEditor grid = new WidgetGridEditor(this, bridge, outer, draft, null, item -> { draft = new ArrayList<>(WidgetGrid.replace(draft, item)); show(); }, this::edit); NativeWidgetUi.preview(body, grid, previewWidth(Math.min(SettingsUi.dp(this, 160), Math.round(NativeWidgetUi.contentWidth(this) * .52f))));
+        addText(draft.isEmpty() ? "点右上角＋添加组件" : "点按编辑 · 长按拖动 · 上下滑动浏览", SettingsUi.MUTED);
         if (WidgetGrid.used(draft) == 16) addText("这张卡片已放满。可调整组件，或添加另一张组合卡片。", SettingsUi.MUTED);
         // Equivalent accessible route for cells whose visual preview is small.
-        LinearLayout list = SettingsUi.group(this); SettingsUi.add(body, list);
-        for (WidgetGrid.Item item : draft) { View row = SettingsUi.settingRow(this, R.drawable.ic_ms_apps, bridge.widgetLabel(item.id()), item.sizeLabel() + " · 第" + (item.y() + 1) + "行第" + (item.x() + 1) + "列", () -> edit(item.id())); row.setTag("widget-edit-" + item.id()); list.addView(row); }
+        LinearLayout list = SettingsUi.group(this); NativeWidgetUi.add(body, list);
+        for (WidgetGrid.Item item : draft) { View row = NativeWidgetUi.settingRow(this, R.drawable.ic_ms_apps, bridge.widgetLabel(item.id()), item.sizeLabel() + " · 第" + (item.y() + 1) + "行第" + (item.x() + 1) + "列", () -> edit(item.id())); row.setTag("widget-edit-" + item.id()); list.addView(row); }
         addButton("布局与兼容说明", () -> go("help"));
         addButton("从配置模板恢复", () -> go("templates")).setTag("widget-open-templates");
     }
@@ -139,11 +142,11 @@ public final class NativeWidgetActivity extends Activity {
         List<WidgetTemplates.Card> templates;
         try { templates = WidgetTemplates.saved(new Prefs(this)); } catch (IllegalStateException error) { addText(error.getMessage(), SettingsUi.TEXT); return; }
         if (templates.isEmpty()) { addText("暂无模板，请先在外屏助手的备份与关于中导入配置。", SettingsUi.TEXT); return; }
-        LinearLayout group = SettingsUi.group(this); SettingsUi.add(body, group);
+        LinearLayout group = SettingsUi.group(this); NativeWidgetUi.add(body, group);
         templatePage = Math.max(0, Math.min(templatePage, (templates.size() - 1) / 20));
         for (int i = templatePage * 20; i < Math.min(templates.size(), (templatePage + 1) * 20); i++) {
             WidgetTemplates.Card card = templates.get(i);
-            View row = SettingsUi.settingRow(this, R.drawable.ic_ms_apps, "模板" + (i + 1) + " · 原组合卡片" + card.slot(), card.items().size() + "个组件 · 点按后确认替换草稿", () -> { template = card; go("template-confirm"); });
+            View row = NativeWidgetUi.settingRow(this, R.drawable.ic_ms_apps, "模板" + (i + 1) + " · 原组合卡片" + card.slot(), card.items().size() + "个组件 · 点按后确认替换草稿", () -> { template = card; go("template-confirm"); });
             row.setTag("widget-template-" + i); group.addView(row);
         }
         if (templatePage > 0) addButton("上一页模板", () -> { templatePage--; show(); });
@@ -155,7 +158,7 @@ public final class NativeWidgetActivity extends Activity {
         placement = entry.placement(NEW_ITEM); provider = entry.provider();
         AppWidgetProviderInfo info = chosenInfo();
         addText("待恢复 " + (templateIndex + 1) + "/" + template.items().size(), SettingsUi.ACCENT);
-        addText(info == null ? provider + "\n应用未安装或组件不可用" : info.loadLabel(getPackageManager()), SettingsUi.TEXT);
+        addText(info == null ? provider + "\n应用未安装或组件不可用" : bridge.providerLabel(info), SettingsUi.TEXT);
         addText(placement.sizeLabel() + " · 第" + (placement.y() + 1) + "行第" + (placement.x() + 1) + "列", SettingsUi.MUTED);
         boolean fits = acceptable();
         if (info != null && !fits) addText("此组件在当前外屏不支持模板尺寸，可跳过后手动添加。", SettingsUi.MUTED);
@@ -183,29 +186,46 @@ public final class NativeWidgetActivity extends Activity {
         return unchangedSize || bridge.supports(outer, info, placement.width(), placement.height());
     }
     private void placementPage() {
-        AppWidgetProviderInfo info = chosenInfo(); addText(info == null ? "组件已卸载或不可用" : info.loadLabel(getPackageManager()), SettingsUi.TEXT);
+        AppWidgetProviderInfo info = chosenInfo();
         addText(placement.sizeLabel() + " · 占" + placement.cells() + "格 · 第" + (placement.y() + 1) + "行第" + (placement.x() + 1) + "列", SettingsUi.ACCENT);
-        WidgetGridEditor grid = new WidgetGridEditor(this, bridge, outer, draft, placement, item -> { placement = item; show(); }, id -> { }); SettingsUi.add(body, grid);
-        addText("点按空位或拖动蓝色区域；也可用下方按钮移动", SettingsUi.MUTED);
-        LinearLayout directions = SettingsUi.row(this); SettingsUi.weighted(directions, SettingsUi.button(this, "← 左", () -> nudge(-1, 0))); SettingsUi.weighted(directions, SettingsUi.button(this, "右 →", () -> nudge(1, 0))); SettingsUi.add(body, directions);
-        LinearLayout vertical = SettingsUi.row(this); SettingsUi.weighted(vertical, SettingsUi.button(this, "↑ 上", () -> nudge(0, -1))); SettingsUi.weighted(vertical, SettingsUi.button(this, "下 ↓", () -> nudge(0, 1))); SettingsUi.add(body, vertical);
+        android.widget.Button[] moves = {NativeWidgetUi.placementButton(this, "←", () -> nudge(-1, 0)), NativeWidgetUi.placementButton(this, "→", () -> nudge(1, 0)), NativeWidgetUi.placementButton(this, "↑", () -> nudge(0, -1)), NativeWidgetUi.placementButton(this, "↓", () -> nudge(0, 1))};
+        String[] names = {"向左移动", "向右移动", "向上移动", "向下移动"};
+        for (int i = 0; i < moves.length; i++) { moves[i].setTextSize(16); moves[i].setContentDescription(names[i]); moves[i].setTag("widget-nudge-" + i); }
+        android.widget.Button confirm = NativeWidgetUi.placementButton(this, placement.id() == NEW_ITEM ? "添加" : "应用", () -> { if (!acceptable()) return; if (placement.id() == NEW_ITEM) bind(); else { draft = new ArrayList<>(WidgetGrid.replace(draft, placement)); go("editor"); } }); confirm.setContentDescription(placement.id() == NEW_ITEM ? "授权并将组件放到这里" : "应用此组件的尺寸与位置"); confirm.setTag("widget-place-confirm"); confirm.setEnabled(!awaiting && acceptable());
+        android.widget.Button[] crossButtons = {moves[0], moves[1], moves[2], moves[3], confirm}; int cellWidth = SettingsUi.dp(this, 32), cellHeight = cellWidth, spacing = SettingsUi.dp(this, 2);
+        for (var button : crossButtons) { cellWidth = Math.max(cellWidth, (int) Math.ceil(button.getPaint().measureText(button.getText().toString()) + button.getPaddingLeft() + button.getPaddingRight())); var font = button.getPaint().getFontMetricsInt(); cellHeight = Math.max(cellHeight, font.bottom - font.top + button.getPaddingTop() + button.getPaddingBottom()); }
+        int width = NativeWidgetUi.contentWidth(this), controlsWidth = 3 * (cellWidth + spacing * 2), gap = SettingsUi.dp(this, 8), leftWidth = Math.min(SettingsUi.dp(this, 144), Math.min(Math.round(width * .48f), width - controlsWidth - gap));
+        boolean split = leftWidth >= SettingsUi.dp(this, 80);
+        LinearLayout layout = split ? SettingsUi.row(this) : SettingsUi.column(this); layout.setTag("widget-placement-layout"); layout.setGravity(android.view.Gravity.TOP); NativeWidgetUi.add(body, layout);
+        LinearLayout preview = SettingsUi.column(this); preview.setTag("widget-placement-preview");
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(split ? leftWidth : -1, -2); if (split) previewParams.setMarginEnd(gap); layout.addView(preview, previewParams);
+        WidgetGridEditor grid = new WidgetGridEditor(this, bridge, outer, draft, placement, item -> { placement = item; show(); }, id -> { }); NativeWidgetUi.preview(preview, grid, previewWidth(split ? leftWidth : Math.min(SettingsUi.dp(this, 144), width)));
+        NativeWidgetUi.add(preview, NativeWidgetUi.heading(this, bridge.providerLabel(info), 12)); NativeWidgetUi.add(preview, NativeWidgetUi.text(this, "点空位移动 · 长按拖动", 11, SettingsUi.MUTED));
+        LinearLayout controls = SettingsUi.column(this); controls.setTag("widget-placement-controls"); layout.addView(controls, new LinearLayout.LayoutParams(split ? controlsWidth : -1, -2));
+        android.widget.GridLayout cross = new android.widget.GridLayout(this); cross.setTag("widget-move-cross"); cross.setColumnCount(3); cross.setRowCount(3); int[][] cells = {{1, 0}, {1, 2}, {0, 1}, {2, 1}, {1, 1}};
+        for (int i = 0; i < crossButtons.length; i++) { var lp = new android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(cells[i][0]), android.widget.GridLayout.spec(cells[i][1])); lp.width = cellWidth; lp.height = cellHeight; lp.setMargins(spacing, spacing, spacing, spacing); cross.addView(crossButtons[i], lp); } NativeWidgetUi.add(controls, cross);
         if (info != null) {
             List<WidgetGrid.Item> sizes = new ArrayList<>(); List<String> labels = new ArrayList<>();
-            for (int h = 1; h <= 4; h++) for (int w = 1; w <= 4; w++) if (bridge.supports(outer, info, w, h) || (w == placement.width() && h == placement.height() && placement.id() != NEW_ITEM)) { WidgetGrid.Item size = new WidgetGrid.Item(placement.id(), 0, 0, w, h); sizes.add(size); labels.add(size.sizeLabel() + " · 占" + size.cells() + "格"); }
-            if (!sizes.isEmpty()) {
-                addText("组件尺寸", SettingsUi.MUTED); android.widget.Spinner select = new android.widget.Spinner(this); select.setTag("widget-size-picker"); select.setMinimumHeight(SettingsUi.dp(this, 48));
-                android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels); adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item); select.setAdapter(adapter);
+            for (int h = 1; h <= 4; h++) for (int w = 1; w <= 4; w++) if (bridge.supports(outer, info, w, h) || (w == placement.width() && h == placement.height() && placement.id() != NEW_ITEM)) { WidgetGrid.Item size = new WidgetGrid.Item(placement.id(), 0, 0, w, h); sizes.add(size); labels.add(size.sizeLabel()); }
+            if (sizes.size() == 1) {
+                View fixedSize = NativeWidgetUi.text(this, "固定尺寸 · " + labels.get(0), 11, SettingsUi.MUTED); fixedSize.setTag("widget-fixed-size"); NativeWidgetUi.add(controls, fixedSize);
+            } else if (!sizes.isEmpty()) {
+                LinearLayout sizeRow = SettingsUi.row(this); sizeRow.addView(NativeWidgetUi.text(this, "尺寸", 11, SettingsUi.MUTED));
+                android.widget.Spinner select = new android.widget.Spinner(this); select.setTag("widget-size-picker"); select.setContentDescription("组件尺寸"); select.setMinimumHeight(SettingsUi.dp(this, 32));
+                android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels) {
+                    @Override public View getView(int position, View recycled, android.view.ViewGroup parent) { android.widget.TextView label = (android.widget.TextView) super.getView(position, recycled, parent); label.setTextSize(12); label.setMinHeight(SettingsUi.dp(NativeWidgetActivity.this, 32)); label.setMinimumHeight(SettingsUi.dp(NativeWidgetActivity.this, 32)); label.setPadding(SettingsUi.dp(NativeWidgetActivity.this, 6), SettingsUi.dp(NativeWidgetActivity.this, 2), SettingsUi.dp(NativeWidgetActivity.this, 6), SettingsUi.dp(NativeWidgetActivity.this, 2)); return label; }
+                }; adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item); select.setAdapter(adapter);
                 int current = 0; for (int i = 0; i < sizes.size(); i++) if (sizes.get(i).width() == placement.width() && sizes.get(i).height() == placement.height()) current = i;
-                select.setSelection(current); int initial = current; select.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() { private int previous = initial; public void onNothingSelected(android.widget.AdapterView<?> p) { } public void onItemSelected(android.widget.AdapterView<?> p, View v, int position, long id) { if (previous == position) return; previous = position; WidgetGrid.Item size = sizes.get(position); placement = new WidgetGrid.Item(placement.id(), Math.min(placement.x(), 4 - size.width()), Math.min(placement.y(), 4 - size.height()), size.width(), size.height()); show(); } }); SettingsUi.add(body, select);
+                select.setSelection(current); int initial = current; select.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() { private int previous = initial; public void onNothingSelected(android.widget.AdapterView<?> p) { } public void onItemSelected(android.widget.AdapterView<?> p, View v, int position, long id) { if (previous == position) return; previous = position; WidgetGrid.Item size = sizes.get(position); placement = new WidgetGrid.Item(placement.id(), Math.min(placement.x(), 4 - size.width()), Math.min(placement.y(), 4 - size.height()), size.width(), size.height()); show(); } }); sizeRow.addView(select, new LinearLayout.LayoutParams(0, -2, 1)); NativeWidgetUi.add(controls, sizeRow);
             }
-            if (sizes.size() == 1) addText("此组件仅提供这个尺寸", SettingsUi.MUTED);
         }
-        if (!acceptable()) addText("当前位置或尺寸放不下，请调整尺寸或先整理卡片。", 0xffffa8ae);
-        android.widget.Button confirm = footer(placement.id() == NEW_ITEM ? "放到这里" : "应用调整", () -> { if (!acceptable()) return; if (placement.id() == NEW_ITEM) bind(); else { draft = new ArrayList<>(WidgetGrid.replace(draft, placement)); go("editor"); } }); confirm.setTag("widget-place-confirm"); confirm.setEnabled(!awaiting && acceptable());
+        LinearLayout actions = SettingsUi.row(this);
         if (placement.id() != NEW_ITEM) {
-            addButton("从卡片移除", () -> { int id = placement.id(); draft.removeIf(i -> i.id() == id); bridge.releaseDraft(outer, id); go("editor"); });
-            if (info != null && info.configure != null) addButton("组件自己的设置", () -> { if (!ready()) { fail("请点亮所选外屏"); return; } allocated = placement.id(); reconfiguring = true; target = selected().getDisplayId(); configure(); });
+            View remove = NativeWidgetUi.placementIcon(this, R.drawable.ic_ms_delete, "从卡片移除", () -> { int id = placement.id(); draft.removeIf(i -> i.id() == id); bridge.releaseDraft(outer, id); go("editor"); }); remove.setTag("widget-remove"); actions.addView(remove);
+            if (info != null && info.configure != null) actions.addView(NativeWidgetUi.placementIcon(this, R.drawable.ic_ms_settings, "组件自己的设置", () -> { if (!ready()) { fail("请点亮所选外屏"); return; } allocated = placement.id(); reconfiguring = true; target = selected().getDisplayId(); configure(); }));
         }
+        if (actions.getChildCount() > 0) NativeWidgetUi.add(controls, actions);
+        if (!acceptable()) NativeWidgetUi.add(controls, NativeWidgetUi.text(this, "放不下，请调整尺寸或先移除已有组件", 11, 0xffffa8ae));
     }
     private void nudge(int x, int y) { WidgetGrid.Item next = placement.at(placement.x() + x, placement.y() + y); if (WidgetGrid.fits(draft, next)) { placement = next; show(); } else { notice = "这个方向没有足够空位"; show(); } }
     private void continuation() {
@@ -224,11 +244,11 @@ public final class NativeWidgetActivity extends Activity {
         addText("每张卡片4×4格，可放多个组件", SettingsUi.ACCENT);
         try { int count = WidgetTemplates.saved(new Prefs(this)).size(); if (count > 0) addText("已导入" + count + "份布局模板。添加或打开一张组合卡片后，选择“从配置模板恢复”。", SettingsUi.ACCENT); } catch (IllegalStateException error) { addText(error.getMessage(), SettingsUi.TEXT); }
         addText("在三星外屏长按卡片，进入“添加小组件”，分别添加“组合卡片1”到“组合卡片6”。添加不同编号，就能在三星原生列表中左右切换。", SettingsUi.TEXT);
-        LinearLayout list = SettingsUi.group(this); SettingsUi.add(body, list);
+        LinearLayout list = SettingsUi.group(this); NativeWidgetUi.add(body, list);
         for (int slot = 1; slot <= 6; slot++) {
             int number = slot; List<Integer> ids = new ArrayList<>(); for (int id : bridge.cards()) if (bridge.slot(id) == slot) ids.add(id);
-            if (ids.isEmpty()) list.addView(SettingsUi.settingRow(this, R.drawable.ic_ms_apps, "组合卡片" + slot, "尚未添加 · 从三星外屏添加", () -> fail("请在三星外屏“添加小组件”中选择组合卡片" + number)));
-            for (int id : ids) { View card = SettingsUi.settingRow(this, R.drawable.ic_ms_apps, "组合卡片" + slot, bridge.label(id), () -> { Display d = selected(); if (d == null || d.getState() != Display.STATE_ON) { fail("请先点亮所选外屏"); return; } try { startActivity(new Intent(this, NativeWidgetActivity.class).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id), ActivityOptions.makeBasic().setLaunchDisplayId(d.getDisplayId()).toBundle()); } catch (RuntimeException failure) { fail("系统未允许打开外屏配置页"); } }); card.setTag("widget-card-" + id); list.addView(card); }
+            if (ids.isEmpty()) list.addView(NativeWidgetUi.settingRow(this, R.drawable.ic_ms_apps, "组合卡片" + slot, "尚未添加 · 从三星外屏添加", () -> fail("请在三星外屏“添加小组件”中选择组合卡片" + number)));
+            for (int id : ids) { View card = NativeWidgetUi.settingRow(this, R.drawable.ic_ms_apps, "组合卡片" + slot, bridge.label(id), () -> { Display d = selected(); if (d == null || d.getState() != Display.STATE_ON) { fail("请先点亮所选外屏"); return; } try { startActivity(new Intent(this, NativeWidgetActivity.class).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id), ActivityOptions.makeBasic().setLaunchDisplayId(d.getDisplayId()).toBundle()); } catch (RuntimeException failure) { fail("系统未允许打开外屏配置页"); } }); card.setTag("widget-card-" + id); list.addView(card); }
         }
         addButton("刷新卡片", () -> { bridge.refresh(); show(); });
         if (new Prefs(this).data.contains("widget_templates")) addButton("管理导入模板：清除", () -> go("clear-templates"));

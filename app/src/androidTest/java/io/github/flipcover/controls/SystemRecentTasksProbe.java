@@ -44,6 +44,10 @@ public final class SystemRecentTasksProbe {
             require(tasks.read(display).stream().noneMatch(task -> task.id() == foreign.id()), "other display excluded");
             org.json.JSONObject capabilities = tasks.execute(display, "", false);
             require(capabilities.getBoolean("canOpen") && capabilities.getBoolean("canClear"), "shell task operations detected");
+            require(capabilities.getBoolean("canSnapshot"), "shell task snapshot contract detected");
+            android.os.Bundle foreground = tasks.snapshot(display, SystemRecentTasks.json(front).toString());
+            android.graphics.Bitmap foregroundBitmap = foreground.getParcelable("bitmap");
+            require(foregroundBitmap != null && foregroundBitmap.getWidth() <= 256 && foregroundBitmap.getHeight() <= 256, "visible app gets an on-demand bounded system thumbnail: " + foreground.getString("message")); foregroundBitmap.recycle();
             require(tasks.open(display, SystemRecentTasks.json(back).toString()).getString("state").equals("opened"), "original background task restored on target display");
             List<RecentTasks.Task> restored = tasks.read(display);
             require(restored.size() == 2 && restored.get(0).id() == back.id() && restored.get(0).visible(), "restore does not duplicate task and confirms visibility");
@@ -61,6 +65,13 @@ public final class SystemRecentTasksProbe {
             require(tasks.read(display).size() == 1 && tasks.read(display).get(0).id() == back.id(), "remaining window identity verified");
             require(tasks.read(other).get(0).id() == foreign.id(), "other display unaffected by clear");
             require(tasks.open(display, SystemRecentTasks.json(front).toString()).getString("state").equals("gone"), "removed task reports explicit recovery state");
+            org.json.JSONObject explicit = tasks.execute(display, new org.json.JSONArray().put(SystemRecentTasks.json(back)).toString(), true, true);
+            require(explicit.getInt("removed") == 1 && explicit.getInt("retained") == 0 && tasks.read(display).isEmpty(), "explicit dismissal removes the foreground task on the selected display");
+            require(tasks.read(other).stream().anyMatch(task -> RecentTasks.sameTask(foreign, task)), "explicit foreground dismissal preserves a sibling task on another display");
+            launchSecure(display, fixture);
+            RecentTasks.Task secure = tasks.read(display).get(0);
+            android.os.Bundle protectedSnapshot = tasks.snapshot(display, SystemRecentTasks.json(secure).toString());
+            require(protectedSnapshot.getParcelable("bitmap") == null && !protectedSnapshot.getBoolean("retryable"), "secure visible task remains an honest non-retrying placeholder");
             rejected = false; try { tasks.read(0); } catch (IllegalArgumentException expected) { rejected = true; } require(rejected, "main display rejected");
             System.out.println("PASS: " + assertions + " real Android shell/task assertions; two disposable virtual displays, not Samsung or Shizuku transport validation");
         } finally { if (firstDisplay != null) firstDisplay.release(); if (secondDisplay != null) secondDisplay.release(); reader.setOnImageAvailableListener(null, null); second.setOnImageAvailableListener(null, null); images.quitSafely(); images.join(1000); reader.close(); second.close(); }
@@ -71,5 +82,10 @@ public final class SystemRecentTasksProbe {
         Process process = new ProcessBuilder("/system/bin/am", "start", "-W", "--display", String.valueOf(display), "-f", "0x18000000", "-n", fixture).redirectErrorStream(true).start();
         String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         require(process.waitFor() == 0 && output.contains("Status: ok"), "fixture launched on owned display: " + output); Thread.sleep(250);
+    }
+    private static void launchSecure(int display, String fixture) throws Exception {
+        Process process = new ProcessBuilder("/system/bin/am", "start", "-W", "--display", String.valueOf(display), "-f", "0x18000000", "-n", fixture, "--ez", "secure", "true").redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        require(process.waitFor() == 0 && output.contains("Status: ok"), "secure fixture launched on owned display"); Thread.sleep(300);
     }
 }

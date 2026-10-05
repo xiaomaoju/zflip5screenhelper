@@ -58,9 +58,17 @@ final class LauncherWidgetChecks {
             floating.measure(View.MeasureSpec.makeMeasureSpec(panel.getWidth(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(panel.getHeight(), View.MeasureSpec.EXACTLY)); floating.layout(0, 0, panel.getWidth(), panel.getHeight());
             ViewGroup tools = floating.findViewWithTag("hub-tools"), nativeTools = panel.findViewById(R.id.launcher_rail_tools);
             require(tools.getChildCount() == 1 && nativeTools.getChildCount() == 1, "both sidebar footers contain only the edit button");
-            require(floating.findViewWithTag("hub-close") != null && described(card, "收起应用区，保留 Dock") == null && described(card, "关闭应用中心") == null, "only the floating launcher has a close button");
-            View rail = floating.findViewWithTag("hub-rail"), nativeRail = panel.findViewById(R.id.launcher_rail_panel);
-            require(Math.abs(rail.getLeft() - nativeRail.getLeft()) <= 1 && Math.abs(rail.getWidth() - nativeRail.getWidth()) <= 1 && Math.abs(rail.getHeight() - nativeRail.getHeight()) <= 1, "both hosts consume the same full-height sidebar geometry");
+            require(floating.findViewWithTag("hub-close") == null && floating.findViewWithTag("hub-tasks") == null && described(card, "关闭应用中心") == null, "upper-right launcher actions are absent in both hosts");
+            View rail = floating.findViewWithTag("hub-sidebar"), nativeRail = panel.findViewById(R.id.launcher_rail_panel);
+            android.graphics.Rect railBounds = new android.graphics.Rect(0, 0, rail.getWidth(), rail.getHeight()), nativeRailBounds = new android.graphics.Rect(0, 0, nativeRail.getWidth(), nativeRail.getHeight()); floating.offsetDescendantRectToMyCoords(rail, railBounds); panel.offsetDescendantRectToMyCoords(nativeRail, nativeRailBounds);
+            require(Math.abs(railBounds.left - nativeRailBounds.left) <= 1 && Math.abs(railBounds.top - nativeRailBounds.top) <= 1 && Math.abs(rail.getWidth() - nativeRail.getWidth()) <= 1 && Math.abs(rail.getHeight() - nativeRail.getHeight()) <= 1, "both hosts consume the same inset full-height sidebar geometry");
+            View search = floating.findViewWithTag("hub-search-field"), nativeSearch = panel.findViewById(R.id.launcher_search_field);
+            float density = activity.getResources().getDisplayMetrics().density;
+            android.graphics.Rect expectedSearch = AppLauncherStyle.searchBounds(((View) search.getParent()).getWidth(), density), expectedNativeSearch = AppLauncherStyle.searchBounds(((View) nativeSearch.getParent()).getWidth(), density);
+            // RemoteViews dp conversion already allows a two-pixel host width difference above.
+            // Check each measured header against the same geometry instead of assuming equal widths.
+            require(search.getLeft() == expectedSearch.left && search.getWidth() == expectedSearch.width() && Math.abs(nativeSearch.getLeft() - expectedNativeSearch.left) <= 1 && Math.abs(nativeSearch.getWidth() - expectedNativeSearch.width()) <= 1, "both hosts center the shorter search by the shared geometry of their measured headers");
+            require(search.getRight() < floating.findViewWithTag("hub-sort").getLeft() && nativeSearch.getRight() < panel.findViewById(R.id.launcher_sort).getLeft(), "both hosts keep sorting separate from the compact search");
             AppWorkspaceView grid = floating.findViewWithTag("hub-grid"); View nativeGrid = panel.findViewById(R.id.launcher_grid);
             android.graphics.Rect a = new android.graphics.Rect(0, 0, grid.getWidth(), grid.getHeight()), b = new android.graphics.Rect(0, 0, nativeGrid.getWidth(), nativeGrid.getHeight());
             floating.offsetDescendantRectToMyCoords(grid, a); panel.offsetDescendantRectToMyCoords(nativeGrid, b);
@@ -74,7 +82,7 @@ final class LauncherWidgetChecks {
         require(CoverService.instance == null, "emulator fixture exercises missing-service fallback without opening real overlays");
         Instrumentation.ActivityMonitor monitor = test.addMonitor(LauncherWidgetActivity.class.getName(), null, false);
         try {
-            for (int id : new int[]{R.id.launcher_search, R.id.launcher_sort, R.id.launcher_tasks}) {
+            for (int id : new int[]{R.id.launcher_search, R.id.launcher_sort}) {
                 android.widget.Toast previous = nativeToast(bridge);
                 main(() -> card.findViewById(id).performClick());
                 until(() -> nativeToast(bridge) != previous, "native surface click reaches the existing bridge through its broadcast PendingIntent");
@@ -94,8 +102,12 @@ final class LauncherWidgetChecks {
             main(() -> prefs.saveWorkspace(original.move(folder, 45, false), false));
             until(() -> card.findViewById(R.id.launcher_page).getContentDescription().toString().contains("共4页"), "folder fixture is on a later application page");
             for (int page = 2; page <= 4; page++) { int expected = page; main(() -> bridge.action(widget, target, "next", "")); until(() -> card.findViewById(R.id.launcher_page).getContentDescription().toString().startsWith("第" + expected + "页"), "native page advances to the folder origin"); }
+            require(prefs.launcherPage() == 3, "native paging persists the shared workspace page");
+            main(() -> { bridge.onDisplayRemoved(target); bridge.refresh(); });
+            until(() -> card.findViewById(R.id.launcher_page).getContentDescription().toString().startsWith("第4页"), "native lifecycle reset restores its page from shared preferences");
             int[] top = {0}; main(() -> { top[0] = nativeGridTop(); described(card, "同步改名，文件夹").performClick(); });
             until(() -> card.findViewById(R.id.launcher_back).getVisibility() == View.VISIBLE, "later-page folder shows its return bar");
+            require(prefs.launcherPage() == 3, "folder page zero does not overwrite the remembered workspace page");
             main(() -> {
                 View back = card.findViewById(R.id.launcher_back), header = card.findViewById(R.id.launcher_header);
                 require(back.getWidth() == header.getWidth() && back.getHeight() == Ui.dp(activity, AppLauncherStyle.FOLDER_RETURN_HEIGHT), "whole 44dp title row is the folder return target");
@@ -111,7 +123,7 @@ final class LauncherWidgetChecks {
                 require(surface.getWidth() == surface.getHeight() && Math.abs(surface.getWidth() - (3 * first.getWidth() + 2 * Ui.dp(activity, AppLauncherStyle.FOLDER_PADDING))) <= 2, "two-member folder retains a full three-by-three square background");
                 require(surface.getLeft() < first.getLeft() && surface.getTop() < first.getTop() && surface.getRight() > last.getRight() && surface.getBottom() > last.getBottom(), "rounded folder background encloses the compact member block with padding");
                 require(first.getWidth() <= Ui.dp(activity, AppLauncherStyle.FOLDER_MEMBER_HEIGHT) && first.getHeight() == first.getWidth(), "folder members use compact square hit targets");
-                require(Math.abs(first.getLeft() + last.getRight() - grid.getWidth()) <= 2 && Math.abs(first.getTop() + last.getBottom() - grid.getHeight()) <= 2, "two-member folder is centered in both axes");
+                require(Math.abs(first.getLeft() + last.getRight() - grid.getWidth()) <= 2 && Math.abs(first.getTop() + last.getBottom() - grid.getHeight()) <= 2, "two-member folder is centered in both axes: dx=" + (first.getLeft() + last.getRight() - grid.getWidth()) + ", dy=" + (first.getTop() + last.getBottom() - grid.getHeight()));
                 require(card.findViewById(R.id.launcher_previous).getVisibility() == View.INVISIBLE && card.findViewById(R.id.launcher_next).getVisibility() == View.INVISIBLE, "single-page folder has no redundant paging buttons");
             });
             for (int blank : new int[]{0, 1, 2}) {
@@ -155,7 +167,7 @@ final class LauncherWidgetChecks {
                 int expectedPixels = Math.round(icon.getWidth() * targetDensity / activity.getResources().getDisplayMetrics().density);
                 require(Math.abs(preview.getWidth() - expectedPixels) <= 2 && preview.getHeight() == preview.getWidth(), "native folder preview retains target-display pixels without thumbnail upscaling");
                 View surface = cell.findViewById(R.id.launcher_folder_surface); require(surface != null && surface.getWidth() == surface.getHeight(), "native folder background stays square inside its two-by-two occupied area");
-                require(surface.getLeft() >= 0 && surface.getTop() >= 0 && surface.getRight() <= cell.getWidth() && surface.getBottom() <= cell.getHeight(), "square folder stays within its saved occupied area");
+                require(surface.getLeft() >= 0 && surface.getTop() >= 0 && surface.getRight() <= cell.getWidth() && surface.getBottom() <= cell.getHeight(), "square folder stays within its saved occupied area: surface=" + surface.getLeft() + "," + surface.getTop() + "," + surface.getRight() + "," + surface.getBottom() + "; cell=" + cell.getWidth() + "x" + cell.getHeight());
                 TextView label = cell.findViewById(R.id.launcher_label); require(label.getTop() >= icon.getBottom() && label.getBottom() <= surface.getHeight(), "folder label stays below the preview inside the square");
             }
         }
@@ -223,8 +235,23 @@ final class LauncherWidgetChecks {
                 FrameLayout root = new FrameLayout(activity); root.setBackgroundColor(Ui.BACKGROUND); root.addView(card, new FrameLayout.LayoutParams(Ui.dp(activity, 310), Ui.dp(activity, 280), android.view.Gravity.CENTER)); activity.setContentView(root); activity.getWindow().getInsetsController().hide(android.view.WindowInsets.Type.systemBars()); host.startListening(); bridge.refresh();
             });
             until(() -> text(card, "共享文件夹") != null, "card displays the floating workspace folder");
+            main(() -> {
+                Bundle shown = new Bundle(), hidden = new Bundle(); shown.putBoolean("visible", true); hidden.putBoolean("visible", false);
+                bridge.optionsChanged(-1, shown); require(!bridge.visible(target), "unknown widget cannot hide launcher entry");
+                bridge.optionsChanged(ids[0], shown); require(bridge.visible(target) && !bridge.visible(0) && !bridge.visible(target + 1), "visibility belongs only to the selected secondary display");
+                bridge.optionsChanged(ids[0], new Bundle()); require(bridge.visible(target), "size-only options preserve live visibility");
+                bridge.optionsChanged(ids[1], shown); bridge.optionsChanged(ids[0], hidden); require(bridge.visible(target), "one hidden instance does not erase another visible card");
+                bridge.optionsChanged(ids[1], hidden); require(!bridge.visible(target), "last hidden card restores launcher entry");
+                bridge.optionsChanged(ids[0], shown); bridge.remove(ids[0]); require(!bridge.visible(target), "removal releases visibility immediately");
+                bridge.onDisplayRemoved(target); bridge.optionsChanged(ids[0], shown);
+                require(bridge.visible(target), "first live visible callback restores the display session before a queued refresh"); bridge.optionsChanged(ids[0], hidden);
+            });
             main(this::filledBackground);
             require(!java.util.Arrays.stream(CoverApp.widgets(context).cards()).anyMatch(id -> id == ids[0]), "launcher does not consume a combination slot");
+            // Visibility/removal checks above invalidate the display session and queue RemoteViews.
+            // Restore the actually displayed card and let its new PendingIntents reach the host.
+            main(() -> { Bundle visible = new Bundle(); visible.putBoolean("visible", true); bridge.optionsChanged(ids[0], visible); bridge.refresh(); });
+            SystemClock.sleep(160); test.waitForIdleSync();
             Map<String, ?> before = prefs.data.getAll();
             main(() -> card.findViewById(R.id.launcher_edit).performClick());
             until(() -> nativeToast(bridge) != null, "real edit PendingIntent creates an Android Toast");
@@ -260,12 +287,13 @@ final class LauncherWidgetChecks {
             android.widget.ListView rail = card.findViewById(R.id.launcher_rail);
             main(() -> {
                 int full = 0; for (int i = 0; i < rail.getChildCount(); i++) {
-                    View row = rail.getChildAt(i); if (row.getTop() >= 0 && row.getBottom() <= rail.getHeight()) full++;
+                    View row = rail.getChildAt(i); if (row.getTop() >= rail.getPaddingTop() && row.getBottom() <= rail.getHeight() - rail.getPaddingBottom()) full++;
                     TextView label = row.findViewById(R.id.launcher_label); View icon = row.findViewById(R.id.launcher_icon);
                     require(label.getTop() >= icon.getBottom() && label.getBottom() <= row.getHeight() && label.getLayout().getHeight() <= label.getHeight(), "compact sidebar icon and label stay separate without clipping");
                     require(Math.abs(label.getTextSize() / activity.getResources().getDisplayMetrics().density - AppLauncherStyle.RAIL_LABEL_SP) < .1f, "native sidebar font stays fixed when host font scale changes");
                 }
-                require(full >= 6, "compact sidebar shows at least six complete items");
+                int rowHeight = rail.getChildAt(0).getHeight(), available = rail.getHeight() - rail.getPaddingTop() - rail.getPaddingBottom();
+                require(full == Math.min(rail.getAdapter().getCount(), available / rowHeight), "sidebar fills the padded viewport with complete compact items and retains overflow for scrolling");
                 require(rail.getAdapter().getCount() == prefs.actions("favorites").size(), "scrolling sidebar retains every configured item");
                 require(described(card, "上一页侧栏") == null && described(card, "下一页侧栏") == null, "sidebar arrow row is removed");
             });
@@ -311,7 +339,9 @@ final class LauncherWidgetChecks {
             main(() -> card.findViewById(R.id.launcher_next).performClick());
             until(() -> ((TextView) card.findViewById(R.id.launcher_page)).getText().toString().startsWith("2 / "), "native next-page button browses projected saved layout");
             require(card.findViewById(R.id.launcher_previous).isEnabled() && card.findViewById(R.id.launcher_previous).getAlpha() == 1f, "previous arrow becomes bright and enabled after moving forward");
-            require(before.equals(prefs.data.getAll()), "native pagination cannot rearrange saved workspace");
+            java.util.Map<String, Object> afterPaging = new java.util.HashMap<>(prefs.data.getAll()); java.util.Map<String, Object> beforePaging = new java.util.HashMap<>(before);
+            for (String key : new String[]{"launcher_page", "launcher_page_boot"}) { afterPaging.remove(key); beforePaging.remove(key); }
+            require(beforePaging.equals(afterPaging) && prefs.launcherPage() == 1, "native pagination saves only navigation without rearranging the workspace or changing settings");
             main(() -> card.findViewById(R.id.launcher_previous).performClick());
             until(() -> text(card, "共享文件夹") != null, "previous-page button restores folder page");
             main(() -> described(card, "共享文件夹，文件夹").performClick());
@@ -406,6 +436,56 @@ final class LauncherWidgetChecks {
             cardFrame("hub-180-card");
             main(() -> { described(card, "全部应用（固定显示）").performClick(); bridge.action(ids[0], target, "apps", ""); filledBackground(); require(card.findViewById(R.id.launcher_body).getVisibility() == View.VISIBLE, "180-degree native body cannot collapse"); });
             folderReturn(prefs, bridge, ids[0], target, folder);
+            // Keep the fixture host on the primary display while rotating its target;
+            // otherwise MainActivity recreation leaves the assertions on a detached card.
+            Activity rotatedHost = activity;
+            Activity stableHost = test.startActivitySync(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK), android.app.ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());
+            main(() -> {
+                activity = stableHost; card = host.createView(activity, ids[0], manager.getAppWidgetInfo(ids[0])); card.setPadding(0, 0, 0, 0);
+                FrameLayout root = new FrameLayout(activity); root.addView(card, new FrameLayout.LayoutParams(Ui.dp(activity, 310), Ui.dp(activity, 280))); activity.setContentView(root); rotatedHost.finish();
+            });
+            for (int rotation : new int[]{Surface.ROTATION_90, Surface.ROTATION_270}) {
+                rotateDisplay(target, rotation);
+                for (String hand : new String[]{"left", "right"}) {
+                    main(() -> prefs.data.edit().putString("hand_side", hand).commit());
+                    String[] bounds = {"pending"};
+                    try { until(() -> {
+                        View panel = card.findViewById(R.id.launcher_panel), sidebar = card.findViewById(R.id.launcher_rail_panel);
+                        bounds[0] = "rotation=" + rotation + ", hand=" + hand + ", panel=" + panel.getWidth() + "x" + panel.getHeight() + ", sidebar=" + (sidebar == null ? "missing" : sidebar.getLeft() + ".." + sidebar.getRight());
+                        int offset = AppLauncherStyle.railOffset(activity.getResources().getDisplayMetrics().density, hand.equals("right"));
+                        int inset = Ui.dp(activity, AppLauncherStyle.SURFACE_INSET);
+                        return sidebar != null && sidebar.getWidth() > 0 && Math.abs((hand.equals("left") ? sidebar.getLeft() - inset : sidebar.getRight() - panel.getWidth() + inset) - offset) <= 1;
+                    }, "landscape card centers the sidebar in the reserved gap on the selected side"); }
+                    catch (AssertionError failure) { throw new AssertionError(bounds[0], failure); }
+                    main(() -> {
+                        View panel = card.findViewById(R.id.launcher_panel), dock = card.findViewById(R.id.launcher_pins);
+                        WidgetSafeArea.Frame safe = CoverApp.widgets(context).launcherFrame(ids[0]);
+                        require(Math.abs(panel.getLeft() - Ui.dp(activity, safe.left())) <= 1 && Math.abs(panel.getTop() - Ui.dp(activity, safe.top())) <= 1 && Math.abs(panel.getHeight() - Ui.dp(activity, safe.height())) <= 1, "landscape content uses the launcher safe frame");
+                        require(dock.getBottom() == panel.getHeight(), "landscape Dock reaches the shared safe bottom");
+                        filledBackground(); fixedGrid(prefs); sharedHubLayout(prefs);
+                    });
+                    cardFrame("hub-" + (rotation == Surface.ROTATION_90 ? "90" : "270") + "-" + hand);
+                }
+                folderReturn(prefs, bridge, ids[0], target, folder);
+                // Reproduce Samsung retaining the natural full-display dimensions
+                // while the actual native host follows the rotated display.
+                main(() -> {
+                    android.graphics.Point pixels = Displays.size(display.getDisplay());
+                    float density = context.createDisplayContext(display.getDisplay()).getResources().getDisplayMetrics().density;
+                    Bundle stale = new Bundle();
+                    stale.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 360); stale.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 360);
+                    stale.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 374); stale.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 374);
+                    manager.updateAppWidgetOptions(ids[0], stale);
+                    card.setLayoutParams(new FrameLayout.LayoutParams(Ui.dp(activity, pixels.x / density), Ui.dp(activity, pixels.y / density))); bridge.refresh();
+                });
+                until(() -> card.findViewById(R.id.launcher_panel).getHeight() == card.getHeight(), "stale natural-orientation options do not shorten the rotated full-screen launcher");
+                main(() -> { sharedHubLayout(prefs); fixedGrid(prefs); });
+                main(() -> {
+                    manager.updateAppWidgetOptions(ids[0], CoverApp.widgets(context).options(new android.util.SizeF(310, 280)));
+                    card.setLayoutParams(new FrameLayout.LayoutParams(Ui.dp(activity, 310), Ui.dp(activity, 280))); bridge.refresh();
+                });
+                until(() -> card.findViewById(R.id.launcher_panel).getHeight() == Ui.dp(activity, 280), "resized cards retain their own bounds after full-screen rotation");
+            }
             rotateDisplay(target, android.view.Surface.ROTATION_0);
             until(() -> card.findViewById(R.id.launcher_catalog) == null, "returning to zero degrees restores the existing card presentation");
             until(() -> cache.pendingIconCount() == 0, "icon queue drains"); int decodes = cache.decodeCount(); SystemClock.sleep(400); require(cache.decodeCount() == decodes, "idle card updates do not restart icon decoding");

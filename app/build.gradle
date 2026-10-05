@@ -1,5 +1,13 @@
 plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.plugin.compose' }
 
+def releaseSigning = new Properties()
+def releaseSigningFile = rootProject.file('keystore.properties')
+if (!releaseSigningFile.exists()) throw new GradleException('Missing keystore.properties; configure the shared debug/release signing key as described in docs/development.md.')
+releaseSigningFile.withInputStream { releaseSigning.load(it) }
+['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { name ->
+    if (!releaseSigning.getProperty(name)) throw new GradleException("Missing signing property: ${name}")
+}
+
 // Keep generated resources/classes out of cloud-sync conflict copies. The suffix is
 // a normal directory on other platforms, and no machine-specific path is needed.
 layout.buildDirectory.set(rootProject.layout.projectDirectory.dir('Cache/build-output.nosync/app'))
@@ -12,8 +20,8 @@ android {
         applicationId 'io.github.flipcover.controls'
         minSdk 30
         targetSdk 36
-        versionCode 53
-        versionName '0.17.3'
+        versionCode 72
+        versionName '0.18.14'
         testInstrumentationRunner 'io.github.flipcover.controls.UiSmokeInstrumentation'
     }
     buildFeatures { aidl true; buildConfig true; compose true }
@@ -21,16 +29,32 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    signingConfigs {
+        release {
+            storeFile rootProject.file(releaseSigning.getProperty('storeFile'))
+            storePassword releaseSigning.getProperty('storePassword')
+            keyAlias releaseSigning.getProperty('keyAlias')
+            keyPassword releaseSigning.getProperty('keyPassword')
+        }
+    }
     buildTypes {
-        debug { applicationIdSuffix '.debug' }
-        release { minifyEnabled false }
+        debug { signingConfig signingConfigs.release }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
     }
     testOptions { unitTests.returnDefaultValues = true }
+}
+
+androidComponents {
+    beforeVariants(selector().withBuildType('release')) { variant -> variant.enableUnitTest = true }
 }
 
 kotlin { compilerOptions { jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17 } }
 
 dependencies {
+    implementation 'androidx.core:core:1.18.0'
     implementation 'io.github.kyant0:backdrop:2.0.1'
     implementation 'io.github.kyant0:shapes:1.2.1'
     implementation 'androidx.compose.foundation:foundation:1.12.0'
@@ -45,4 +69,78 @@ dependencies {
     implementation 'me.majiajie:tinypinyin:2.0.3'
     implementation 'com.google.zxing:core:3.5.3'
     testImplementation 'junit:junit:4.13.2'
+}
+
+// Frequently tuned parameters come from app-config.json; build identity, fixed
+// contracts and internal implementation limits remain with their existing owners.
+apply from: rootProject.file('gradle/app-config.gradle')
+def appConfigFile = rootProject.layout.projectDirectory.file('app-config.json')
+def appConfigAssets = layout.buildDirectory.dir('generated/app-config/assets')
+def appConfigResources = layout.buildDirectory.dir('generated/app-config/res')
+abstract class PrepareAppConfig extends DefaultTask {
+    @OutputDirectory abstract org.gradle.api.file.DirectoryProperty getAssetsDirectory()
+    @OutputDirectory abstract org.gradle.api.file.DirectoryProperty getResourcesDirectory()
+}
+def prepareAppConfig = tasks.register('prepareAppConfig', PrepareAppConfig) {
+    assetsDirectory.set(appConfigAssets)
+    resourcesDirectory.set(appConfigResources)
+    inputs.file(appConfigFile)
+    outputs.dir(appConfigAssets)
+    outputs.dir(appConfigResources)
+    doLast {
+        def config = new groovy.json.JsonSlurper().parse(appConfigFile.asFile, 'UTF-8')
+        if (config.schemaVersion != 1 || !(config.update instanceof Map)) throw new GradleException('Invalid app-config.json schema')
+        def update = config.update
+        def endpoint = new URI(update.catalogUrl as String)
+        if (!(endpoint.scheme in ['https', 'http']) || !endpoint.host || endpoint.userInfo || endpoint.query || endpoint.fragment || !endpoint.path.endsWith('/catalog.json')) throw new GradleException('Invalid update.catalogUrl')
+        ['connectTimeoutMs', 'readTimeoutMs', 'maxCatalogBytes', 'maxApkBytes', 'cacheRetentionHours'].each { key ->
+            def value = update[key]
+            if (!(value instanceof Number) || value.longValue() <= 0 || value.doubleValue() != value.longValue()) throw new GradleException("Invalid update.${key}")
+        }
+        if (!(update.maxRedirects instanceof Number) || update.maxRedirects < 0 || update.maxRedirects > 10 || update.maxRedirects.doubleValue() != update.maxRedirects.intValue()) throw new GradleException('Invalid update.maxRedirects')
+        if (update.connectTimeoutMs > 120000 || update.readTimeoutMs > 120000 || update.maxCatalogBytes > 1048576 || update.maxApkBytes > 536870912 || update.cacheRetentionHours > 168) throw new GradleException('Update configuration exceeds supported bounds')
+        copy { from appConfigFile; into appConfigAssets }
+        def xml = appConfigResources.get().file('xml/update_network_security.xml').asFile
+        xml.parentFile.mkdirs()
+        def domain = endpoint.scheme == 'http' ? "<domain-config cleartextTrafficPermitted=\"true\"><domain includeSubdomains=\"false\">${endpoint.host}</domain></domain-config>" : ''
+        xml.setText("<?xml version=\"1.0\" encoding=\"utf-8\"?><network-security-config><base-config cleartextTrafficPermitted=\"false\"/>${domain}</network-security-config>", 'UTF-8')
+        def launcher = appConfigValues.appearance.launcher
+        def dimensions = [launcher_panel_radius: launcher.panelRadiusDp, launcher_folder_radius: launcher.folderRadiusDp, launcher_dock_radius: launcher.dockRadiusDp]
+        def sizes = appConfigResources.get().file('values/app_config.xml').asFile
+        sizes.parentFile.mkdirs()
+        sizes.setText('<resources>\n' + dimensions.collect { name, value -> "    <dimen name=\"${name}\">${value}dp</dimen>" }.join('\n') + '\n</resources>\n', 'UTF-8')
+    }
+}
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+    variant.sources.assets.addGeneratedSourceDirectory(prepareAppConfig) { it.assetsDirectory }
+    variant.sources.res.addGeneratedSourceDirectory(prepareAppConfig) { it.resourcesDirectory }
+}
+
+tasks.register('prepareUpdateRelease') {
+    dependsOn 'assembleRelease'
+    inputs.file(appConfigFile)
+    inputs.file('src/main/assets/changelog.txt')
+    outputs.upToDateWhen { false }
+    doLast {
+        def output = layout.buildDirectory.dir('outputs/apk/release').get().asFile
+        def metadata = new groovy.json.JsonSlurper().parse(new File(output, 'output-metadata.json'), 'UTF-8')
+        if (metadata.elements.size() != 1) throw new GradleException('Online update requires one complete APK')
+        def artifact = metadata.elements[0]
+        def apk = new File(output, artifact.outputFile)
+        def version = artifact.versionName
+        if (!(version ==~ /[A-Za-z0-9._-]+/)) throw new GradleException('Unsafe APK version name')
+        def lines = file('src/main/assets/changelog.txt').readLines('UTF-8')
+        def noteStart = lines.findIndexOf { it.startsWith(version + ' · ') }
+        if (noteStart < 0) throw new GradleException('Changelog does not match the release APK')
+        def notes = lines.drop(noteStart + 1).takeWhile { !it.trim().isEmpty() }.join('\n')
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        apk.withInputStream { stream -> byte[] buffer = new byte[65536]; int count; while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count) }
+        def name = "flipcover-${version}.apk"
+        def destination = rootProject.file("dist/update-release/${artifact.versionCode}")
+        destination.mkdirs()
+        copy { from apk; into destination; rename { name } }
+        def catalog = [schemaVersion: 1, packageName: metadata.applicationId, versionCode: artifact.versionCode, versionName: version, minSdk: metadata.minSdkVersionForDexing, changelog: notes, apkPath: "releases/${artifact.versionCode}/${name}", apkSize: apk.length(), sha256: digest.digest().encodeHex().toString()]
+        new File(destination, 'catalog.json').setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(catalog)) + '\n', 'UTF-8')
+        logger.lifecycle("Update release prepared: dist/update-release/${artifact.versionCode}/")
+    }
 }

@@ -18,6 +18,11 @@ import android.widget.LinearLayout;
 /** Opt-in runtime paint and feedback. Never changes measurement, padding or touch bounds. */
 final class RuntimeVisuals {
     private RuntimeVisuals() { }
+    static void launcher(View view, LauncherForce force, int node) {
+        if (view instanceof Cell cell) { cell.force = force; cell.node = node; }
+        else if (view instanceof Button button) { button.force = force; button.node = node; }
+    }
+    static ControlFeedback control(View view) { if (!(view instanceof Button button)) return null; if (button.controlFeedback == null) button.controlFeedback = new ControlFeedback(button, true); return button.controlFeedback; }
     static int blend(int from, int to, float progress) {
         float p = Math.max(0, Math.min(1, progress));
         return Color.argb(Math.round(Color.alpha(from) + (Color.alpha(to) - Color.alpha(from)) * p), Math.round(Color.red(from) + (Color.red(to) - Color.red(from)) * p), Math.round(Color.green(from) + (Color.green(to) - Color.green(from)) * p), Math.round(Color.blue(from) + (Color.blue(to) - Color.blue(from)) * p));
@@ -46,7 +51,9 @@ final class RuntimeVisuals {
         public void onViewDetachedFromWindow(View view) { if (animation != null) animation.cancel(); animation = null; value = 0; pressed = false; }
     }
     static final class Button extends ImageButton {
+        private LauncherForce force; private int node;
         private final Press press = new Press(this);
+        private ControlFeedback controlFeedback;
         private boolean canceled;
         Button(Context context) { super(context); }
         @Override public boolean dispatchTouchEvent(MotionEvent event) {
@@ -54,12 +61,19 @@ final class RuntimeVisuals {
             if (!canceled && (event.getPointerCount() > 1 || event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN)) {
                 canceled = true; MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL); super.dispatchTouchEvent(cancel); cancel.recycle();
             }
-            return canceled || super.dispatchTouchEvent(event);
+            boolean handled = canceled || super.dispatchTouchEvent(event); if (controlFeedback != null && (canceled || event.getActionMasked() == MotionEvent.ACTION_CANCEL)) controlFeedback.cancel(); return handled;
         }
-        @Override public void setPressed(boolean value) { super.setPressed(value); if (press != null) press.set(value); }
-        @Override protected void onDraw(Canvas canvas) { press.draw(canvas, () -> super.onDraw(canvas)); }
+        @Override public void setPressed(boolean value) { super.setPressed(value); if (controlFeedback != null) controlFeedback.pressed(value); else if (press != null) press.set(value); }
+        @Override public boolean performClick() { if (controlFeedback != null) controlFeedback.pulse(); return super.performClick(); }
+        @Override public void draw(Canvas canvas) { if (controlFeedback == null) { super.draw(canvas); return; } int saved = controlFeedback.save(canvas, getWidth() / 2f, getHeight() / 2f); super.draw(canvas); canvas.restoreToCount(saved); }
+        @Override protected void onDraw(Canvas canvas) {
+            int saved = canvas.save(); if (force != null) canvas.scale(force.scaleX(node), force.scaleY(node), getWidth() / 2f, getHeight() / 2f);
+            if (controlFeedback == null) press.draw(canvas, () -> super.onDraw(canvas)); else super.onDraw(canvas); canvas.restoreToCount(saved);
+        }
     }
     static class Cell extends LinearLayout {
+        ControlFeedback controlFeedback;
+        private LauncherForce force; private int node;
         private final Press press = new Press(this);
         private boolean canceled;
         Cell(Context context) { super(context); setOrientation(VERTICAL); }
@@ -68,10 +82,17 @@ final class RuntimeVisuals {
             if (!canceled && (event.getPointerCount() > 1 || event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN)) {
                 canceled = true; MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL); super.dispatchTouchEvent(cancel); cancel.recycle();
             }
-            return canceled || super.dispatchTouchEvent(event);
+            boolean handled = canceled || super.dispatchTouchEvent(event); if (controlFeedback != null && (canceled || event.getActionMasked() == MotionEvent.ACTION_CANCEL)) controlFeedback.cancel(); return handled;
         }
-        @Override public void setPressed(boolean value) { super.setPressed(value); if (press != null) press.set(value); }
-        @Override protected void dispatchDraw(Canvas canvas) { press.draw(canvas, () -> super.dispatchDraw(canvas)); }
+        @Override public void setPressed(boolean value) { super.setPressed(value); if (controlFeedback != null) controlFeedback.pressed(value); else if (press != null) press.set(value); }
+        @Override public boolean performClick() { if (controlFeedback != null) controlFeedback.pulse(); return super.performClick(); }
+        @Override protected void dispatchDraw(Canvas canvas) { if (controlFeedback == null) press.draw(canvas, () -> super.dispatchDraw(canvas)); else super.dispatchDraw(canvas); }
+        @Override protected boolean drawChild(Canvas canvas, View child, long time) {
+            if (controlFeedback != null && child == controlFeedback.view) { int saved = controlFeedback.save(canvas, child.getLeft() + child.getWidth() / 2f, child.getTop() + child.getHeight() / 2f); boolean drawn = super.drawChild(canvas, child, time); canvas.restoreToCount(saved); return drawn; }
+            if (force == null || !(child instanceof ImageView)) return super.drawChild(canvas, child, time);
+            int saved = canvas.save(); canvas.scale(force.scaleX(node), force.scaleY(node), child.getLeft() + child.getWidth() / 2f, child.getTop() + child.getHeight() / 2f);
+            boolean drawn = super.drawChild(canvas, child, time); canvas.restoreToCount(saved); return drawn;
+        }
     }
     static final class Surface extends Drawable implements View.OnAttachStateChangeListener {
         private final View owner;

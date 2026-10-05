@@ -5,6 +5,12 @@ final class WidgetSafeArea {
     record Frame(float left, float top, float width, float height) {
         boolean inset(float outerWidth, float outerHeight) { return left > 0 || top > 0 || width < outerWidth || height < outerHeight; }
     }
+    static Frame canvas(float cardWidth, float cardHeight, float displayWidth, float displayHeight, boolean quarterTurn) {
+        // Samsung retains the unrotated full-screen options on quarter turns. Match
+        // both measured axes (options are integer dp); never stretch a smaller card.
+        if (quarterTurn && Math.abs(cardWidth - displayHeight) <= 1 && Math.abs(cardHeight - displayWidth) <= 1) return new Frame(0, 0, displayWidth, displayHeight);
+        return new Frame(0, 0, Math.max(1, Math.min(displayWidth, cardWidth)), Math.max(1, Math.min(displayHeight, cardHeight)));
+    }
     static Frame fit(float cardWidth, float cardHeight, int displayWidth, int displayHeight, float density, DockGeometry.Box safe) {
         if (safe == null || density <= 0 || displayWidth <= 0 || displayHeight <= 0) return new Frame(0, 0, cardWidth, cardHeight);
         float left = Math.max(0, safe.x()) / density, top = Math.max(0, safe.y()) / density;

@@ -11,7 +11,9 @@ import android.widget.TextView;
 
 /** Explicit runtime-panel metrics. Settings, launcher and system surfaces do not opt in. */
 final class PanelUi {
-    static final int TITLE=17, BODY=12, SECONDARY=10, ACTION=12, SLOT=36, GAP=4, INSET=8, STRIP=40;
+    static final int TITLE=BuildConfig.APPEARANCE_PANEL_TITLE_SP, BODY=BuildConfig.APPEARANCE_PANEL_BODY_SP, SECONDARY=10, ACTION=BuildConfig.APPEARANCE_PANEL_ACTION_SP, SLOT=BuildConfig.APPEARANCE_PANEL_ACTION_SLOT_DP, GAP=4, INSET=8, STRIP=40;
+    static final float ACTION_SCALE=.8f;
+    static final int ACTION_ICON=BuildConfig.APPEARANCE_PANEL_ACTION_ICON_DP;
     private PanelUi() { }
     static Button button(Context c,String label,Runnable action) { Button button=Ui.button(c,label,action); action(button); return button; }
     static void action(Button button) { Context c=button.getContext(); button.setTextSize(ACTION); button.setMinHeight(Ui.dp(c,SLOT)); button.setMinimumHeight(Ui.dp(c,SLOT)); button.setPadding(Ui.dp(c,INSET),Ui.dp(c,4),Ui.dp(c,INSET),Ui.dp(c,4)); }
@@ -26,5 +28,6 @@ final class PanelUi {
         LinearLayout words=Ui.column(c); words.addView(Ui.text(c,title,BODY,Ui.TEXT)); if (!subtitle.isEmpty()) { TextView detail=Ui.text(c,subtitle,SECONDARY,Ui.MUTED); detail.setPadding(0,Ui.dp(c,2),0,0); words.addView(detail); } row.addView(words,new LinearLayout.LayoutParams(0,-2,1));
         if (action!=null) { row.setBackground(Ui.ripple(c,0,8)); row.setFocusable(true); row.setOnClickListener(v -> action.run()); } return row;
     }
-    static int label(Context c) { return new int[]{9,10,12}[new Prefs(c).panelLabelSize()]; }
+    static int labelSize(int size) { return switch (size) { case 0 -> BuildConfig.APPEARANCE_PANEL_COMPACT_LABEL_SP; case 2 -> BuildConfig.APPEARANCE_PANEL_EASY_LABEL_SP; default -> BuildConfig.APPEARANCE_PANEL_NORMAL_LABEL_SP; }; }
+    static int label(Context c) { return labelSize(new Prefs(c).panelLabelSize()); }
 }

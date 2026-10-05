@@ -27,8 +27,14 @@ final class AppFolderGrid extends ViewGroup {
     private float downX, downY, x, y, rawX, rawY;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Runnable lift, escape;
+    private LauncherForce launcherForce; private Runnable forceWake;
+    void launcherForce(LauncherForce force, Runnable wake) { launcherForce = force; forceWake = wake; }
+    @Override public void draw(Canvas canvas) {
+        if (launcherForce == null) { super.draw(canvas); return; }
+        int saved = canvas.save(); float density = getResources().getDisplayMetrics().density; canvas.translate(launcherForce.x[LauncherForce.FOLDER] * density, launcherForce.y[LauncherForce.FOLDER] * density); super.draw(canvas); canvas.restoreToCount(saved);
+    }
     AppFolderGrid(Context context, List<String> members, boolean editable, Function<String, View> bind, Listener listener) {
-        super(context); this.members = List.copyOf(members); this.order = new ArrayList<>(members); this.listener = listener; this.editable = editable; slop = ViewConfiguration.get(context).getScaledTouchSlop(); setTag("folder-grid"); setClipChildren(false);
+        super(context); setWillNotDraw(false); this.members = List.copyOf(members); this.order = new ArrayList<>(members); this.listener = listener; this.editable = editable; slop = ViewConfiguration.get(context).getScaledTouchSlop(); setTag("folder-grid"); setClipChildren(false);
         lift = () -> { if (pressed != null && !blocked) { held = true; getParent().requestDisallowInterceptTouchEvent(true); performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); invalidate(); } };
         escape = () -> { if (held && moved && listener.outside(rawX, rawY)) { external = listener.external(pressed, rawX, rawY); if (external) removeCallbacks(lift); } };
         for (String id : members) { View view = bind.apply(id); view.setTag("folder-member:" + id); view.setOnClickListener(v -> listener.launch(id)); view.setOnLongClickListener(v -> { listener.menu(v, id); return true; }); addView(view); }
@@ -44,6 +50,7 @@ final class AppFolderGrid extends ViewGroup {
     @Override protected void dispatchDraw(Canvas canvas) { super.dispatchDraw(canvas); if (held && !external && pressed != null) { View cell = getChildAt(members.indexOf(pressed)); paint.setColor(0xCC9BD5F5); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Ui.dp(getContext(), 2)); canvas.drawRoundRect(cell.getLeft() + 2, cell.getTop() + 2, cell.getRight() - 2, cell.getBottom() - 2, Ui.dp(getContext(), 10), Ui.dp(getContext(), 10), paint); } }
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked(); x = event.getX(); y = event.getY(); rawX = event.getRawX(); rawY = event.getRawY();
+        if (launcherForce != null && android.animation.ValueAnimator.areAnimatorsEnabled() && action == MotionEvent.ACTION_DOWN) { launcherForce.impulse(LauncherForce.FOLDER, 0, 90); forceWake.run(); }
         if (action == MotionEvent.ACTION_DOWN) { cancel(); blocked = false; downX = x; downY = y; int index = hit(x, y); pressed = index < 0 ? null : order.get(index); if (pressed != null) postDelayed(lift, ViewConfiguration.getLongPressTimeout()); }
         if (external) { listener.forward(event); if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN) { external = false; cancel(); listener.endExternal(); } return true; }
         if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN) { cancel(); return true; }

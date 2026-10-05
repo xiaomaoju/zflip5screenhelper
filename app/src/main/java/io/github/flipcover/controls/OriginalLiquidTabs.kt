@@ -59,7 +59,8 @@ import kotlinx.coroutines.launch
 
 /** Supplies content, cached pixels and a window lifetime. Upstream effect files are unchanged. */
 @android.annotation.TargetApi(33)
-internal class OriginalLiquidTabs(context: Context, private val choose: IntConsumer) : FrameLayout(context) {
+internal class OriginalLiquidTabs(context: Context, private val choose: IntConsumer, private val labels: Array<String>, private val icons: IntArray, private val heightDp: Int) : FrameLayout(context) {
+    constructor(context: Context, choose: IntConsumer) : this(context, choose, arrayOf("内置功能", "应用磁贴", "应用"), intArrayOf(R.drawable.ic_ms_tune, R.drawable.ic_ms_view_carousel, R.drawable.ic_ms_apps), ControlSourceTabs.HEIGHT)
     private var selectedIndex by mutableIntStateOf(0)
     private var generation by mutableIntStateOf(0)
     private var backgroundSession by mutableStateOf<PanelGlassSession?>(null)
@@ -71,6 +72,9 @@ internal class OriginalLiquidTabs(context: Context, private val choose: IntConsu
     private var compositionScope: CoroutineScope? = null
 
     init {
+        isFocusable = true
+        isClickable = true
+        contentDescription = labels.joinToString(" / ")
         clipChildren = false
         clipToPadding = false
         installOwner()
@@ -81,8 +85,8 @@ internal class OriginalLiquidTabs(context: Context, private val choose: IntConsu
         addView(compose, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         compose.setContent {
             if (backgroundSession == null) return@setContent
-            // Scale the complete original component to the editor's compact source strip.
-            val density = Density(resources.displayMetrics.density * ControlSourceTabs.HEIGHT / 64f, resources.configuration.fontScale)
+            // Scale the complete original component to the native host's strip height.
+            val density = Density(resources.displayMetrics.density * heightDp / 64f, resources.configuration.fontScale)
             CompositionLocalProvider(LocalDensity provides density) {
                 val readSelection = remember { { selectedIndex } }
                 val epoch = generation
@@ -95,15 +99,14 @@ internal class OriginalLiquidTabs(context: Context, private val choose: IntConsu
                             backgroundRevision
                             drawIntoCanvas { backgroundSession?.drawLocalBackdrop(it.nativeCanvas, this@OriginalLiquidTabs, canvasOffset.x, canvasOffset.y) }
                         }
-                        LiquidBottomTabs(readSelection, { index -> if (epoch == generation) choose.accept(index) }, backdrop, 3, Modifier.fillMaxWidth()) {
-                            val labels = if (compactLabels) listOf("内置", "磁贴", "应用") else listOf("内置功能", "应用磁贴", "应用")
-                            val icons = listOf(R.drawable.ic_ms_tune, R.drawable.ic_ms_view_carousel, R.drawable.ic_ms_apps)
-                            labels.forEachIndexed { index, label ->
+                        LiquidBottomTabs(readSelection, { index -> if (epoch == generation && index != selectedIndex) choose.accept(index) }, backdrop, labels.size, Modifier.fillMaxWidth()) {
+                            val visibleLabels = if (compactLabels && icons.isNotEmpty()) arrayOf("内置", "磁贴", "应用") else labels
+                            visibleLabels.forEachIndexed { index, label ->
                                 val active = selectedIndex == index
                                 val color = if (active) Color(0xFF0091FF) else Color(0xFFF4F7FA)
                                 LiquidBottomTab({ if (epoch == generation) choose.accept(index) }, Modifier.semantics { selected = active; contentDescription = label }) {
-                                    Image(painterResource(icons[index]), null, Modifier.size(26.dp), colorFilter = ColorFilter.tint(color))
-                                    BasicText(label, style = TextStyle(color = color, fontSize = 16.sp), maxLines = 1)
+                                    if (icons.isNotEmpty()) Image(painterResource(icons[index]), null, Modifier.size(26.dp), colorFilter = ColorFilter.tint(color))
+                                    BasicText(label, style = TextStyle(color = color, fontSize = if (icons.isEmpty()) 21.sp else 16.sp), maxLines = 1)
                                 }
                             }
                         }
@@ -113,6 +116,7 @@ internal class OriginalLiquidTabs(context: Context, private val choose: IntConsu
         }
     }
     fun source(index: Int) { selectedIndex = index }
+    fun inputStep(forward: Boolean) { val next = (selectedIndex + if (forward) 1 else -1).coerceIn(0, labels.lastIndex); if (next != selectedIndex) choose.accept(next) }
     fun glass(session: PanelGlassSession?) {
         backgroundSession = session
         if (session == null) compose.disposeComposition()
@@ -122,7 +126,7 @@ internal class OriginalLiquidTabs(context: Context, private val choose: IntConsu
     fun cancelGesture() { generation++ }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        compactLabels = w / 3f < Ui.dp(context, 62f)
+        compactLabels = w / labels.size.toFloat() < Ui.dp(context, 62f)
     }
     private fun installOwner() { setViewTreeLifecycleOwner(owner); setViewTreeSavedStateRegistryOwner(owner) }
     private fun ensureRecomposer() {

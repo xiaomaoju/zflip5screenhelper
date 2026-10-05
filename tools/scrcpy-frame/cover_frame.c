@@ -257,6 +257,60 @@ cover_frame_begin_edge_drag(struct sc_screen *screen,
     sc_input_manager_handle_event(&screen->im, &down);
 }
 
+// An established drag owns its release even outside the opening. Keep the
+// Android touch inside the screen, including the rounded corners and cutout.
+static bool
+cover_frame_drag_hit(struct sc_screen *screen, float x, float y) {
+    if (!cover_frame_hit(screen, x, y)) {
+        return false;
+    }
+    struct sc_point point = sc_screen_convert_window_to_frame_coords(screen, x, y);
+    struct sc_size size = screen->frame_size;
+    if (point.x < 0 || point.y < 0 || point.x >= size.width || point.y >= size.height) {
+        return false;
+    }
+    // Round-trip the injected pixel's center through the same aperture mask.
+    // Float-only hit testing can land one pixel inside a cutout after truncation.
+    SDL_FRect sample = {(point.x + .5f) / size.width, (point.y + .5f) / size.height, 0, 0};
+    sample = rotate_rect(sample, 1.f, 1.f, sc_orientation_get_rotation(screen->orientation));
+    SDL_FRect r = screen->rect;
+    return cover_frame_hit(screen, r.x + sample.x * r.w, r.y + sample.y * r.h);
+}
+
+static SDL_FPoint
+cover_frame_drag_point(struct sc_screen *screen, float x, float y) {
+    struct cover_frame *frame = &screen->cover;
+    SDL_FRect r = screen->rect;
+    // scrcpy truncates both window coordinates and the delta from rect.x/y.
+    // Leave one source pixel plus that rounding margin inside each edge.
+    float mx = fminf(1.f + ceilf(r.w / screen->content_size.width), r.w / 2.f);
+    float my = fminf(1.f + ceilf(r.h / screen->content_size.height), r.h / 2.f);
+    x = fmaxf(r.x + mx, fminf(x, r.x + r.w - mx));
+    y = fmaxf(r.y + my, fminf(y, r.y + r.h - my));
+    if (cover_frame_drag_hit(screen, x, y)) {
+        return (SDL_FPoint) {x, y};
+    }
+    float start_x = frame->last_x, start_y = frame->last_y;
+    if (!cover_frame_drag_hit(screen, start_x, start_y)) {
+        // The first edge-entry sample may itself straddle an integer pixel.
+        start_x = r.x + r.w / 2.f;
+        start_y = r.y + r.h / 2.f;
+    }
+    float inside = 0.f, outside = 1.f;
+    float dx = x - start_x;
+    float dy = y - start_y;
+    for (unsigned i = 0; i < 16; ++i) {
+        float t = (inside + outside) / 2.f;
+        if (cover_frame_drag_hit(screen, start_x + dx * t,
+                                 start_y + dy * t)) {
+            inside = t;
+        } else {
+            outside = t;
+        }
+    }
+    return (SDL_FPoint) {start_x + dx * inside, start_y + dy * inside};
+}
+
 bool
 cover_frame_filter_event(struct sc_screen *screen, const SDL_Event *event) {
     struct cover_frame *frame = &screen->cover;
@@ -294,8 +348,24 @@ cover_frame_filter_event(struct sc_screen *screen, const SDL_Event *event) {
                 frame->blocked_buttons &= ~mask;
                 return true;
             }
+            if (event->button.button == SDL_BUTTON_LEFT) {
+                SDL_Event release = *event;
+                SDL_FPoint point = {event->button.x, event->button.y};
+                if (point.x == 0 && point.y == 0) {
+                    point = (SDL_FPoint) {frame->last_x, frame->last_y};
+                }
+                if (!cover_frame_drag_hit(screen, point.x, point.y)) {
+                    point = cover_frame_drag_point(screen, point.x, point.y);
+                }
+                release.button.x = frame->last_x = point.x;
+                release.button.y = frame->last_y = point.y;
+                frame->active_buttons &= ~mask;
+                frame->blocked_buttons &= ~mask;
+                sc_input_manager_handle_event(&screen->im, &release);
+                return true;
+            }
             // Some macOS synthetic releases omit position. The latest motion
-            // remains authoritative; a real move outside already cancelled it.
+            // remains authoritative for the other mouse buttons too.
             if ((frame->active_buttons & mask) && event->button.x == 0
                     && event->button.y == 0
                     && cover_frame_hit(screen, frame->last_x, frame->last_y)) {
@@ -319,6 +389,13 @@ cover_frame_filter_event(struct sc_screen *screen, const SDL_Event *event) {
         }
         case SDL_EVENT_MOUSE_MOTION: {
             bool hit = cover_frame_hit(screen, event->motion.x, event->motion.y);
+            if ((frame->active_buttons & SDL_BUTTON_LMASK)
+                    && !(event->motion.state & SDL_BUTTON_LMASK)) {
+                // Recover if a release was lost; never leave Android held down.
+                cover_frame_cancel_input(screen);
+                frame->blocked_buttons &= ~SDL_BUTTON_LMASK;
+                return true;
+            }
             if (frame->edge_pending) {
                 if (event->motion.state != SDL_BUTTON_LMASK) {
                     frame->edge_pending = false;
@@ -330,13 +407,29 @@ cover_frame_filter_event(struct sc_screen *screen, const SDL_Event *event) {
                     cover_frame_begin_edge_drag(screen, &event->motion);
                 }
             }
-            if (!hit) {
-                cover_frame_cancel_input(screen);
-                return true;
+            if (hit && (frame->active_buttons & SDL_BUTTON_LMASK)) {
+                hit = cover_frame_drag_hit(screen, event->motion.x, event->motion.y);
             }
             if ((frame->blocked_buttons & event->motion.state)
                     || ((event->motion.state & SDL_BUTTON_LMASK)
                         && !(frame->active_buttons & SDL_BUTTON_LMASK))) {
+                return true;
+            }
+            if (!hit) {
+                if (frame->active_buttons & SDL_BUTTON_LMASK) {
+                    SDL_FPoint point = cover_frame_drag_point(screen,
+                        event->motion.x, event->motion.y);
+                    SDL_Event motion = *event;
+                    motion.motion.x = point.x;
+                    motion.motion.y = point.y;
+                    motion.motion.xrel = point.x - frame->last_x;
+                    motion.motion.yrel = point.y - frame->last_y;
+                    frame->last_x = point.x;
+                    frame->last_y = point.y;
+                    sc_input_manager_handle_event(&screen->im, &motion);
+                } else {
+                    cover_frame_cancel_input(screen);
+                }
                 return true;
             }
             frame->last_x = event->motion.x;

@@ -1,0 +1,138 @@
+// Build-time schema for the deliberately small set of authored tuning parameters.
+// Defaults are used only when the corresponding user preference is absent.
+def config = new groovy.json.JsonSlurper().parse(rootProject.file('app-config.json'), 'UTF-8')
+// Default lists contain built-ins only; keep their identities owned by ActionCatalog.
+def builtInActions = rootProject.file('app/src/main/java/io/github/flipcover/controls/ActionCatalog.java').getText('UTF-8').findAll(/new Action\("([a-z][a-z0-9_]*)"/) { match, id -> id }.toSet()
+if (builtInActions.isEmpty()) throw new GradleException('Cannot read built-in default actions from ActionCatalog')
+def parameters = [
+    'defaults.settings.scale': ['int', 70, 130],
+    'defaults.dock.actions': ['String[]'],
+    'defaults.dock.favorites': ['String[]'],
+    'defaults.dock.pinnedAction': ['String'],
+    'defaults.dock.perPage': ['int', 2, 5],
+    'defaults.dock.damping': ['int', 0, 2],
+    'defaults.dock.widthRatio': ['float', 0.25, 0.70],
+    'defaults.dock.heightRatio': ['float', 0.05, 0.22],
+    'defaults.dock.autoHide': ['boolean'],
+    'defaults.dock.avoidKeyboard': ['boolean'],
+    'defaults.dock.haptics': ['boolean'],
+    'defaults.dock.gestures': ['boolean'],
+    'defaults.dock.homeAction': ['String', ['clock', 'cards']],
+    'defaults.status.enabled': ['boolean'],
+    'defaults.status.scale': ['int', 50, 150],
+    'defaults.status.safeLeftDp': ['int', 0, 48],
+    'defaults.status.safeRightDp': ['int', 0, 48],
+    'defaults.status.batteryPercent': ['boolean'],
+    'defaults.status.chromeStyle': ['String', ['contrast', 'black', 'light', 'dark']],
+    'defaults.controlCenter.actions': ['String[]'],
+    'defaults.controlCenter.columns': ['int', 3, 5],
+    'defaults.controlCenter.density': ['int', 0, 2],
+    'defaults.controlCenter.labels': ['boolean'],
+    'defaults.controlCenter.labelSize': ['int', 0, 2],
+    'defaults.controlCenter.toolsPosition': ['String', ['auto', 'side', 'bottom']],
+    'defaults.controlCenter.brightness': ['boolean'],
+    'defaults.controlCenter.volume': ['boolean'],
+    'defaults.controlCenter.media': ['boolean'],
+    'defaults.controlCenter.mediaIdle': ['boolean'],
+    'defaults.controlCenter.blur': ['boolean'],
+    'defaults.launcher.sort': ['String', ['manual', 'name', 'reverse', 'recent']],
+    'defaults.launcher.labels': ['boolean'],
+    'defaults.launcher.badges': ['boolean'],
+    'defaults.launcher.density': ['String', ['compact', 'normal', 'easy']],
+    'defaults.launcher.locked': ['boolean'],
+    'defaults.launcher.compact': ['boolean'],
+    'appearance.settings.baseScale': ['float', 0.5, 1],
+    'appearance.launcher.labelDp': ['int', 6, 16],
+    'appearance.launcher.compactIconDp': ['int', 12, 64],
+    'appearance.launcher.normalIconDp': ['int', 12, 64],
+    'appearance.launcher.easyIconDp': ['int', 12, 64],
+    'appearance.launcher.railWidthDp': ['int', 24, 48],
+    'appearance.launcher.railGapDp': ['int', 0, 16],
+    'appearance.launcher.railIconDp': ['int', 12, 32],
+    'appearance.launcher.railFramePaddingDp': ['int', 0, 8],
+    'appearance.launcher.panelPaddingXDp': ['int', 0, 16],
+    'appearance.launcher.panelPaddingYDp': ['int', 0, 16],
+    'appearance.launcher.surfaceInsetDp': ['int', 0, 24],
+    'appearance.launcher.searchWidthFraction': ['float', 0.25, 0.8],
+    'appearance.launcher.folderPaddingDp': ['int', 0, 12],
+    'appearance.launcher.folderMemberIconDp': ['int', 12, 48],
+    'appearance.launcher.folderMemberHeightDp': ['int', 32, 80],
+    'appearance.launcher.dockRowDp': ['int', 24, 56],
+    'appearance.launcher.dockIconDp': ['int', 16, 48],
+    'appearance.launcher.dockAppsIconDp': ['int', 12, 24],
+    'appearance.launcher.dockClearIconDp': ['int', 12, 24],
+    'appearance.launcher.panelRadiusDp': ['int', 0, 32],
+    'appearance.launcher.folderRadiusDp': ['int', 0, 32],
+    'appearance.launcher.dockRadiusDp': ['int', 0, 32],
+    'appearance.panel.controlCornerDp': ['float', 0, 32],
+    'appearance.panel.titleSp': ['int', 12, 24],
+    'appearance.panel.bodySp': ['int', 9, 20],
+    'appearance.panel.actionSp': ['int', 9, 20],
+    'appearance.panel.actionSlotDp': ['int', 28, 48],
+    'appearance.panel.actionIconDp': ['int', 12, 28],
+    'appearance.panel.compactLabelSp': ['int', 8, 16],
+    'appearance.panel.normalLabelSp': ['int', 8, 16],
+    'appearance.panel.easyLabelSp': ['int', 8, 16],
+    'appearance.status.clockDp': ['float', 8, 20],
+    'appearance.status.iconShadowRadiusDp': ['float', 0.5, 4],
+    'appearance.glass.softBlurDp': ['float', 0, 48],
+    'appearance.glass.strongBlurDp': ['float', 0, 64],
+    'motion.card.durationMs': ['int', 1, 2000],
+    'motion.card.initialDurationMs': ['int', 1, 500],
+    'motion.taskReturn.durationMs': ['int', 1, 2000],
+    'motion.taskReturn.strength': ['float', 0, 1],
+    'motion.control.stiffness': ['float', 100, 260],
+    'motion.control.damping': ['float', 10, 40],
+    'motion.launcher.stiffnessScale': ['float', 0.5, 1.5],
+    'motion.launcher.dampingScale': ['float', 0.5, 1.2],
+    'motion.launcher.splitWaitMs': ['int', 0, 2000],
+    'motion.launcher.splitDurationMs': ['int', 1, 2000],
+    'motion.detailSheet.stiffness': ['float', 100, 1000],
+    'motion.detailSheet.scaleXDamping': ['float', 0.3, 1],
+    'motion.detailSheet.scaleYDamping': ['float', 0.3, 1],
+    'motion.detailSheet.travelDamping': ['float', 0.3, 1],
+    'motion.header.splitDurationMs': ['int', 1, 2000],
+    'motion.dock.fusionWaitMs': ['int', 0, 2000],
+    'motion.dock.fusionDurationMs': ['int', 1, 2000],
+    'motion.handles.fadeInMs': ['int', 1, 2000],
+    'motion.handles.fadeOutMs': ['int', 1, 2000],
+    'motion.handles.hideDelayMs': ['int', 0, 10000]
+]
+def values = [:]
+def flatten
+flatten = { String prefix, Map section ->
+    if (section.isEmpty()) throw new GradleException("Empty app-config section: ${prefix}")
+    section.each { key, value ->
+        def path = prefix ? "${prefix}.${key}" : key
+        if (value instanceof Map) flatten(path, value)
+        else values[path] = value
+    }
+}
+if (!(config instanceof Map) || config.keySet() != ['schemaVersion', 'update', 'defaults', 'appearance', 'motion'].toSet() || !(config.schemaVersion instanceof Integer) || config.schemaVersion != 1) throw new GradleException('Invalid app-config.json schema')
+['defaults', 'appearance', 'motion'].each { section ->
+    if (!(config[section] instanceof Map)) throw new GradleException("Missing app-config section: ${section}")
+    flatten(section, config[section])
+}
+if (values.keySet() != parameters.keySet()) throw new GradleException("Invalid app-config fields; missing: ${parameters.keySet() - values.keySet()}, unknown: ${values.keySet() - parameters.keySet()}")
+parameters.each { path, rule ->
+    def value = values[path], type = rule[0]
+    boolean valid
+    switch (type) {
+        case 'boolean': valid = value instanceof Boolean; break
+        case 'String': valid = value instanceof String && !value.isEmpty() && (rule.size() == 1 || value in rule[1]); break
+        case 'String[]': valid = value instanceof List && value.size() <= 30 && value.toSet().size() == value.size() && value.every { it instanceof String && it ==~ /[a-z][a-z0-9_]*/ }; break
+        default: valid = value instanceof Number && value >= rule[1] && value <= rule[2] && (type != 'int' || value.doubleValue() == value.intValue())
+    }
+    if (!valid) throw new GradleException("Invalid app-config value: ${path}")
+    def name = path.replaceAll(/([A-Z]+)([A-Z][a-z])/, '$1_$2').replaceAll(/([a-z0-9])([A-Z])/, '$1_$2').replace('.', '_').toUpperCase(Locale.ROOT)
+    def literal = type == 'String[]' ? '{' + value.collect { groovy.json.JsonOutput.toJson(it) }.join(', ') + '}' : type == 'String' ? groovy.json.JsonOutput.toJson(value) : value.toString() + (type == 'float' ? 'f' : '')
+    android.defaultConfig.buildConfigField(type, name, literal)
+}
+def launcher = config.appearance.launcher
+['defaults.dock.actions', 'defaults.dock.favorites', 'defaults.controlCenter.actions'].each { path ->
+    if (!values[path].every { it in builtInActions }) throw new GradleException("Unknown built-in default action: ${path}")
+}
+if (!(config.defaults.dock.pinnedAction in builtInActions)) throw new GradleException('Unknown defaults.dock.pinnedAction')
+if (launcher.railIconDp > launcher.railWidthDp || launcher.railFramePaddingDp * 2 >= launcher.railWidthDp || launcher.folderMemberIconDp > launcher.folderMemberHeightDp || launcher.dockIconDp > launcher.dockRowDp || launcher.dockAppsIconDp > launcher.dockRowDp || launcher.dockClearIconDp > launcher.dockRowDp) throw new GradleException('app-config launcher icons/padding do not fit their surfaces')
+if (config.appearance.glass.softBlurDp > config.appearance.glass.strongBlurDp) throw new GradleException('app-config soft blur exceeds strong blur')
+ext.appConfigValues = config

@@ -38,6 +38,11 @@ final class ControlDetails implements AutoCloseable {
     ControlDetails(CoverService owner, DetailSheet sheet) { this.owner = owner; context = owner.screenContext; this.sheet = sheet; sheet.panelStyle(); }
     void build(String id) {
         switch (id) {
+            case "external_devices" -> {
+                sheet.compactWidth(296, 1); sheet.stableWidth(); sheet.glassControls();
+                sheet.extraHeader(PanelUi.icon(context, R.drawable.ic_ms_settings, "鼠标与触控板设置", () -> owner.openSettings("input_devices")));
+                sheet.content.addView(new InputDevicePanel(context, true, owner.panelGlass));
+            }
             case "nfc", "hotspot" -> { connectivity = new ConnectivityDetails(owner, sheet, this, id); connectivity.open(); }
             case "wifi" -> { sheet.stableViewport(300); sheet.extraHeader(Ui.iconButton(context, R.drawable.ic_ms_refresh, "刷新网络", () -> wifi(true))); sheet.footer("更多 WLAN 设置", () -> settings(Settings.ACTION_WIFI_SETTINGS)); wifi(false); }
             case "volume" -> {
@@ -132,12 +137,13 @@ final class ControlDetails implements AutoCloseable {
     }
     @android.annotation.SuppressLint("WrongConstant") // Four validated Surface rotation values, indexed 0..3.
     private void rotation() {
+        sheet.compactWidth(ControlRotationTabs.WIDTH+6*PanelUi.INSET,1);
         switches("rotation");
-        for (int start = 0; start < 4; start += 2) {
-            LinearLayout angles = Ui.row(context);
-            for (int i = start; i < start + 2; i++) { int angle = i; android.widget.Button button = PanelUi.button(context, i * 90 + "°", () -> { owner.lockRotation(angle); sheet.close(); }); button.setTag("detail-angle-" + i); Ui.select(button, !owner.rotationAutomatic() && owner.display.getRotation() == i); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(Ui.dp(context, 60), Ui.dp(context, PanelUi.SLOT), 1); p.setMargins(Ui.dp(context, 2), Ui.dp(context, 3), Ui.dp(context, 2), Ui.dp(context, 3)); angles.addView(button, p); }
-            sheet.content.addView(angles);
-        }
+        // The pressed liquid thumb extends beyond the strip; retain the sheet's outer clipping.
+        sheet.content.setClipChildren(false); sheet.content.setClipToPadding(false);
+        ControlRotationTabs angles=new ControlRotationTabs(context,owner.display.getRotation(),angle -> { owner.lockRotation(angle); sheet.close(); });
+        LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-2,Ui.dp(context,PanelUi.SLOT)); size.gravity=android.view.Gravity.CENTER_HORIZONTAL; size.setMargins(Ui.dp(context,PanelUi.INSET),Ui.dp(context,3),Ui.dp(context,PanelUi.INSET),Ui.dp(context,3)); sheet.content.addView(angles,size);
+        note("更改屏幕方向可能会让液态玻璃临时失效,届时请手动重启带有液态玻璃的页面");
         sheet.footer("交回系统旋转", () -> { owner.stopAutomaticRotation(); owner.shell("rotation_auto", 0, "", null); sheet.close(); });
     }
     @Override public void close() { closed = true; for (SwitchRow control:switches) owner.main.removeCallbacks(control.timeout); switches.clear(); if (connectivity != null) { connectivity.close(); connectivity = null; } owner.main.removeCallbacks(routeTimeout); if (router != null) { router.unregisterRouteCallback(routes); router.unregisterControllerCallback(controller); router.unregisterTransferCallback(transfers); router = null; } }

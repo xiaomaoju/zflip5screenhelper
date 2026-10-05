@@ -11,7 +11,7 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.accessibility.AccessibilityNodeInfo;
 
-/** Horizontal white handles; every display rotation opens panels with an upward pull. */
+/** Horizontal handles open inward from the selected top or bottom corner. */
 @android.annotation.SuppressLint({"ViewConstructor", "ClickableViewAccessibility"}) // Programmatic gesture strip; equivalent named accessibility actions below.
 final class PanelEntryView extends View {
     private final DockView.Listener listener;
@@ -20,6 +20,8 @@ final class PanelEntryView extends View {
     private DockGeometry.Chrome chrome;
     private final boolean gesturesEnabled;
     private final int slop;
+    private final int edge;
+    private final int artworkTopInset;
     private float startX, startY, distance;
     private String page;
     private boolean pending, pulling, panelOpen, revealed;
@@ -28,20 +30,20 @@ final class PanelEntryView extends View {
     private final Runnable hold;
     private final Runnable hideHandles = () -> {
         if (panelOpen) return;
-        if (android.animation.ValueAnimator.areAnimatorsEnabled()) animate().alpha(0).setDuration(160).withEndAction(() -> revealed = false).start(); else { setAlpha(0); revealed = false; }
+        if (android.animation.ValueAnimator.areAnimatorsEnabled()) animate().alpha(0).setDuration(BuildConfig.MOTION_HANDLES_FADE_OUT_MS).withEndAction(() -> revealed = false).start(); else { setAlpha(0); revealed = false; }
     };
     PanelEntryView(Context context, Prefs prefs, DockGeometry.Placement placement, DockView.Listener listener) {
         super(context); this.listener = listener; this.prefs = prefs;
-        chrome = DockGeometry.panelEntryChrome(new DockGeometry.Placement(placement.visual(), placement.touch(), placement.panel(), DockGeometry.BOTTOM, placement.measured()), getResources().getDisplayMetrics().density);
+        edge = placement.edge(); artworkTopInset = placement.visual().y() - placement.touch().y(); chrome = DockGeometry.panelEntryChrome(placement, getResources().getDisplayMetrics().density);
         hold = () -> { if (pending && getAlpha() > 0) { revealHandles(); reset(); performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); listener.toggleVisibility(); settleHandles(); } };
-        gesturesEnabled = prefs.data.getBoolean("gestures_enabled", true); slop = ViewConfiguration.get(context).getScaledTouchSlop();
+        gesturesEnabled = prefs.gesturesEnabled(); slop = ViewConfiguration.get(context).getScaledTouchSlop();
         setLayerType(LAYER_TYPE_SOFTWARE, null); setHapticFeedbackEnabled(prefs.haptics()); setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
         setAlpha(0);
-        setContentDescription("双白条入口：左条上滑打开通知，右条上滑打开控制中心；白条可见时长按显示或隐藏快捷按钮");
+        setContentDescription("双白条入口：左条打开通知，右条打开控制中心；" + (edge == DockGeometry.TOP ? "向下滑入" : "向上滑入") + "；白条可见时长按显示或隐藏快捷按钮");
     }
     @Override protected void onDraw(Canvas canvas) {
         paint.setColor(Ui.chromeColor(prefs)); paint.setAlpha(230);
-        if (prefs.chromeStyle().equals("contrast")) paint.setShadowLayer(Ui.dp(getContext(), 1), 0, 0, android.graphics.Color.BLACK);
+        ChromeShadowDrawable.applyShadow(paint, prefs.chromeStyle().equals("contrast") ? getResources().getDisplayMetrics().density * 1.25f : 0);
         drawHandle(canvas, chrome.firstHandle()); drawHandle(canvas, chrome.secondHandle());
     }
     private void drawHandle(Canvas canvas, DockGeometry.Box bar) { canvas.drawRoundRect(bar.x(), bar.y(), bar.right(), bar.bottom(), Ui.dp(getContext(), 1), Ui.dp(getContext(), 1), paint); }
@@ -57,7 +59,7 @@ final class PanelEntryView extends View {
             case MotionEvent.ACTION_UP -> {
                 move(event);
                 if (pulling) {
-                    velocity.computeCurrentVelocity(1000); String target = page; float traveled = distance, speed = -velocity.getYVelocity();
+                    velocity.computeCurrentVelocity(1000); String target = page; float traveled = distance, speed = PanelDrag.inward(edge, velocity.getXVelocity(), velocity.getYVelocity());
                     reset(); listener.release(target, traveled, speed, false);
                 } else reset();
                 settleHandles();
@@ -69,10 +71,10 @@ final class PanelEntryView extends View {
     private void move(MotionEvent event) {
         if (velocity == null) return;
         velocity.addMovement(event);
-        float dx = event.getRawX() - startX, dy = event.getRawY() - startY, inward = -dy;
+        float dx = event.getRawX() - startX, dy = event.getRawY() - startY, inward = PanelDrag.inward(edge, dx, dy), along = dx;
         if (pending && Math.hypot(dx, dy) > slop) {
             removeCallbacks(hold);
-            if (gesturesEnabled && inward > slop && inward >= Math.abs(dx) * .75f) {
+            if (gesturesEnabled && inward > slop && inward >= Math.abs(along) * .75f) {
                 pending = false; pulling = true; distance = inward;
                 revealHandles();
                 listener.beginPull(page, distance, startY); performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
@@ -91,28 +93,26 @@ final class PanelEntryView extends View {
     }
     private void revealHandles() {
         removeCallbacks(hideHandles); hideAt = 0; animate().cancel(); revealed = true;
-        if (android.animation.ValueAnimator.areAnimatorsEnabled()) animate().alpha(1).setDuration(120).start(); else setAlpha(1);
+        if (android.animation.ValueAnimator.areAnimatorsEnabled()) animate().alpha(1).setDuration(BuildConfig.MOTION_HANDLES_FADE_IN_MS).start(); else setAlpha(1);
     }
     void panelVisible(boolean visible) {
         panelOpen = visible;
         if (visible) revealHandles(); else settleHandles();
     }
-    void suspended(boolean suspended) {
-        if (suspended) { cancel(); hideImmediately(); }
-        setVisibility(suspended ? INVISIBLE : VISIBLE);
-    }
     private void settleHandles() {
         removeCallbacks(hideHandles);
         if (!panelOpen) {
             if (revealed) dimHandles();
-            hideAt = android.os.SystemClock.uptimeMillis() + 3000; postDelayed(hideHandles, 3000);
+            hideAt = android.os.SystemClock.uptimeMillis() + BuildConfig.MOTION_HANDLES_HIDE_DELAY_MS; postDelayed(hideHandles, BuildConfig.MOTION_HANDLES_HIDE_DELAY_MS);
         }
     }
-    private void dimHandles() { animate().cancel(); if (android.animation.ValueAnimator.areAnimatorsEnabled()) animate().alpha(.5f).setDuration(120).start(); else setAlpha(.5f); }
+    private void dimHandles() { animate().cancel(); if (android.animation.ValueAnimator.areAnimatorsEnabled()) animate().alpha(.5f).setDuration(BuildConfig.MOTION_HANDLES_FADE_IN_MS).start(); else setAlpha(.5f); }
     private void hideImmediately() { removeCallbacks(hideHandles); animate().cancel(); setAlpha(0); revealed = false; }
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh); cancel(); if (!panelOpen) hideImmediately();
-        DockGeometry.Box box = new DockGeometry.Box(0, 0, w, h); chrome = DockGeometry.panelEntryChrome(new DockGeometry.Placement(box, box, box, DockGeometry.BOTTOM, true), getResources().getDisplayMetrics().density);
+        int top = Math.min(artworkTopInset, Math.max(0, h - 1));
+        DockGeometry.Box box = new DockGeometry.Box(0, 0, w, h), visual = new DockGeometry.Box(0, top, w, h - top);
+        chrome = DockGeometry.panelEntryChrome(new DockGeometry.Placement(visual, box, box, edge, true), getResources().getDisplayMetrics().density);
     }
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();

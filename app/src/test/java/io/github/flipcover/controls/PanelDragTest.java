@@ -4,19 +4,29 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class PanelDragTest {
+    @Test public void dockClosesBeyondFortyPercentOrWithDownwardInertia() {
+        assertFalse(PanelDrag.shouldDismissDock(19, 50, 0, 100));
+        assertFalse(PanelDrag.shouldDismissDock(20, 50, 0, 100));
+        assertTrue(PanelDrag.shouldDismissDock(21, 50, 0, 100));
+        assertTrue(PanelDrag.shouldDismissDock(5, 50, 100, 100));
+        assertFalse(PanelDrag.shouldDismissDock(5, 50, -100, 100));
+        assertFalse(PanelDrag.shouldDismissDock(0, 50, 500, 100));
+    }
     @Test public void freshPanelTopTracksFingerFromCutoutHomeAndCalibratedEntries() {
         DockGeometry.Box[] cuts = {new DockGeometry.Box(351, 682, 369, 66), new DockGeometry.Box(0, 351, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(682, 0, 66, 369)};
         for (int rotation = 0; rotation < 4; rotation++) for (boolean measured : new boolean[]{true, false}) {
             int width = rotation % 2 == 0 ? 720 : 748, height = rotation % 2 == 0 ? 748 : 720;
             java.util.List<DockGeometry.Box> cutouts = measured ? java.util.List.of(cuts[rotation]) : java.util.List.of();
             DockGeometry.Placement dock = DockGeometry.resolve(width, height, cutouts, 2.125f, (rotation + 3) % 4, .46f, .088f, measured);
-            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, width, height, cutouts, 2.125f, 24);
+            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, width, height, cutouts, 2.125f, 24, rotation == 0 ? "bottom_right" : "top_left");
             for (float fraction : new float[]{.1f, .5f, .9f}) {
                 float originY = entry.touch().y() + entry.touch().height() * fraction;
-                float start = PanelDrag.entryStart(originY, 0, height);
+                float start = PanelDrag.entryStart(entry.edge(), originY, 0, height);
                 for (float traveled : new float[]{20, 120, 240, 80, 0, -10}) {
                     float progress = PanelDrag.progress(start, traveled, height);
-                    assertEquals(originY - traveled, (1 - progress) * height, .001f);
+                    float leading = entry.edge() == DockGeometry.TOP ? progress * height : (1 - progress) * height;
+                    float expected = originY + (entry.edge() == DockGeometry.TOP ? traveled : -traveled);
+                    assertEquals(Math.max(0, Math.min(height, expected)), leading, .001f);
                 }
                 assertEquals(1, PanelDrag.progress(start, height, height), 0);
                 assertFalse(PanelDrag.shouldOpen(0, height, 0, 2.125f));

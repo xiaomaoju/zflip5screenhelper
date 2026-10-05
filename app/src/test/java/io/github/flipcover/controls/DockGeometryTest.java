@@ -5,40 +5,162 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class DockGeometryTest {
+    @Test public void measuredShortcutGroupCompactsAwayFromCameraAcrossRotations() {
+        DockGeometry.Box[] cuts = {new DockGeometry.Box(379, 654, 369, 66), new DockGeometry.Box(654, 0, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(0, 379, 66, 369)};
+        for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (int rotation = 0; rotation < 4; rotation++) {
+            int width = rotation % 2 == 0 ? 748 : 720, height = rotation % 2 == 0 ? 720 : 748;
+            int margin = Math.max(4, Math.round(3 * density));
+            DockGeometry.Placement dock = DockGeometry.resolve(width, height, List.of(cuts[rotation]), density, (rotation + 3) % 4, .46f, .088f, true);
+            DockGeometry.Box visual = dock.visual();
+            assertTrue(dock.measured()); assertEquals(new int[]{DockGeometry.BOTTOM, DockGeometry.RIGHT, DockGeometry.TOP, DockGeometry.LEFT}[rotation], dock.edge());
+            assertEquals(Math.round((379 - 2 * margin) * .875f), dock.vertical() ? visual.height() : visual.width());
+            assertEquals(66 - 2 * margin, dock.vertical() ? visual.width() : visual.height());
+            switch (rotation) {
+                case 0 -> assertEquals(margin, visual.x());
+                case 1 -> assertEquals(height - margin, visual.bottom());
+                case 2 -> assertEquals(width - margin, visual.right());
+                default -> assertEquals(margin, visual.y());
+            }
+            DockGeometry.Box touch = dock.touch();
+            assertEquals(379 - 2 * margin, dock.vertical() ? touch.height() : touch.width());
+            DockGeometry.Placement edge = DockGeometry.edgeTouch(dock, width, height);
+            assertEquals(dock.vertical() ? touch.height() : touch.width(), dock.vertical() ? edge.touch().height() : edge.touch().width());
+            DockGeometry.Slots slots = DockGeometry.slots(dock, 5);
+            assertEquals(4, slots.pageSize());
+            assertEquals((dock.vertical() ? visual.height() * touch.width() : visual.width() * touch.height()), slots.pager().width() * slots.pager().height() + slots.fixed().width() * slots.fixed().height());
+        }
+    }
+    @Test public void landscapeStatusKeepsBothSafeEdgesAtTopAcrossScales() {
+        for (DockGeometry.Box cut : new DockGeometry.Box[]{new DockGeometry.Box(0, 351, 66, 369), new DockGeometry.Box(682, 0, 66, 369)}) {
+            for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (int scale : new int[]{50, 70, 100, 150}) {
+                DockGeometry.Placement dock = DockGeometry.resolve(748, 720, List.of(cut), density, 0, .46f, .088f, true);
+                DockGeometry.Box area = DockGeometry.panelContent(dock, 748, 720, List.of(cut));
+                int height = Math.round(Math.round(20 * density) * scale / 100f);
+                DockGeometry.Box status = DockGeometry.statusBar(area, 748, height, density);
+                assertEquals(0, status.y()); assertEquals(height, status.height());
+                assertEquals(area.x(), status.x()); assertEquals(area.right(), status.right());
+            }
+        }
+    }
+    @Test public void portraitStatusRetainsReservedTopAndFullSafeWidth() {
+        DockGeometry.Box area = new DockGeometry.Box(0, 100, 720, 580);
+        assertEquals(new DockGeometry.Box(0, 100, 720, 30), DockGeometry.statusBar(area, 720, 30, 2.125f));
+        assertEquals(new DockGeometry.Box(0, 0, 720, 30), DockGeometry.statusBar(new DockGeometry.Box(0, 0, 720, 630), 720, 30, 2.125f));
+        for (int top = 1; top <= 6; top++) assertEquals(new DockGeometry.Box(0, top, 720, 30), DockGeometry.statusBar(new DockGeometry.Box(0, top, 720, 630), 720, 30, 2.125f));
+    }
+    @Test public void landscapeTouchReachesFirstPixelWithoutMovingLoweredArtwork() {
+        for (int rotation : new int[]{1, 3}) for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (int scale : new int[]{50, 70, 100, 150}) for (String position : new String[]{"top_left", "top_right"}) {
+            DockGeometry.Box cut = rotation == 1 ? new DockGeometry.Box(0, 351, 66, 369) : new DockGeometry.Box(682, 0, 66, 369);
+            DockGeometry.Placement dock = DockGeometry.resolve(748, 720, List.of(cut), density, 0, .46f, .088f, true);
+            DockGeometry.Placement old = DockGeometry.panelEntry(dock, dock, 748, 720, List.of(cut), density, 24, position);
+            int inset = DockGeometry.panelEntryTopInset(position, scale, density), statusHeight = Math.round(Math.round(20 * density) * scale / 100f);
+            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, 748, 720, List.of(cut), density, 24, position, inset);
+            assertEquals(0, entry.touch().y()); assertEquals(statusHeight + Math.round((position.equals("top_left") ? 2 : 10) * density), entry.visual().y());
+            assertEquals(old.touch().x(), entry.touch().x()); assertEquals(old.touch().width(), entry.touch().width()); assertEquals(entry.visual().y() + Math.round(24 * density), entry.touch().height());
+            DockGeometry.Chrome before = DockGeometry.panelEntryChrome(old, density), after = DockGeometry.panelEntryChrome(entry, density);
+            assertEquals(before.firstHandle().x(), after.firstHandle().x()); assertEquals(before.secondHandle().x(), after.secondHandle().x());
+            assertEquals(before.firstHandle().y() + inset, after.firstHandle().y()); assertEquals(before.secondHandle().y() + inset, after.secondHandle().y());
+            assertEquals(before.firstHandle().width(), after.firstHandle().width()); assertEquals(before.firstHandle().height(), after.firstHandle().height());
+            assertEquals(entry.touch().bottom(), entry.panel().y());
+        }
+        assertEquals(0, DockGeometry.panelEntryTopInset("bottom_right", 100, 2.125f));
+        assertEquals(Math.round(20 * 2.125f) + Math.round(2 * 2.125f), DockGeometry.panelEntryTopInset("top_left", 100, 2.125f));
+    }
+    @Test public void invertedStatusStartsAtCameraSafeTopWithEntryBelowIt() {
+        DockGeometry.Box cut = new DockGeometry.Box(0, 0, 369, 66);
+        for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (int scale : new int[]{50, 70, 100, 150}) {
+            DockGeometry.Placement dock = DockGeometry.resolve(748, 720, List.of(cut), density, 1, .46f, .088f, true);
+            DockGeometry.Box safe = DockGeometry.panelContent(dock, 748, 720, List.of(cut));
+            int height = Math.round(Math.round(20 * density) * scale / 100f);
+            DockGeometry.Box status = DockGeometry.statusBar(safe, 748, height, density);
+            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, 748, 720, List.of(cut), density, 24, "top_left", DockGeometry.panelEntryTopInset("top_left", scale, density));
+            assertEquals(cut.bottom(), status.y()); assertEquals(0, status.x()); assertEquals(748, status.width());
+            assertEquals(status.bottom() + Math.round(2 * density), entry.visual().y());
+            assertEquals(cut.bottom(), entry.touch().y()); assertEquals(entry.visual().bottom(), entry.panel().y());
+        }
+    }
     @Test public void hubReclaimsEntryBandButKeepsStatusDockAndHomeBounds() {
         DockGeometry.Box dock = new DockGeometry.Box(6, 660, 367, 60);
         DockGeometry.Placement placement = new DockGeometry.Placement(dock, dock, new DockGeometry.Box(0, 39, 748, 575), DockGeometry.BOTTOM, false);
-        assertEquals(new DockGeometry.Box(0, 39, 748, 615), DockGeometry.hubContent(placement, 748, 720, List.of(), 66));
-        assertEquals(660, DockGeometry.hubContent(placement, 748, 720, List.of(), 0).bottom());
+        assertEquals(new DockGeometry.Box(0, 33, 748, 621), DockGeometry.hubContent(placement, 748, 720, List.of(), new DockGeometry.Box(0, 0, 748, 654)));
+        assertEquals(660, DockGeometry.hubContent(placement, 748, 720, List.of(), new DockGeometry.Box(0, 0, 748, 720)).bottom());
         DockGeometry.Box camera = new DockGeometry.Box(390, 630, 358, 90);
-        assertEquals(630, DockGeometry.hubContent(placement, 748, 720, List.of(camera), 0).bottom());
+        assertEquals(630, DockGeometry.hubContent(placement, 748, 720, List.of(camera), new DockGeometry.Box(0, 0, 748, 720)).bottom());
     }
-    @Test public void panelHandlesRemainHorizontalAtBottomRightAcrossAllRotations() {
-        DockGeometry.Box[] cuts = {new DockGeometry.Box(351, 682, 369, 66), new DockGeometry.Box(0, 351, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(682, 0, 66, 369)};
-        for (float density : new float[]{2.125f, 2.75f}) for (int home : new int[]{0, 24, 90}) for (int rotation = 0; rotation < 4; rotation++) {
-            int width = rotation % 2 == 0 ? 720 : 748, height = rotation % 2 == 0 ? 748 : 720, margin = Math.max(4, Math.round(3 * density));
-            DockGeometry.Placement dock = DockGeometry.resolve(width, height, List.of(cuts[rotation]), density, (rotation + 3) % 4, .46f, .088f, true);
-            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, width, height, List.of(cuts[rotation]), density, home);
-            DockGeometry.Box strip = entry.touch(), cut = cuts[rotation];
-            assertEquals(DockGeometry.BOTTOM, entry.edge()); assertFalse(entry.vertical()); assertTrue(entry.measured());
-            assertTrue(strip.width() > strip.height()); assertTrue(strip.x() >= width / 2 - margin);
-            assertTrue(strip.y() >= 0 && strip.right() <= width && strip.bottom() <= height - home);
-            assertTrue(strip.right() <= cut.x() || strip.x() >= cut.right() || strip.bottom() <= cut.y() || strip.y() >= cut.bottom());
-            assertTrue(strip.right() <= dock.touch().x() || strip.x() >= dock.touch().right() || strip.bottom() <= dock.touch().y() || strip.y() >= dock.touch().bottom());
-            assertEquals(strip.y(), entry.panel().bottom());
-            assertEquals(Math.min(rotation == 0 ? cut.y() : height, height - home), strip.bottom());
-            if (rotation == 0) assertTrue(strip.x() > cut.x());
-            DockGeometry.Chrome chrome = DockGeometry.panelEntryChrome(entry, density);
-            assertEquals(chrome.firstHandle().y(), chrome.secondHandle().y());
-            assertTrue(chrome.firstHandle().width() > chrome.firstHandle().height());
-            assertEquals(Math.round(density), strip.height() - chrome.firstHandle().bottom());
-            assertEquals(Math.round(density), strip.height() - chrome.secondHandle().bottom());
+    @Test public void upsideDownLauncherMovesAboveNavigationWithEveryRegionUnchanged() {
+        DockGeometry.Box dock = new DockGeometry.Box(375, 0, 367, 60), camera = new DockGeometry.Box(0, 0, 369, 66);
+        DockGeometry.Placement placement = new DockGeometry.Placement(dock, dock, new DockGeometry.Box(0, 151, 748, 569), DockGeometry.TOP, true);
+        DockGeometry.Box baseline = DockGeometry.hubContent(placement, 748, 720, List.of(camera), new DockGeometry.Box(0, 0, 748, 720));
+        for (int navigation : new int[]{24, 32, 66, 85}) {
+            DockGeometry.Box shifted = DockGeometry.hubContent(placement, 748, 720, List.of(camera), new DockGeometry.Box(0, 0, 748, 720 - navigation));
+            assertEquals(baseline.y() - navigation, shifted.y()); assertEquals(baseline.height(), shifted.height());
+            assertEquals(baseline.width(), shifted.width()); assertEquals(720 - navigation, shifted.bottom()); assertTrue(shifted.y() >= camera.bottom());
+            for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (boolean right : new boolean[]{false, true}) for (boolean nativePaging : new boolean[]{false, true}) {
+                assertEquals(AppLauncherStyle.hubGeometry(baseline.width(), baseline.height(), density, right, nativePaging), AppLauncherStyle.hubGeometry(shifted.width(), shifted.height(), density, right, nativePaging));
+            }
         }
+        assertEquals(baseline, DockGeometry.hubContent(placement, 748, 720, List.of(camera), new DockGeometry.Box(0, 0, 748, 720)));
+    }
+    @Test public void launcherShiftStopsAtPhysicalCutoutWhenThereIsNoMoreRoom() {
+        DockGeometry.Box dock = new DockGeometry.Box(375, 0, 367, 60), camera = new DockGeometry.Box(0, 0, 369, 66);
+        DockGeometry.Placement placement = new DockGeometry.Placement(dock, dock, new DockGeometry.Box(0, 151, 748, 569), DockGeometry.TOP, true);
+        DockGeometry.Box shifted = DockGeometry.hubContent(placement, 748, 720, List.of(camera), new DockGeometry.Box(0, 0, 748, 600));
+        assertEquals(camera.bottom(), shifted.y()); assertEquals(600, shifted.bottom()); assertEquals(534, shifted.height());
+        DockGeometry.Box bottomCamera = new DockGeometry.Box(379, 654, 369, 66);
+        DockGeometry.Placement bottomDock = new DockGeometry.Placement(new DockGeometry.Box(6, 660, 367, 60), dock, new DockGeometry.Box(0, 39, 748, 575), DockGeometry.BOTTOM, true);
+        assertEquals(DockGeometry.hubContent(bottomDock, 748, 720, List.of(bottomCamera), new DockGeometry.Box(0, 0, 748, 720)), DockGeometry.hubContent(bottomDock, 748, 720, List.of(bottomCamera), new DockGeometry.Box(0, 0, 748, 654)));
+    }
+    @Test public void systemEdgesConstrainEveryRotationWithoutDuplicatingCutoutDepths() {
+        DockGeometry.Box[] cuts = {new DockGeometry.Box(379, 654, 369, 66), new DockGeometry.Box(654, 0, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(0, 379, 66, 369)};
+        for (int rotation = 0; rotation < 4; rotation++) {
+            int width = rotation % 2 == 0 ? 748 : 720, height = rotation % 2 == 0 ? 720 : 748;
+            DockGeometry.Placement dock = DockGeometry.resolve(width, height, List.of(cuts[rotation]), 2.125f, (rotation + 3) % 4, .46f, .088f, true);
+            DockGeometry.Box physical = DockGeometry.panelContent(dock, width, height, List.of(cuts[rotation]));
+            for (DockGeometry.Box system : List.of(new DockGeometry.Box(0, 0, width, height - 84), new DockGeometry.Box(84, 0, width - 84, height), new DockGeometry.Box(0, 84, width, height - 84), new DockGeometry.Box(0, 0, width - 84, height), new DockGeometry.Box(3, 24, width - 8, height - 56))) {
+                DockGeometry.Box content = physical.intersect(system), hub = DockGeometry.hubContent(dock, width, height, List.of(cuts[rotation]), system);
+                assertEquals(Math.max(physical.x(), system.x()), content.x()); assertEquals(Math.max(physical.y(), system.y()), content.y());
+                assertEquals(Math.min(physical.right(), system.right()), content.right()); assertEquals(Math.min(physical.bottom(), system.bottom()), content.bottom());
+                assertEquals(content, content.intersect(system));
+                for (DockGeometry.Box area : List.of(content, hub)) {
+                    assertTrue(area.x() >= system.x() && area.y() >= system.y());
+                    assertTrue(area.right() <= system.right() && area.bottom() <= system.bottom());
+                }
+            }
+            assertEquals(physical, physical.intersect(new DockGeometry.Box(0, 0, width, height)));
+        }
+    }
+    @Test public void launcherBottomShiftCannotEnterTheSystemTopOrSideRegions() {
+        DockGeometry.Box dock = new DockGeometry.Box(375, 0, 367, 60), camera = new DockGeometry.Box(0, 0, 369, 66);
+        DockGeometry.Placement placement = new DockGeometry.Placement(dock, dock, new DockGeometry.Box(0, 151, 748, 569), DockGeometry.TOP, true);
+        DockGeometry.Box safe = new DockGeometry.Box(24, 100, 688, 500);
+        assertEquals(safe, DockGeometry.hubContent(placement, 748, 720, List.of(camera), safe));
+        assertEquals(new DockGeometry.Box(24, 151, 688, 569), DockGeometry.hubContent(placement, 748, 720, List.of(camera), new DockGeometry.Box(24, 100, 688, 620)));
+    }
+    @Test public void selectedCornersRemainHorizontalAndClearOfCameraDockAndHome() {
+        DockGeometry.Box[] cuts = {new DockGeometry.Box(379, 654, 369, 66), new DockGeometry.Box(654, 0, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(0, 379, 66, 369)};
+        for (float density : new float[]{2.125f, 2.75f}) for (int home : new int[]{0, 24, 90}) for (int rotation = 0; rotation < 4; rotation++) for (String position : new String[]{"top_left", "top_right", "bottom_right"}) {
+            if (!Prefs.validEntryPosition(rotation, position)) continue;
+            int width = rotation % 2 == 0 ? 748 : 720, height = rotation % 2 == 0 ? 720 : 748, margin = Math.max(4, Math.round(3 * density));
+            DockGeometry.Placement dock = DockGeometry.resolve(width, height, List.of(cuts[rotation]), density, (rotation + 3) % 4, .46f, .088f, true);
+            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, width, height, List.of(cuts[rotation]), density, home, position, DockGeometry.panelEntryTopInset(position, 70, density));
+            DockGeometry.Box strip = entry.touch(), cut = cuts[rotation], button = dock.touch(); boolean top = !position.equals("bottom_right");
+            assertEquals(top ? DockGeometry.TOP : DockGeometry.BOTTOM, entry.edge()); assertFalse(entry.vertical()); assertTrue(entry.measured());
+            assertTrue(strip.width() > strip.height()); assertTrue(strip.x() >= 0 && strip.y() >= 0 && strip.right() <= width && strip.bottom() <= height);
+            assertTrue(strip.right() <= cut.x() || strip.x() >= cut.right() || strip.bottom() <= cut.y() || strip.y() >= cut.bottom());
+            assertTrue(strip.right() <= button.x() || strip.x() >= button.right() || strip.bottom() <= button.y() || strip.y() >= button.bottom());
+            if (position.equals("top_left")) assertTrue(strip.x() < width / 2); else assertTrue(strip.right() > width / 2);
+            if (top) { assertTrue(strip.y() < height / 2); assertEquals(strip.bottom(), entry.panel().y()); }
+            else { assertEquals(cut.x() + margin, strip.x()); assertEquals(Math.min(cut.y(), height - home), strip.bottom()); assertEquals(strip.y(), entry.panel().bottom()); }
+            DockGeometry.Chrome chrome = DockGeometry.panelEntryChrome(entry, density);
+            assertEquals(chrome.firstHandle().y(), chrome.secondHandle().y()); assertTrue(chrome.firstHandle().width() > chrome.firstHandle().height());
+        }
+        assertFalse(Prefs.validEntryPosition(0, "top_right")); assertFalse(Prefs.validEntryPosition(2, "top_right"));
+        assertFalse(Prefs.validEntryPosition(1, "bottom_right")); assertFalse(Prefs.validEntryPosition(3, "bottom_right"));
     }
     @Test public void missingCutoutStillKeepsBottomUpwardEntryWithCalibratedNormalPosture() {
         for (int corner = 0; corner < 4; corner++) {
             DockGeometry.Placement dock = DockGeometry.resolve(720, 748, List.of(), 2.125f, corner, .46f, .088f, false);
-            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, 720, 748, List.of(), 2.125f, 90);
+            DockGeometry.Placement entry = DockGeometry.panelEntry(dock, dock, 720, 748, List.of(), 2.125f, 90, "bottom_right");
             assertFalse(entry.measured()); assertEquals(DockGeometry.BOTTOM, entry.edge()); assertFalse(entry.vertical());
             assertTrue(entry.touch().width() > entry.touch().height());
             assertTrue(entry.touch().x() >= 0 && entry.touch().y() >= 0 && entry.touch().right() <= 720 && entry.touch().bottom() <= 658);
@@ -49,7 +171,7 @@ public class DockGeometryTest {
         DockGeometry.Placement original = DockGeometry.resolve(748, 720, List.of(cut), 2.125f, 2, .46f, .088f, true);
         for (int gap : new int[]{0, 16, 48}) {
             DockGeometry.Placement moved = DockGeometry.avoidEdge(original, 748, 720, 48, gap);
-            DockGeometry.Box entry = DockGeometry.panelEntry(original, moved, 748, 720, List.of(cut), 2.125f, 24).touch(), touch = moved.touch();
+            DockGeometry.Box entry = DockGeometry.panelEntry(original, moved, 748, 720, List.of(cut), 2.125f, 24, "top_right").touch(), touch = moved.touch();
             assertTrue(entry.right() <= touch.x() || entry.x() >= touch.right() || entry.bottom() <= touch.y() || entry.y() >= touch.bottom());
             assertTrue(entry.width() > entry.height());
         }

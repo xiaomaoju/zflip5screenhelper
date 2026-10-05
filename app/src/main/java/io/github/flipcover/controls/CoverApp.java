@@ -7,6 +7,7 @@ public final class CoverApp extends Application {
     private AppCatalogCache catalog;
     private NativeWidgetBridge widgets;
     private LauncherWidgetBridge launcherWidgets;
+    private InputDevices inputs;
     private final AppLauncher launcher = new AppLauncher();
     private final RecentTasks.Locks taskLocks = new RecentTasks.Locks();
     private android.content.res.Configuration catalogConfiguration;
@@ -16,6 +17,7 @@ public final class CoverApp extends Application {
         catalog = new AppCatalogCache(this);
         catalogConfiguration = new android.content.res.Configuration(getResources().getConfiguration());
         catalog.warm();
+        new Prefs(this).migrateInputTile();
         widgets(this).refresh();
         launcherWidgets(this).refresh();
     }
@@ -32,6 +34,7 @@ public final class CoverApp extends Application {
         return app.launcherWidgets;
     }
     static RecentTasks.Locks taskLocks(android.content.Context context) { return ((CoverApp) context.getApplicationContext()).taskLocks; }
+    static InputDevices inputs(android.content.Context context) { CoverApp app = (CoverApp) context.getApplicationContext(); if (app.inputs == null) app.inputs = new InputDevices(app); return app.inputs; }
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration) {
         super.onConfigurationChanged(configuration);
         int changes = catalogConfiguration.updateFrom(configuration);

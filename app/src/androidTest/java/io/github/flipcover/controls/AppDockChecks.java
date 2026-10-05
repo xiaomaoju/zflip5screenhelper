@@ -35,7 +35,8 @@ final class AppDockChecks {
     private void main(Runnable action) { Throwable[] error = {null}; instrumentation.runOnMainSync(() -> { try { action.run(); } catch (Throwable failure) { error[0] = failure; } }); if (error[0] != null) throw new AssertionError(error[0]); instrumentation.waitForIdleSync(); }
     private <T extends View> T find(String tag) { return hub.findViewWithTag(tag); }
     private List<View> recentItems() { List<View> result = new ArrayList<>(); ViewGroup row = find("hub-dock"); for (int i = 0; i < row.getChildCount(); i++) if (row.getChildAt(i).getTag(R.id.dock_recent_task) != null) result.add(row.getChildAt(i)); return result; }
-    String run() throws Exception {
+    String run() throws Exception { return run(false); }
+    String run(boolean placementOnly) throws Exception {
         activity = instrumentation.startActivitySync(new Intent(instrumentation.getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         prefs = new Prefs(activity); prefs.data.edit().clear().putString("pinned_action", "home").putBoolean("hub_default_migrated", true).putString("dock", "[\"back\",\"rotation\"]").commit();
         prefs = new Prefs(activity);
@@ -58,6 +59,24 @@ final class AppDockChecks {
             FrameLayout root = new FrameLayout(activity); root.setBackgroundColor(0xFF172234);
             FrameLayout.LayoutParams bounds = new FrameLayout.LayoutParams(-1, -1); bounds.setMargins(Ui.dp(activity, 4), Ui.dp(activity, 28), Ui.dp(activity, 4), Ui.dp(activity, 32)); root.addView(hub, bounds); activity.setContentView(root);
         });
+        main(() -> {
+            AppDockView dock = (AppDockView) find("hub-dock-area").getParent();
+            for (List<RecentTasks.Task> recent : List.of(List.<RecentTasks.Task>of(), tasks, tasks.subList(0, 1), tasks)) {
+                hub.recentResult(recent, null);
+                checkPlacement(dock);
+            }
+            List<String> pins = List.copyOf(prefs.hubPins()); ViewGroup row = find("hub-dock");
+            int[] origin = new int[2], location = new int[2]; dock.getLocationOnScreen(origin); row.getLocationOnScreen(location);
+            require(dock.dropTarget(pins.get(pins.size() - 1), location[0] - origin[0] + row.getChildAt(1).getLeft() + 1, location[1] - origin[1] + row.getHeight() / 2f) == 0, "drag preview can reorder a fixed app without saving");
+            checkPlacement(dock); require(prefs.hubPins().equals(pins), "preview preserves saved fixed order");
+            dock.catalogChanged(); checkPlacement(dock);
+            dock.clearDrop(); checkPlacement(dock); require(dock.dropOrder() == null && prefs.hubPins().equals(pins), "cancel removes preview and preserves saved order");
+            for (int i = 0; i < 3; i++) { hub.setExpanded(true); checkPlacement(dock); hub.setExpanded(false); checkPlacement(dock); }
+        });
+        if (placementOnly) {
+            main(() -> { hub.dispose(); activity.setContentView(new FrameLayout(activity)); CoverApp.taskLocks(activity).clear(); activity.finish(); });
+            return "PASS: dock-pin-placement; " + assertions + " assertions; fixed and recent apps share immediate placement across refresh, preview, cancel and reopen";
+        }
         main(() -> {
             require(!hub.expanded() && !find("hub-grid").isShown() && find("hub-dock").isShown(), "Dock opens without catalog or sidebar");
             require(find("dock-dismiss-backdrop").isShown() && !find("hub-search").hasFocus(), "temporary blank region dismisses and does not summon keyboard");
@@ -104,6 +123,12 @@ final class AppDockChecks {
         main(() -> { CoverApp.taskLocks(activity).clear(); activity.finish(); });
         return "PASS: standalone-dock; " + assertions + " assertions; component and captured launch boundary, not Samsung overlay/privileged task validation";
     }
+    private void checkPlacement(AppDockView dock) {
+        dock.measure(View.MeasureSpec.makeMeasureSpec(dock.getWidth(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        dock.layout(dock.getLeft(), dock.getTop(), dock.getRight(), dock.getTop() + dock.getMeasuredHeight());
+        ViewGroup row = find("hub-dock");
+        for (int i = 0; i < row.getChildCount(); i++) require(row.getChildAt(i).getTranslationX() == 0 && row.getChildAt(i).getTranslationY() == 0, "fixed and recent cells immediately share their final layout positions");
+    }
     private void checkLaunchDismissal(String app) throws Exception {
         ImageReader image = ImageReader.newInstance(720, 748, android.graphics.PixelFormat.RGBA_8888, 2);
         VirtualDisplay virtual = activity.getSystemService(DisplayManager.class).createVirtualDisplay("Dock launch check", 720, 748, 340, image.getSurface(), DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION);
@@ -114,13 +139,14 @@ final class AppDockChecks {
         ContextWrapper captured = new ContextWrapper(activity) {
             @Override public void startActivity(Intent intent, Bundle options) { starts[0]++; target[0] = options.getInt("android.activity.launchDisplayId", -1); if (reject[0]) throw new android.content.ActivityNotFoundException("test rejection"); }
         };
+        CoverService previousService = CoverService.instance;
         try {
             prefs.data.edit().putInt("display", virtual.getDisplay().getDisplayId()).putBoolean("enabled", true).commit();
             for (boolean expanded : new boolean[]{false, true}) {
                 CoverService[] owner = {null}; AppHubView[] launched = {null}, replacement = {null};
                 main(() -> {
                     try {
-                        owner[0] = new CoverService(); attach.invoke(owner[0], captured); owner[0].prefs = prefs; owner[0].screenContext = activity; owner[0].display = virtual.getDisplay();
+                        owner[0] = new CoverService(); attach.invoke(owner[0], captured); owner[0].prefs = prefs; owner[0].screenContext = activity; owner[0].display = virtual.getDisplay(); CoverService.instance = owner[0];
                         launched[0] = new AppHubView(activity, prefs, new AppHubView.Listener() { public void action(String id) { owner[0].launchApp(id); } public void editFavorites() { } public void editPinned() { } public void expand(boolean value) { } public void close() { } });
                         launched[0].setExpanded(expanded); activity.setContentView(owner[0].attachHubContent(launched[0])); hubField.set(owner[0], launched[0]);
                     } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
@@ -145,13 +171,14 @@ final class AppDockChecks {
                             require(!replacement[0].expanded() && !replacement[0].showingTasks() && !replacement[0].recentBusy(), "task failure during exit neither switches page nor leaves refresh busy"); replacement[0].reopen();
                             java.lang.reflect.Field animation = AppHubView.class.getDeclaredField("revealAnimation"); animation.setAccessible(true); android.animation.ValueAnimator reopening = (android.animation.ValueAnimator) animation.get(replacement[0]); if (reopening != null) reopening.end();
                             owner[0].finishHubTask(launched[0], task, new ShizukuBridge.Result(false, "stale failure", "")); require(hubField.get(owner[0]) == replacement[0], "old task failure cannot alter rebuilt UI");
-                            owner[0].finishHubTask(launched[0], task, new ShizukuBridge.Result(true, "", "{\"state\":\"opened\"}")); finishSharedExit(owner[0], replacement[0], hubField, "confirmed task recovery");
+                            owner[0].finishHubTask(launched[0], task, new ShizukuBridge.Result(true, "", "{\"state\":\"opened\"}")); require(hubField.get(owner[0]) == replacement[0] && !replacement[0].closing(), "old task success cannot close rebuilt UI");
+                            owner[0].finishHubTask(replacement[0], task, new ShizukuBridge.Result(true, "", "{\"state\":\"opened\"}")); finishSharedExit(owner[0], replacement[0], hubField, "confirmed task recovery");
                         } finally { CoverService.instance = previous; }
                     } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
                 });
             }
             require(starts[0] == 4, "both entry modes reached accepted and rejected activity boundaries");
-        } finally { prefs.data.edit().remove("display").putBoolean("enabled", false).commit(); virtual.release(); image.close(); }
+        } finally { CoverService.instance = previousService; prefs.data.edit().remove("display").putBoolean("enabled", false).commit(); virtual.release(); image.close(); }
     }
     private void finishSharedExit(CoverService owner, AppHubView surface, Field hubField, String trigger) throws ReflectiveOperationException {
         Field field = AppHubView.class.getDeclaredField("revealAnimation"); field.setAccessible(true); android.animation.ValueAnimator animation = (android.animation.ValueAnimator) field.get(surface);

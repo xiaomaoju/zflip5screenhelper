@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Flip外屏助手</string>
+    <string name="settings_support">免费软件,为爱发电,有问题和建议请联系QQ:769954413</string>
+    <string name="update_check">检查更新</string>
+    <string name="update_recheck">重新检查</string>
+    <string name="update_download">下载更新</string>
+    <string name="update_install">安装更新</string>
+    <string name="update_allow_install">允许安装更新</string>
+    <string name="update_cancel">取消</string>
+    <string name="update_back">返回</string>
+    <string name="update_checking">检查中…</string>
+    <string name="update_downloading">下载中…</string>
+    <string name="update_verifying">校验中…</string>
+    <string name="update_installer_opened">已打开安装器</string>
+</resources>

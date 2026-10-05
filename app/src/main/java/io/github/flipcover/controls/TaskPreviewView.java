@@ -39,38 +39,56 @@ final class TaskPreviewView extends View {
         }));
     }
     void content(Bitmap bitmap, Drawable icon) {
+        content(bitmap, icon, true);
+    }
+    void content(Bitmap bitmap, Drawable icon, boolean animateReveal) {
         if (this.bitmap == bitmap) { if (this.icon != icon) { this.icon = icon; if (bitmap == null) invalidate(); } return; }
         if (reveal != null) { reveal.cancel(); reveal = null; }
         this.bitmap = bitmap; this.icon = icon; optics = null;
         image = bitmap == null ? null : new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
         if (image != null && Build.VERSION.SDK_INT >= 33) image.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
         pictureAlpha = 1;
-        if (bitmap != null && isAttachedToWindow() && isShown() && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+        if (bitmap != null && animateReveal && isAttachedToWindow() && isShown() && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             pictureAlpha = 0; reveal = android.animation.ValueAnimator.ofFloat(0, 1); reveal.setDuration(120);
             reveal.addUpdateListener(animation -> { pictureAlpha = (float) animation.getAnimatedValue(); invalidate(); }); reveal.start();
         }
         invalidate();
     }
     void locked(boolean value) { if (locked != value) { locked = value; invalidate(); } }
-    void pull(float value) {
+    void pull(float value) { pull(value, false, .5f); }
+    /** Driven by the task page's shared solver; labels and lock badges retain their original geometry. */
+    void force(float stretch, boolean horizontal, float rotation) {
         if (elasticity != null) { elasticity.cancel(); elasticity = null; }
-        pull = Math.max(0, Math.min(1, value)); setScaleX(1 - .06f * pull); setScaleY(1 + .08f * pull); invalidate();
+        float nextPull = Math.min(TaskSpring.STRENGTH, stretch / .18f);
+        setPivotX(getWidth() * .5f); setPivotY(getHeight() * .5f);
+        setScaleX(1 + (horizontal ? stretch : -stretch * .55f)); setScaleY(1 + (horizontal ? -stretch * .55f : stretch)); setRotation(rotation);
+        if (pull != nextPull) { pull = nextPull; invalidate(); }
+    }
+    void pull(float value, boolean horizontal, float anchor) {
+        if (elasticity != null) { elasticity.cancel(); elasticity = null; }
+        pull = Math.max(0, Math.min(1, value)) * TaskSpring.STRENGTH; setPivotX(getWidth() * anchor); setPivotY(getHeight() * .5f);
+        setScaleX(1 + (horizontal ? .18f : -.10f) * pull); setScaleY(1 + (horizontal ? -.10f : .18f) * pull); invalidate();
     }
     void releaseUp() {
         if (elasticity != null) { elasticity.cancel(); elasticity = null; }
         if (!android.animation.ValueAnimator.areAnimatorsEnabled() || !isAttachedToWindow()) { resetPull(); return; }
-        elasticity = android.animation.ValueAnimator.ofFloat(pull, 1.35f, 0); elasticity.setDuration(320);
+        elasticity = android.animation.ValueAnimator.ofFloat(pull, 1.35f * TaskSpring.STRENGTH, 0); elasticity.setDuration(320);
         elasticity.setInterpolator(new android.view.animation.PathInterpolator(.2f, 0, .25f, 1));
-        elasticity.addUpdateListener(animation -> { pull = (float) animation.getAnimatedValue(); setScaleX(1 - .06f * pull); setScaleY(1 + .08f * pull); invalidate(); }); elasticity.start();
+        elasticity.addUpdateListener(animation -> { pull = (float) animation.getAnimatedValue(); setScaleX(1 - .10f * pull); setScaleY(1 + .18f * pull); invalidate(); }); elasticity.start();
     }
     void spring() {
         if (elasticity != null) { elasticity.cancel(); elasticity = null; }
         if (!android.animation.ValueAnimator.areAnimatorsEnabled() || !isAttachedToWindow()) { resetPull(); return; }
         if (pull == 0 && getScaleX() == 1 && getScaleY() == 1) return;
-        float from = pull, x = getScaleX(), y = getScaleY(); elasticity = android.animation.ValueAnimator.ofFloat(0, 1); elasticity.setDuration(300); elasticity.setInterpolator(new android.view.animation.OvershootInterpolator(1.1f));
+        float from = pull, x = getScaleX(), y = getScaleY(); elasticity = android.animation.ValueAnimator.ofFloat(0, 1); elasticity.setDuration(TaskSpring.DURATION); elasticity.setInterpolator(TaskSpring::progress);
         elasticity.addUpdateListener(animation -> { float value = (float) animation.getAnimatedValue(); pull = Math.max(0, from * (1 - value)); setScaleX(x + (1 - x) * value); setScaleY(y + (1 - y) * value); invalidate(); }); elasticity.start();
     }
-    void resetPull() { if (elasticity != null) { elasticity.cancel(); elasticity = null; } pull = 0; setScaleX(1); setScaleY(1); invalidate(); }
+    void rebound(float x, float y, float remaining) {
+        if (elasticity != null) { elasticity.cancel(); elasticity = null; }
+        pull = Math.max(0, Math.abs(x - 1) / .18f * remaining);
+        setScaleX(1 + (x - 1) * remaining); setScaleY(1 + (y - 1) * remaining); invalidate();
+    }
+    void resetPull() { if (elasticity != null) { elasticity.cancel(); elasticity = null; } pull = 0; setScaleX(1); setScaleY(1); setRotation(0); invalidate(); }
     void glass(boolean enabled) { if (glass == enabled) return; glass = enabled; optics = null; invalidate(); }
     boolean refracting() { return glass && bitmap != null && Build.VERSION.SDK_INT >= 33 && isHardwareAccelerated(); }
     private int dp(float value) { return Ui.dp(getContext(), value); }
@@ -91,7 +109,7 @@ final class TaskPreviewView extends View {
         float width = bounds.width(), height = bounds.height(), radius = cornerRadius(this, width, height);
         int save = canvas.save(); canvas.translate(bounds.left, bounds.top);
         paint.setShader(null); paint.setColor(0xFF252E39); paint.setAlpha(255); paint.setStyle(Paint.Style.FILL);
-        if (!glass) canvas.drawRoundRect(0, 0, width, height, radius, radius, paint);
+        if (!glass || !(getBackground() instanceof GlassSurface)) canvas.drawRoundRect(0, 0, width, height, radius, radius, paint);
         if (icon != null && (image == null || pictureAlpha < 1)) {
             int side = Math.max(1, Math.min(dp(40), Math.round(Math.min(width, height) * .65f)));
             int x = Math.round((width - side) / 2), y = Math.round((height - side) / 2), alpha = icon.getAlpha();

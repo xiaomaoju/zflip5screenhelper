@@ -14,10 +14,10 @@ internal class DetailSheetMotion(private val card: View, private val veil: View)
     // Liquid Glass DampedDragAnimation uses separate X/Y springs (0.6/0.7, 250).
     // Match the travel's first rebound to the stronger, staggered scale rebounds.
     private val openingSpecs = arrayOf(
-        FloatSpringSpec(0.56f, 350f, 0.001f),
-        FloatSpringSpec(0.66f, 350f, 0.001f),
-        FloatSpringSpec(0.72f, 350f, 0.5f),
-        FloatSpringSpec(0.72f, 350f, 0.5f),
+        FloatSpringSpec(BuildConfig.MOTION_DETAIL_SHEET_SCALE_X_DAMPING, BuildConfig.MOTION_DETAIL_SHEET_STIFFNESS, 0.001f),
+        FloatSpringSpec(BuildConfig.MOTION_DETAIL_SHEET_SCALE_Y_DAMPING, BuildConfig.MOTION_DETAIL_SHEET_STIFFNESS, 0.001f),
+        FloatSpringSpec(BuildConfig.MOTION_DETAIL_SHEET_TRAVEL_DAMPING, BuildConfig.MOTION_DETAIL_SHEET_STIFFNESS, 0.5f),
+        FloatSpringSpec(BuildConfig.MOTION_DETAIL_SHEET_TRAVEL_DAMPING, BuildConfig.MOTION_DETAIL_SHEET_STIFFNESS, 0.5f),
         FloatSpringSpec(1f, 1000f, 0.001f)
     )
     private val closingSpecs = openingSpecs.copyOf().apply {
@@ -75,10 +75,12 @@ internal class DetailSheetMotion(private val card: View, private val veil: View)
         val halfY = card.height * values[1].coerceIn(0.001f, 1f) / 2f
         val rawX = card.left + card.width / 2f + values[2]
         val rawY = card.top + card.height / 2f + values[3]
-        val centerX = rawX.coerceIn(halfX, max(halfX, veil.width - halfX))
-        val centerY = rawY.coerceIn(halfY, max(halfY, veil.height - halfY))
-        val limitX = max(1f, 2f * min(centerX, veil.width - centerX) / max(1, card.width))
-        val limitY = max(1f, 2f * min(centerY, veil.height - centerY) / max(1, card.height))
+        val left = veil.paddingLeft.toFloat(); val right = (veil.width - veil.paddingRight).toFloat()
+        val top = veil.paddingTop.toFloat(); val bottom = (veil.height - veil.paddingBottom).toFloat()
+        val centerX = rawX.coerceIn(left + halfX, max(left + halfX, right - halfX))
+        val centerY = rawY.coerceIn(top + halfY, max(top + halfY, bottom - halfY))
+        val limitX = max(1f, 2f * min(centerX - left, right - centerX) / max(1, card.width))
+        val limitY = max(1f, 2f * min(centerY - top, bottom - centerY) / max(1, card.height))
         card.scaleX = values[0].coerceIn(0.001f, limitX)
         card.scaleY = values[1].coerceIn(0.001f, limitY)
         card.translationX = if (centerX == rawX) values[2] else centerX - card.left - card.width / 2f

@@ -11,7 +11,8 @@ public class LauncherHubGeometryTest {
             assertEquals(floating.bodyHeight(), nativeCard.bodyHeight()); assertEquals(floating.catalogLeft(), nativeCard.catalogLeft()); assertEquals(floating.catalogWidth(), nativeCard.catalogWidth());
             assertEquals(floating.railLeft(), nativeCard.railLeft()); assertEquals(floating.railListHeight(), nativeCard.railListHeight()); assertEquals(floating.gridWidth(), nativeCard.gridWidth()); assertEquals(floating.dockHeight(), nativeCard.dockHeight());
             assertEquals(nativeCard.pagerHeight() - floating.pagerHeight(), floating.gridHeight() - nativeCard.gridHeight());
-            assertEquals(620, nativeCard.bodyHeight() + nativeCard.dockHeight());
+            assertEquals(620, nativeCard.bodyHeight() + nativeCard.dockHeight() + 2 * Math.round(AppLauncherStyle.SURFACE_INSET * density));
+            assertEquals(748 - Math.round(AppLauncherStyle.SURFACE_INSET * density), nativeCard.catalogLeft() + nativeCard.catalogWidth() + (right ? Math.round((AppLauncherStyle.RAIL_WIDTH + AppLauncherStyle.RAIL_GAP) * density) : 0));
         }
     }
     @Test public void narrowHostHasNoNegativeBodyOrGridSizes() {

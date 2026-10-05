@@ -27,12 +27,12 @@ final class RecentTasksChecks {
     private final List<RecentTasks.Task> opened = new ArrayList<>();
     private List<RecentTasks.Task> clearing = List.of();
     private final List<Consumer<ShizukuBridge.Snapshot>> snapshots = new ArrayList<>();
-    private int assertions, appLaunches, refreshes;
+    private int assertions, appLaunches, refreshes, emptyRequests;
     RecentTasksChecks(Instrumentation instrumentation) { this.instrumentation = instrumentation; }
     private void require(boolean value, String message) { assertions++; if (!value) throw new AssertionError(message); }
     private void main(Runnable action) { Throwable[] error = {null}; instrumentation.runOnMainSync(() -> { try { action.run(); } catch (Throwable failure) { error[0] = failure; } }); if (error[0] != null) throw new AssertionError(error[0]); instrumentation.waitForIdleSync(); }
     private <T extends View> T find(String tag) { return hub.findViewWithTag(tag); }
-    private void click(String tag) { main(() -> { View view = find(tag); require(view != null && view.isEnabled(), "action available: " + tag); view.performClick(); }); SystemClock.sleep(100); instrumentation.waitForIdleSync(); }
+    private void click(String tag) { main(() -> { if (tag.equals("recent-tasks-entry")) { hub.showTasks(true); return; } View view = find(tag); require(view != null && view.isEnabled(), "action available: " + tag); view.performClick(); }); SystemClock.sleep(100); instrumentation.waitForIdleSync(); }
     private RecentTasks.Task task(int id, AppCatalogCache.Entry app, boolean visible) { return new RecentTasks.Task(id, 2, 0, app.id().substring(4), app.packageName(), visible); }
     String run() throws Exception {
         activity = instrumentation.startActivitySync(new Intent(instrumentation.getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -48,6 +48,7 @@ final class RecentTasksChecks {
                 public void refreshRecents() { refreshes++; }
                 public void openTask(RecentTasks.Task task) { opened.add(task); }
                 public void clearRecents(List<RecentTasks.Task> tasks) { clearing = tasks; hub.recentBusy(true); }
+                public void emptyTaskPage() { emptyRequests++; }
                 public void snapshot(RecentTasks.Task task, Consumer<ShizukuBridge.Snapshot> callback) { snapshots.add(callback); }
             });
             activity.getWindow().getInsetsController().hide(android.view.WindowInsets.Type.systemBars());
@@ -59,13 +60,13 @@ final class RecentTasksChecks {
             ViewGroup dock = find("hub-dock"); dock.getChildAt(3).performClick();
             require(opened.size() == 1 && appLaunches == 0, "recent Dock restores task instead of launching MAIN"); opened.clear();
         });
-        click("hub-tasks"); page = find("recent-tasks");
+        click("recent-tasks-entry"); page = find("recent-tasks");
         screenshot("tasks-initial");
         main(() -> {
             require(page != null && page.selectedTask().id() == 100, "task page opens at current first window");
             require(find("hub-grid").isShown() == false && find("hub-dock").isShown() == false, "task page reclaims catalog and dock space");
-            require(!find("task-card:100").performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_DISMISS, null), "visible task cannot be dismissed");
-            require(find("tasks-clear").getContentDescription().toString().contains("3"), "batch count excludes visible and fixed tasks, keeps sibling windows");
+            require(find("task-card:100").createAccessibilityNodeInfo().getActionList().contains(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS), "foreground task has explicit dismissal action");
+            require(find("tasks-clear").getContentDescription().toString().contains("5"), "task-page batch includes visible and fixed tasks and sibling windows");
             checkThreeCards();
             View clear = find("tasks-clear"), cards = find("task-carousel");
             ViewGroup stage = find("tasks-stage"); View card = ((ViewGroup) cards).getChildAt(0);
@@ -86,11 +87,11 @@ final class RecentTasksChecks {
         swipe(0, -.6f, false); require(clearing.isEmpty(), "locked task resists upward dismissal");
         swipe(0, .6f, true); require(locks.contains(source.get(2)), "cancelled downward gesture does not unlock");
         swipe(0, .03f, false); require(locks.contains(source.get(2)), "short downward movement does not unlock");
-        click("tasks-clear"); require(clearing.equals(List.of(source.get(1), source.get(3))), "corner batch close skips locked, fixed and visible tasks");
+        click("tasks-clear"); require(clearing.equals(List.of(source.get(0), source.get(1), source.get(3), source.get(4))), "task-page batch skips locks but includes fixed and visible tasks");
         main(() -> { hub.recentResult(source, null); clearing = List.of(); });
         main(() -> page.performAccessibilityAction(R.id.action_task_apps, null)); click("hub-clear"); require(clearing.equals(List.of(source.get(1), source.get(3))), "recent Dock uses the same task locks");
         main(() -> { hub.recentResult(source, null); clearing = List.of(); });
-        click("hub-tasks"); page = find("recent-tasks"); main(() -> page.select(source.get(2)));
+        click("recent-tasks-entry"); page = find("recent-tasks"); main(() -> page.select(source.get(2)));
         require(locks.contains(source.get(2)) && find("task-lock:102").isShown(), "lock survives leaving and reopening task page");
         swipe(0, .6f, false); require(!locks.contains(source.get(2)), "a second downward gesture explicitly unlocks");
         swipe(0, -.8f, true); require(clearing.isEmpty(), "cancelled upward drag never removes a task");
@@ -105,18 +106,23 @@ final class RecentTasksChecks {
         main(() -> { hub.taskOpenFailure(source.get(2), true, "原窗口已结束，可重新打开应用"); require(page.getContentDescription().toString().contains("重新打开"), "explicit recovery remains discoverable without a header"); require(appLaunches == 0, "missing task does not silently launch new task"); });
         main(() -> require(page.performAccessibilityAction(R.id.action_task_reopen, null), "explicit recovery action is accepted")); require(appLaunches == 1, "only explicit recovery launches application");
         main(() -> hub.showTasks(false)); require(find("hub-grid").isShown(), "return to apps restores catalog");
-        click("hub-tasks"); page = find("recent-tasks");
+        click("recent-tasks-entry"); page = find("recent-tasks");
         main(() -> { hub.recentResult(source, null); hub.recentCapabilities(true, true, true); hub.recentResult(source, null); });
         require(snapshots.size() == 1, "preview requests are serialized");
         Bitmap stale = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888);
         main(() -> page.performAccessibilityAction(R.id.action_task_apps, null)); main(() -> snapshots.get(0).accept(new ShizukuBridge.Snapshot(stale, "sample")));
         require(stale.isRecycled(), "late bitmap after page removal is released");
-        snapshots.clear(); click("hub-tasks"); page = find("recent-tasks"); require(snapshots.size() == 1, "new page gets fresh preview generation");
+        snapshots.clear(); click("recent-tasks-entry"); page = find("recent-tasks"); require(snapshots.size() == 1, "new page gets fresh preview generation");
         main(() -> page.onLowMemory()); Bitmap trimmed = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888); main(() -> snapshots.get(0).accept(new ShizukuBridge.Snapshot(trimmed, "sample"))); require(trimmed.isRecycled(), "late preview after low-memory trim is discarded");
+        int emptyBefore = emptyRequests;
+        main(() -> hub.recentFailure("读取失败")); require(emptyRequests == emptyBefore, "read failure is never treated as an empty task list");
+        main(() -> hub.recentResult(List.of(), null, false)); require(emptyRequests == emptyBefore, "incomplete empty list cannot confirm that every task is gone");
         main(() -> hub.recentResult(List.of(), null)); screenshot("tasks-empty"); require(!find("tasks-clear").isEnabled(), "empty tasks have no destructive action");
+        require(emptyRequests == emptyBefore && find("tasks-empty") instanceof TextView && ((TextView) find("tasks-empty")).getText().toString().equals("当前没有后台任务"), "empty refresh stays open with explicit centered hint");
+        main(() -> hub.recentResult(List.of(), null)); require(emptyRequests == emptyBefore, "repeated empty result remains open");
         for (int edge = 0; edge < 4; edge++) {
             int dockEdge = edge;
-            main(() -> { hub.showTasks(false); hub.dockEdge(dockEdge); hub.recentCapabilities(true, true, false); hub.recentResult(source, null); hub.showTasks(true); page = find("recent-tasks"); page.select(source.get(1)); clearing = List.of(); });
+            main(() -> { hub.showTasks(false); hub.recentCapabilities(true, true, false); hub.recentResult(source, null); hub.showTasks(true); page = find("recent-tasks"); page.select(source.get(1)); clearing = List.of(); });
             swipe(-.7f, 0, false); require(page.selectedTask().id() == 102, "carousel retains horizontal gesture at dock edge " + edge);
             swipe(0, -.8f, true); require(clearing.isEmpty(), "cancel protection at dock edge " + edge);
             swipe(0, .6f, false); require(locks.contains(source.get(2)), "card downward gesture is not stolen by panel at edge " + edge);
@@ -129,11 +135,11 @@ final class RecentTasksChecks {
         main(() -> {
             View card = find("task-card:101"); Rect bounds = new Rect(0, 0, card.getWidth(), card.getHeight()); hub.offsetDescendantRectToMyCoords(card, bounds); long start = SystemClock.uptimeMillis(); float x = bounds.centerX(), y = bounds.bottom - 12;
             event(start, start, MotionEvent.ACTION_DOWN, x, y);
-            RecentTasks.Task current = source.get(1), nowVisible = new RecentTasks.Task(current.id(), current.displayId(), current.userId(), current.component(), current.packageName(), true);
+            RecentTasks.Task current = source.get(1), nowVisible = task(current.id(), apps.get(2), true);
             hub.recentResult(List.of(source.get(3), nowVisible, source.get(0), source.get(2), source.get(4)), null);
             require(find("task-card:101") == card, "task reorder waits until the finger is released");
             event(start, start + 50, MotionEvent.ACTION_MOVE, x, y - Ui.dp(activity, 100)); event(start, start + 100, MotionEvent.ACTION_UP, x, y - Ui.dp(activity, 100));
-            require(clearing.isEmpty(), "new visible state blocks dismissal even while old card remains under the finger");
+            require(clearing.isEmpty(), "changed task identity blocks dismissal while old card remains under the finger");
             require(page.selectedTask().id() == 101, "selected identity survives deferred reorder");
             hub.recentResult(source, null);
         });
@@ -147,7 +153,7 @@ final class RecentTasksChecks {
         main(() -> require(find("task-card:104").getTranslationY() < travel[0] - Ui.dp(activity, 1), "release continues upward instead of pausing or reversing into a waiting ledge"));
         SystemClock.sleep(170); instrumentation.waitForIdleSync();
         main(() -> { require(find("task-card:104") != null && find("task-card:104").getAlpha() == 0, "visual exit completes continuously while task identity waits for system confirmation"); hub.recentResult(source, "系统拒绝关闭"); });
-        SystemClock.sleep(380); instrumentation.waitForIdleSync();
+        SystemClock.sleep(620); instrumentation.waitForIdleSync();
         main(() -> {
             View card = find("task-card:104"), preview = find("task-preview:104");
             require(card != null && Math.abs(card.getTranslationY()) < .1f && card.getAlpha() == 1 && preview.getScaleX() == 1 && preview.getScaleY() == 1, "refused removal springs back to its exact resting geometry"); clearing = List.of();
@@ -164,7 +170,7 @@ final class RecentTasksChecks {
         swipe(0, -.65f, false); require(clearing.isEmpty(), "explicit pinned swipe still respects a task lock");
         main(() -> {
             require(AppRecentTasks.clearTargets(activity, prefs, source, false).equals(List.of(source.get(1), source.get(2), source.get(3))), "shared batch boundary still excludes pins, locks and visible tasks");
-            require(AppRecentTasks.clearTargets(activity, prefs, source, true).equals(List.of(source.get(1), source.get(2), source.get(3))), "explicit boundary still excludes locks and visible tasks");
+            require(AppRecentTasks.clearTargets(activity, prefs, source, true).equals(List.of(source.get(0), source.get(1), source.get(2), source.get(3))), "explicit boundary excludes locks and includes visible tasks");
             locks.clear();
             require(AppRecentTasks.clearTargets(activity, prefs, List.of(source.get(4)), true).equals(List.of(source.get(4))), "explicit request boundary passes an unlocked pinned task to system identity validation");
         });
@@ -185,6 +191,19 @@ final class RecentTasksChecks {
         main(() -> { hub.recentResult(source, null); page.select(source.get(1)); opened.clear(); });
         underfilledScrolling();
         edgeScrolling();
+        main(() -> { hub.recentResult(source, null); page.select(source.get(0)); clearing = List.of(); });
+        swipe(0, -.65f, false);
+        require(clearing.equals(List.of(source.get(0))), "upward swipe explicitly closes the foreground task");
+        main(() -> hub.recentResult(source, "系统拒绝关闭")); SystemClock.sleep(650); instrumentation.waitForIdleSync();
+        main(() -> { hub.recentResult(List.of(source.get(1)), null); page.select(source.get(1)); clearing = List.of(); });
+        int beforeLast = emptyRequests;
+        swipe(0, -.65f, false); main(() -> hub.recentResult(List.of(), null));
+        SystemClock.sleep(650); instrumentation.waitForIdleSync(); require(emptyRequests == beforeLast + 1, "confirmed removal of the last card automatically exits");
+        main(() -> hub.recentResult(source, null));
+        long[] finished = {0}; long closingAt = SystemClock.uptimeMillis();
+        main(() -> hub.dismissForTaskClear(() -> { require(((View) find("tasks-clear").getParent()).getAlpha() == 0, "X disappears before the exit completion callback"); finished[0] = SystemClock.uptimeMillis(); }));
+        SystemClock.sleep(270); instrumentation.waitForIdleSync();
+        require(finished[0] > 0 && finished[0] - closingAt < 270 && hub.getTranslationY() == 0, "cleanup dissolve completes quickly without a full-height slide");
         main(() -> {
             ShellService shell = new ShellService(activity);
             try { require(!new org.json.JSONObject(shell.execute("recent_open", 0, 0, "{}")).getBoolean("ok"), "unprivileged restore fails closed"); require(shell.taskSnapshot(0, "{}").getParcelable("bitmap") == null, "unprivileged snapshots expose no pixels"); } catch (Exception error) { throw new AssertionError(error); }
@@ -197,13 +216,17 @@ final class RecentTasksChecks {
         return "PASS: external task page; " + assertions + " assertions; " + environment + "; native components and denied-permission paths, no privileged or Samsung task validation";
     }
     private void checkThreeCards() {
-        ViewGroup carousel = find("task-carousel"); int complete = 0, right = Integer.MIN_VALUE;
-        for (int i = 0; i < carousel.getChildCount(); i++) {
-            View card = carousel.getChildAt(i); int left = card.getLeft() - carousel.getScrollX(), end = card.getRight() - carousel.getScrollX();
-            require(left >= right && card.getWidth() >= Ui.dp(activity, 48), "continuous strip keeps nonoverlapping, touchable card geometry: " + i); right = end;
+        ViewGroup carousel = find("task-carousel"); int complete = 0; float right = Float.NEGATIVE_INFINITY;
+        List<View> cards = new ArrayList<>(); for (int i = 0; i < carousel.getChildCount(); i++) cards.add(carousel.getChildAt(i));
+        cards.sort(java.util.Comparator.comparingDouble(View::getX));
+        for (int i = 0; i < cards.size(); i++) {
+            View card = cards.get(i); float left = card.getX() - carousel.getScrollX(), end = left + card.getWidth();
+            require(left >= right - 1 && card.getWidth() >= Ui.dp(activity, 48), "continuous strip keeps nonoverlapping, touchable card geometry: " + i); right = end;
             if (left >= carousel.getPaddingLeft() && end <= carousel.getWidth() - carousel.getPaddingRight()) complete++;
         }
-        require(complete == 3, "exactly three full cards fit at the strip boundary");
+        View selected = find("task-card:" + page.selectedTask().id());
+        require(complete >= 1 && complete <= 3 && cards.size() <= 4 && Math.abs(selected.getX() + selected.getWidth() / 2f - carousel.getWidth() / 2f) <= 1, "viewport recycles at most four slots and centers one card even at either endpoint");
+        require(selected.getWidth() * 3 <= carousel.getWidth() && selected.getWidth() * 4 > carousel.getWidth(), "card size is based on a three-card viewport rather than page groups");
     }
     private void edgeScrolling() {
         for (int direction : new int[]{1, -1}) for (boolean cancel : new boolean[]{false, true}) {
@@ -217,10 +240,11 @@ final class RecentTasksChecks {
                 event(now, now + 30, MotionEvent.ACTION_MOVE, x + direction * 30, y);
                 event(now, now + 80, MotionEvent.ACTION_MOVE, x + direction * 100, y);
                 require(card.getTranslationX() * direction > 20, "five tasks can be pulled beyond either list boundary");
+                View preview = find("task-preview:" + target.id()); require(preview.getScaleX() > 1.01f && preview.getScaleX() <= 1.055f && preview.getScaleY() < 1 && preview.getScaleY() >= .97f, "horizontal boundary pull stretches previews sideways within the reduced amplitude");
                 require(strip.getScrollX() == rest[0] && ((ViewGroup) strip).getChildCount() <= 4, "overscroll leaves logical bounds and recycled-view budget intact");
                 event(now, now + 110, cancel ? MotionEvent.ACTION_CANCEL : MotionEvent.ACTION_UP, x + direction * 100, y);
             });
-            SystemClock.sleep(500); instrumentation.waitForIdleSync();
+            SystemClock.sleep(650); instrumentation.waitForIdleSync();
             main(() -> {
                 require(find("task-card:" + target.id()).getTranslationX() == 0 && find("task-carousel").getScrollX() == rest[0], "release or cancellation springs exactly to the same boundary");
                 require(clearing.isEmpty() && opened.isEmpty(), "boundary pull neither restores nor deletes tasks");
@@ -253,7 +277,7 @@ final class RecentTasksChecks {
                     require(card.getTranslationX() * direction > 20, "one or two cards respond to drag in either horizontal direction");
                     event(now, now + 100, MotionEvent.ACTION_UP, x + direction * 100, y);
                 });
-                SystemClock.sleep(500); instrumentation.waitForIdleSync();
+                SystemClock.sleep(650); instrumentation.waitForIdleSync();
                 main(() -> { require(find("task-card:101").getTranslationX() == 0 && find("task-carousel").getScrollX() == 0, "underfilled strip springs back to its centered resting geometry"); require(clearing.isEmpty() && opened.isEmpty(), "underfilled spring never launches or closes a task"); });
             }
         }

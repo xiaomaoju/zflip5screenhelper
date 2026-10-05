@@ -41,6 +41,7 @@ public final class MainActivity extends Activity {
     private ScrollView scroll;
     private FrameLayout rootLayer;
     private DetailSheet sheet;
+    private UpdateSettings updateSettings;
     private TextView statusLabel;
     private StatusBarView statusPreview;
     private boolean panelPreviewExpanded, bindingUI;
@@ -65,10 +66,10 @@ public final class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved); prefs = new Prefs(this);
-        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
+        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, () -> { if (rootLayer instanceof InputSurface input) input.cancelCommand(); else back(); });
         getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         if (saved != null) {
-            navigator.restore(saved.getBundle("navigation")); panelPreviewExpanded = saved.getBoolean("panel_preview");
+            inputMemory.restore(saved.getBundle("input_navigation")); navigator.restore(saved.getBundle("navigation")); panelPreviewExpanded = saved.getBoolean("panel_preview");
             pendingImportUri = saved.getString("import_uri"); draft = saved.getStringArrayList("draft"); draftKind = saved.getString("draft_kind");
             Bundle restoredOrder = saved.getBundle("order_state"); if (restoredOrder != null) orderState = restoredOrder;
             Bundle restoredLibrary = saved.getBundle("library_states"); if (restoredLibrary != null) libraryStates = restoredLibrary;
@@ -81,17 +82,19 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume(); main.removeCallbacks(statusRefresh); main.post(statusRefresh); CoverApp.bridge(this).connect();
+        if (updateSettings != null) updateSettings.refresh();
         if (statusPreview != null && statusPreviewHost != null && statusPreview.getParent() == null) statusPreviewHost.addView(statusPreview, new LinearLayout.LayoutParams(-1, statusPreview.heightPixels()));
     }
     @Override protected void onPause() {
         main.removeCallbacks(statusRefresh);
+        if (updateSettings != null) updateSettings.pause();
         if (orderList != null) orderList.cancelDrag();
         if (statusPreview != null && statusPreview.getParent() instanceof android.view.ViewGroup parent) parent.removeView(statusPreview);
         super.onPause();
     }
-    @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); worker.shutdown(); super.onDestroy(); }
+    @Override protected void onDestroy() { if (updateSettings != null) updateSettings.close(); main.removeCallbacksAndMessages(null); worker.shutdown(); super.onDestroy(); }
     @Override protected void onSaveInstanceState(Bundle out) {
-        saveLibraryState(); out.putBundle("library_states", libraryStates);
+        saveLibraryState(); out.putBundle("input_navigation", inputMemory.state()); out.putBundle("library_states", libraryStates);
         out.putBundle("order_state", orderList == null ? orderState : orderList.saveState());
         out.putString("import_uri", pendingImportUri); out.putBundle("navigation", navigator.save(scroll, body)); out.putBoolean("panel_preview", panelPreviewExpanded); out.putStringArrayList("draft", draft); out.putString("draft_kind", draftKind); super.onSaveInstanceState(out);
     }
@@ -104,6 +107,8 @@ public final class MainActivity extends Activity {
             case "dock", "panel", "favorites" -> editor(page, false);
             case "group_dock", "group_appearance", "group_apps", "group_device", "group_backup" -> categoryPage(page);
             case "status" -> statusSettings();
+            case "settings_scale" -> settingsScaleSettings();
+            case "status_apps" -> statusApplications();
             case "appearance" -> appearanceSettings();
             case "background" -> backgroundSettings();
             case "gestures" -> gestureSettings();
@@ -114,6 +119,7 @@ public final class MainActivity extends Activity {
             case "orientations" -> applicationList(true);
             case "app_orientation" -> { if (orientationPackage == null) applicationList(true); else appOrientation(); }
             case "hub" -> hubSettings();
+            case "input_devices" -> { begin("鼠标与触控板", "input_devices"); body.addView(new InputDevicePanel(this, false, null)); }
             case "hub_pin" -> orderEditor("hub_pin");
             case "order" -> orderEditor(editing);
             case "library" -> library(category, false);
@@ -126,16 +132,22 @@ public final class MainActivity extends Activity {
             default -> home();
         }
     }
+    private final InputNavigation.Memory inputMemory = new InputNavigation.Memory();
     private void begin(String title, String page) {
+        if (updateSettings != null) { updateSettings.close(); updateSettings = null; }
         saveLibraryState(); renderedLibrary = null;
         if (orderList != null) { orderState = orderList.saveState(); orderList.cancelDrag(); orderList = null; }
         if (!page.equals(route)) { pendingImportUri = null; importRequest++; }
         if (rootLayer != null) getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(rootLayer.getWindowToken(), 0);
         Bundle args = new Bundle(); args.putString("page", page); args.putString("editing", editing); args.putString("category", category); args.putString("package", orientationPackage); args.putString("title", orientationTitle);
         pageState = navigator.enter(args, scroll, body); route = page; statusLabel = null; statusPreview = null; statusPreviewHost = null; panelPreviewHost = null; statusUpdates.clear(); sheet = null;
-        rootLayer = new FrameLayout(this); rootLayer.setBackgroundColor(SettingsUi.BACKGROUND);
+        InputSurface inputRoot = new InputSurface(this); inputRoot.memory(inputMemory, "settings:" + page); inputRoot.navigation(this::back, () -> { });
+        inputRoot.shortcuts(id -> {
+            Runnable execute = () -> { CoverService service = CoverService.instance; if (id.equals("back")) back(); else if (service == null || getDisplay() == null || !service.inputShortcut(id, getDisplay().getDisplayId())) toast("请在已选择的外屏开启助手后使用快捷栏"); };
+            if (route.equals("order") && draft != null && !draft.equals(savedActions(draftKind))) confirm("放弃这次编辑？", "尚未完成的修改不会保存。", "放弃并继续", () -> { draft = null; draftKind = null; popPage(); execute.run(); }); else execute.run();
+        }); rootLayer = inputRoot; rootLayer.setBackgroundColor(SettingsUi.BACKGROUND);
         rootLayer.setOnApplyWindowInsetsListener((view, insets) -> { android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime()); view.setPadding(safe.left, safe.top, safe.right, safe.bottom); return insets; });
-        outer = SettingsUi.column(this); rootLayer.addView(outer, new FrameLayout.LayoutParams(-1, -1));
+        outer = SettingsUi.column(this); SettingsUi.Viewport viewport = new SettingsUi.Viewport(this, prefs.settingsScale()); viewport.addView(outer, new FrameLayout.LayoutParams(-1, -1)); rootLayer.addView(viewport, new FrameLayout.LayoutParams(-1, -1));
         LinearLayout header = SettingsUi.row(this); header.setMinimumHeight(Ui.dp(this, 52)); header.setPadding(Ui.dp(this, page.equals("main") ? 16 : 2), Ui.dp(this, 2), Ui.dp(this, 8), Ui.dp(this, 2));
         if (!page.equals("main")) { View back = SettingsUi.iconButton(this, R.drawable.ic_ms_arrow_back, "返回", this::back); back.setTag("settings-back"); header.addView(back); }
         TextView heading = SettingsUi.heading(this, title, 20); heading.setAccessibilityHeading(true); heading.setTag("settings-title"); header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
@@ -147,7 +159,7 @@ public final class MainActivity extends Activity {
     }
     // Android 13+ uses the registered OnBackInvokedDispatcher; this is only the API 30–32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
-    @Override public void onBackPressed() { back(); }
+    @Override public void onBackPressed() { if (rootLayer instanceof InputSurface input) input.cancelCommand(); else back(); }
     private void back() {
         if (sheet != null) { dismissSheet(); return; }
         if (route.equals("order") && draft != null && !draft.equals(savedActions(draftKind))) {
@@ -171,10 +183,11 @@ public final class MainActivity extends Activity {
         return List.of(
             new Setting("快捷栏与手势", "dock", R.drawable.ic_ms_tune, "按钮与布局", "数量 固定键 顺序 阻尼 快捷栏 Home 主页 锁屏 应用中心", () -> prefs.perPage() + " 个 / 页 · " + ActionCatalog.label(this, prefs.pinnedAction())),
             new Setting("快捷栏与手势", "visibility", R.drawable.ic_ms_home, "自动显示与收起", "隐藏 桌面 键盘 应用名单", () -> prefs.autoHideDock() ? "按前台应用自动收起" : "手动切换"),
-            new Setting("快捷栏与手势", "gestures", R.drawable.ic_ms_swap_vert, "手势与导航避让", "震动 偏移 白条 摄像头 上滑 通知", () -> prefs.data.getBoolean("gestures_enabled", true) ? "白条拖动已开启" : "白条拖动已关闭"),
+            new Setting("快捷栏与手势", "gestures", R.drawable.ic_ms_swap_vert, "手势与导航避让", "震动 偏移 白条 摄像头 上滑 通知 旋转 位置 安全区 Home 返回", () -> prefs.gesturesEnabled() ? "白条拖动已开启" : "白条拖动已关闭"),
             new Setting("快捷栏与手势", "hand", R.drawable.ic_ms_accessibility_new, "单手布局", "左手 右手", () -> handLabel()),
+            new Setting("状态栏与外观", "settings_scale", R.drawable.ic_ms_accessibility_new, "设置界面缩放", "大小 字号 缩放", () -> prefs.settingsScale() + "%"),
             new Setting("状态栏与外观", "status", R.drawable.ic_ms_wifi, "状态栏", "电量 电池 百分比 大小 时间 通知 网速 左右留白 安全区", () -> prefs.statusScale() + "% · " + (prefs.statusEnabled() ? "常驻已开启" : "常驻已关闭")),
-            new Setting("状态栏与外观", "appearance", R.drawable.ic_ms_brightness_6, "悬浮栏风格", "透明 描边 黑底 黑白 图标", this::appearanceLabel),
+            new Setting("状态栏与外观", "appearance", R.drawable.ic_ms_brightness_6, "悬浮栏风格", "透明 阴影 描边 黑底 黑白 图标", this::appearanceLabel),
             new Setting("状态栏与外观", "background", R.drawable.ic_ms_view_carousel, "面板背景", "模糊 毛玻璃 应用中心", () -> prefs.panelBlur() ? "背景模糊已开启" : "纯黑背景"),
             new Setting("控制中心", "panel", R.drawable.ic_ms_tune, "控制中心", "列数 密度 名称 字号 亮度 音量 媒体 预设 工具 按钮 撤销", () -> prefs.panelColumns() + " 列 · " + new String[]{"紧凑", "标准", "宽松"}[prefs.panelDensity()]),
             new Setting("应用与小组件", "hub", R.drawable.ic_ms_apps, "应用 Dock 与中心", "固定应用 底部 清理 九宫格", () -> "固定应用 " + prefs.hubPins().size() + "/" + AppDockPlacement.LIMIT),
@@ -182,6 +195,7 @@ public final class MainActivity extends Activity {
             new Setting("应用与小组件", "orientations", R.drawable.ic_ms_screen_rotation, "应用方向", "旋转 横屏 竖屏 记忆", () -> prefs.rotationRules().length() + " 个应用规则"),
             new Setting("设备与权限", "display", R.drawable.ic_ms_phone_android, "目标外屏", "显示器 选择 屏幕", this::displaySummary),
             new Setting("设备与权限", "calibrate", R.drawable.ic_ms_display_settings, "屏幕适配", "缺口 角落 长度 厚度 校准", () -> prefs.data.getBoolean("auto_placement", true) ? "根据系统缺口定位" : "手动校准"),
+            new Setting("设备与权限", "input_devices", R.drawable.ic_input_devices, "鼠标与触控板", "外接设备 蓝牙 输入 指针 方向 灵敏度", () -> CoverApp.inputs(this).enabled() ? "设备规则已开启" : "系统指针操作"),
             new Setting("设备与权限", "permissions", R.drawable.ic_ms_shield, "权限中心", "授权 无障碍 Shizuku 通知 电话 手电筒", () -> CoverService.instance == null ? "无障碍未连接" : "无障碍已连接"),
             new Setting("设备与权限", "diagnostics", R.drawable.ic_ms_info, "问题诊断", "兼容性 检测 复制", () -> "设备与窗口信息"),
             new Setting("备份与关于", "layout_backup", R.drawable.ic_ms_refresh, "布局备份与恢复", "保存 重置 撤销 默认", () -> prefs.data.contains("layout_backup") ? "已保存布局" : "尚未保存布局"),
@@ -189,19 +203,23 @@ public final class MainActivity extends Activity {
         );
     }
     private void home() {
-        begin("外屏助手", "main");
+        begin(getString(R.string.app_name), "main");
         LinearLayout master = group("master"); master.setBackground(Ui.background(this, SettingsUi.MASTER, 26));
         Switch enabled = SettingsUi.toggle(master, "开启外屏助手", "已暂停 · 配置保留", prefs.enabled(), checked -> { prefs.data.edit().putBoolean("enabled", checked).apply(); refreshStatus(); }); enabled.setTag("settings-enabled"); enabled.setTrackTintList(new android.content.res.ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{0xFF4A88FF, 0xFF65656C}));
         statusLabel = SettingsUi.toggleSummary(enabled); refreshStatus();
         EditText search = search("搜索设置", "settings-query"); SettingsUi.add(body, search); search.setVisibility(pageState.getBoolean("settings-query-visible", false) || search.length() > 0 ? View.VISIBLE : View.GONE);
         LinearLayout results = SettingsUi.column(this); results.setTag("settings-results"); body.addView(results);
+        LinearLayout footer = SettingsUi.column(this); footer.setTag("settings-footer"); footer.setGravity(Gravity.CENTER_HORIZONTAL); footer.setPadding(Ui.dp(this, 14), Ui.dp(this, 12), Ui.dp(this, 14), 0); body.addView(footer);
+        Button quickUpdate = SettingsUi.button(this, getString(R.string.update_check), () -> { about(); updateSettings.check(); }); quickUpdate.setTag("settings-check-update"); quickUpdate.setTextSize(14); quickUpdate.setBackground(Ui.ripple(this, 0, 12)); footer.addView(quickUpdate, new LinearLayout.LayoutParams(-2, -2));
+        TextView support = SettingsUi.text(this, getString(R.string.settings_support), 14, SettingsUi.MUTED); support.setTag("settings-support"); support.setTextSize(12); support.setGravity(Gravity.CENTER); support.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 8)); footer.addView(support, new LinearLayout.LayoutParams(-1, -2));
         Runnable filter = () -> {
-            results.removeAllViews(); String query = search.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            results.removeAllViews(); String query = search.getText().toString().trim().toLowerCase(java.util.Locale.ROOT); footer.setVisibility(query.isEmpty() ? View.VISIBLE : View.GONE);
             if (query.isEmpty()) {
                 LinearLayout group = SettingsUi.group(this); results.addView(group);
-                String[][] groups = {{"group_dock", "快捷栏与手势", prefs.perPage() + " 个 / 页 · " + (prefs.autoHideDock() ? "自动收起" : "手动切换")}, {"group_appearance", "状态栏与外观", prefs.statusScale() + "% · " + appearanceLabel()}, {"panel", "控制中心", prefs.panelColumns() + " 列 · 布局与工具"}, {"group_apps", "应用与小组件", "固定应用 " + prefs.hubPins().size() + "/" + AppDockPlacement.LIMIT}, {"group_device", "设备与权限", displaySummary()}, {"group_backup", "备份与关于", "版本 " + BuildConfig.VERSION_NAME}};
-                int[] icons = {R.drawable.ic_ms_tune, R.drawable.ic_ms_brightness_6, R.drawable.ic_ms_view_carousel, R.drawable.ic_ms_apps, R.drawable.ic_ms_shield, R.drawable.ic_ms_refresh};
+                String[][] groups = {{"group_dock", "快捷栏与手势", prefs.perPage() + " 个 / 页 · " + (prefs.autoHideDock() ? "自动收起" : "手动切换")}, {"group_appearance", "状态栏与外观", prefs.statusScale() + "% · " + appearanceLabel()}, {"panel", "控制中心", prefs.panelColumns() + " 列 · 布局与工具"}, {"group_apps", "应用与小组件", "固定应用 " + prefs.hubPins().size() + "/" + AppDockPlacement.LIMIT}, {"group_device", "设备与权限", displaySummary()}, {"input_devices", "鼠标与触控板", "按设备选择方向导航或指针操作"}};
+                int[] icons = {R.drawable.ic_ms_tune, R.drawable.ic_ms_brightness_6, R.drawable.ic_ms_view_carousel, R.drawable.ic_ms_apps, R.drawable.ic_ms_shield, R.drawable.ic_input_devices};
                 for (int i = 0; i < groups.length; i++) link(group, icons[i], groups[i][1], groups[i][2], groups[i][0]);
+                link(group, R.drawable.ic_ms_refresh, "备份与关于", "版本 " + BuildConfig.VERSION_NAME, "group_backup");
             } else {
                 LinearLayout group = SettingsUi.group(this); results.addView(group); int count = 0;
                 for (Setting item : settings()) if ((item.title + item.keywords + item.group).toLowerCase(java.util.Locale.ROOT).contains(query)) {
@@ -239,11 +257,18 @@ public final class MainActivity extends Activity {
             TextView label = SettingsUi.text(this, labels[i], 16, active ? SettingsUi.ACCENT : SettingsUi.TEXT); row.addView(label, new LinearLayout.LayoutParams(0, -2, 1)); row.setContentDescription(labels[i]); row.setStateDescription(active ? "已选择" : "未选择"); row.setFocusable(true); row.setTag("settings-choice-" + value); row.setBackground(Ui.ripple(this, android.graphics.Color.TRANSPARENT, 0)); row.setOnClickListener(v -> { try { save.accept(value); dismissSheet(); } catch (RuntimeException error) { toast("未保存：" + error.getMessage()); } }); modal.content.addView(row);
         }
     }
-    private DetailSheet openSheet(String title) { dismissSheet(); DetailSheet modal = new DetailSheet(this, title, this::dismissSheet); modal.settingsStyle(); sheet = modal; rootLayer.addView(modal, new FrameLayout.LayoutParams(-1, -1)); modal.enter(null); return modal; }
-    private void dismissSheet() { if (sheet != null) { pendingImportUri = null; rootLayer.removeView(sheet); sheet = null; } }
+    private DetailSheet openSheet(String title) { dismissSheet(); DetailSheet modal = new DetailSheet(this, title, this::dismissSheet); modal.settingsStyle(); sheet = modal; SettingsUi.Viewport viewport = new SettingsUi.Viewport(this, prefs.settingsScale()); viewport.addView(modal, new FrameLayout.LayoutParams(-1, -1)); rootLayer.addView(viewport, new FrameLayout.LayoutParams(-1, -1)); modal.enter(null); return modal; }
+    private void dismissSheet() { if (sheet != null) { pendingImportUri = null; rootLayer.removeView(sheet.getParent() instanceof SettingsUi.Viewport viewport ? viewport : sheet); sheet = null; } }
     private void confirm(String title, String message, String action, Runnable commit) { DetailSheet modal = openSheet(title); TextView words = SettingsUi.text(this, message, 14, SettingsUi.MUTED); words.setPadding(Ui.dp(this, 14), 0, Ui.dp(this, 14), Ui.dp(this, 14)); modal.content.addView(words); Button okay = SettingsUi.button(this, action, () -> { dismissSheet(); commit.run(); }); okay.setTag("settings-confirm"); modal.content.addView(okay); modal.content.addView(SettingsUi.button(this, "取消", this::dismissSheet)); }
+    private void settingsScaleSettings() {
+        begin("设置界面缩放", "settings_scale"); LinearLayout options = group("settings-scale-options");
+        slider(options, "设置界面大小", "settings_scale", 70, 130, prefs.settingsScale(), "%", value -> { }, value -> { prefs.settingsScale(value); settingsScaleSettings(); });
+        Button reset = SettingsUi.button(this, "恢复100%", () -> { prefs.settingsScale(100); settingsScaleSettings(); }); reset.setTag("settings-scale-reset"); options.addView(reset);
+        note("100% 为默认大小，松手后应用。组合卡片及其子页面保持原有大小。");
+    }
     private void statusSettings() {
-        begin("状态栏", "status"); LinearLayout master = group("status-master"); toggle(master, "常驻状态栏", "亮屏且解锁时显示；以下大小与留白也用于控制中心", "status_enabled", true);
+        begin("状态栏", "status"); LinearLayout master = group("status-master"); toggle(master, "常驻状态栏", "亮屏且解锁时显示；以下大小与留白也用于控制中心", "status_enabled", BuildConfig.DEFAULTS_STATUS_ENABLED);
+        link(master, 0, "指定应用隐藏状态栏", prefs.statusHiddenApps().size() + " 个应用 · 外屏常驻栏", "status_apps");
         LinearLayout appearance = group("status-preview-group"); statusPreviewHost = SettingsUi.column(this); statusPreviewHost.setPadding(0, Ui.dp(this, 16), 0, Ui.dp(this, 16)); appearance.addView(statusPreviewHost);
         statusPreview = new StatusBarView(this, prefs); StatusBarView rendering = statusPreview; statusPreview.setTag("status-preview"); statusPreview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS); statusPreviewHost.addView(statusPreview, new LinearLayout.LayoutParams(-1, statusPreview.heightPixels()));
         slider(appearance, "显示大小", "status_scale", 50, 150, prefs.statusScale(), "%", value -> { rendering.previewScale(value); rendering.getLayoutParams().height = rendering.heightPixels(); rendering.requestLayout(); }, value -> prefs.data.edit().putInt("status_scale", value).apply());
@@ -254,7 +279,7 @@ public final class MainActivity extends Activity {
         choice(contents, "显示项目预设", "status-preset", new String[]{"极简", "日常", "全部"}, new Object[]{"minimal", "daily", "full"}, () -> prefs.statusPreset(), value -> { prefs.statusPreset((String) value); bindingUI = true; for (String item : Prefs.STATUS_ITEMS) { Switch toggle = body.findViewWithTag("status_" + item); if (toggle != null) toggle.setChecked(prefs.statusItem(item)); } bindingUI = false; statusPreview.updateOptions(); });
         String[][] items = {{"time", "时间", "使用系统时间格式"}, {"wifi", "Wi-Fi", "当前网络连接"}, {"battery", "电池与充电", "常驻电量百分比在下方单独设置"}, {"notifications", "通知应用图标", "最多 4 个应用，需要通知使用权"}, {"alarm", "闹钟", "存在下次闹钟时显示"}, {"speed", "实时网速", "整个手机的收发流量，不是网络测速"}, {"cellular", "移动网络", "最多双卡，需要电话状态权限"}};
         for (String[] item : items) { Switch control = toggle(contents, item[1], item[2], "status_" + item[0], !item[0].equals("speed") && !item[0].equals("cellular")); control.setOnCheckedChangeListener((button, checked) -> { if (bindingUI) return; prefs.data.edit().putBoolean("status_" + item[0], checked).apply(); statusPreview.updateOptions(); SettingsUi.ValueRow row = body.findViewWithTag("status-preset"); row.value(choiceLabel(new String[]{"极简", "日常", "全部"}, new Object[]{"minimal", "daily", "full"}, prefs.statusPreset())); }); }
-        LinearLayout battery = group("battery-options"); toggle(battery, "常驻电量百分比", "控制中心始终显示电量百分比", "battery_percent", false);
+        LinearLayout battery = group("battery-options"); toggle(battery, "常驻电量百分比", "控制中心始终显示电量百分比", "battery_percent", BuildConfig.DEFAULTS_STATUS_BATTERY_PERCENT);
         LinearLayout links = group("status-links"); link(links, 0, "权限中心", "通知使用权与移动网络授权", "permissions"); link(links, 0, "悬浮栏风格", appearanceLabel(), "appearance");
     }
     private void slider(LinearLayout parent, String title, String key, int min, int max, int value, String unit, java.util.function.IntConsumer preview, java.util.function.IntConsumer save) {
@@ -262,13 +287,13 @@ public final class MainActivity extends Activity {
         TextView number = SettingsUi.text(this, value + " " + unit, 14, SettingsUi.ACCENT); number.setPadding(0, Ui.dp(this, 4), 0, 0); block.addView(number);
         SettingsUi.Slider bar = new SettingsUi.Slider(this, min, max, value, next -> { number.setText(next + " " + unit); preview.accept(next); }, save); bar.setTag(key); bar.setContentDescription(title + "，单位 " + unit); block.addView(bar, new LinearLayout.LayoutParams(-1, Ui.dp(this, 48))); parent.addView(block);
     }
-    private String appearanceLabel() { return switch (prefs.chromeStyle()) { case "black" -> "纯黑实底"; case "light" -> "透明 · 浅色图标"; case "dark" -> "透明 · 深色图标"; default -> "透明 · 对比描边"; }; }
+    private String appearanceLabel() { return switch (prefs.chromeStyle()) { case "black" -> "纯黑实底"; case "light" -> "透明 · 浅色图标"; case "dark" -> "透明 · 深色图标"; default -> "透明 · 柔和阴影"; }; }
     private String handLabel() { return prefs.leftHand() ? "左手" : prefs.handSide().equals("right") ? "右手" : "默认"; }
     private void appearanceSettings() {
         begin("悬浮栏风格", "appearance"); LinearLayout preview = group("chrome-preview"); preview.addView(new SettingsIllustration(this, SettingsIllustration.CHROME, prefs)); note("本地图形示意 · 明暗背景对比");
-        LinearLayout options = group("chrome-options"); String[] values = {"contrast", "black", "light", "dark"}, labels = {"透明 · 对比描边", "纯黑实底", "透明 · 浅色图标", "透明 · 深色图标"};
+        LinearLayout options = group("chrome-options"); String[] values = {"contrast", "black", "light", "dark"}, labels = {"透明 · 柔和阴影", "纯黑实底", "透明 · 浅色图标", "透明 · 深色图标"};
         visualOptions(options, values, labels, prefs.chromeStyle(), value -> { prefs.data.edit().putString("chrome_style", value).apply(); preview.invalidate(); ((SettingsIllustration) preview.getChildAt(0)).invalidate(); }, "chrome-");
-        note("透明描边通过本地图标轮廓提高对比度，不截屏，也不读取其他应用的系统状态栏配色。"); related("面板背景", "background");
+        note("柔和阴影使用浅色图标和轻微暗影。白底可选深色图标，深底可选浅色图标；颜色需手动选择，不会根据背景自动切换。"); related("面板背景", "background");
     }
     private void visualOptions(LinearLayout parent, String[] values, String[] labels, String selected, Consumer<String> save, String prefix) {
         List<TextView> indicators = new ArrayList<>();
@@ -277,12 +302,27 @@ public final class MainActivity extends Activity {
             row.setOnClickListener(v -> { try { save.accept(value); } catch (RuntimeException error) { toast("未保存：" + error.getMessage()); return; } for (int j = 0; j < values.length; j++) { boolean active = values[j].equals(value); indicators.get(j).setText(active ? "●" : "○"); View sibling = (View) indicators.get(j).getParent(); sibling.setSelected(active); sibling.setStateDescription(active ? "已选择" : "未选择"); } }); parent.addView(row);
         }
     }
-    private void backgroundSettings() { begin("面板背景", "background"); toggle(group("background-options"), "背景模糊", "通知、控制中心与多任务使用液态玻璃，应用中心使用背景模糊；关闭后使用基础背景", "panel_blur", true); note("通知、控制中心与多任务在打开时取一帧所选外屏背景，仅存内存，关闭即释放；省电或取样不可用时降低效果。"); related("问题诊断", "diagnostics"); }
+    private void backgroundSettings() { begin("面板背景", "background"); toggle(group("background-options"), "背景模糊", "通知、控制中心与多任务使用液态玻璃，应用中心使用背景模糊；关闭后使用基础背景", "panel_blur", BuildConfig.DEFAULTS_CONTROL_CENTER_BLUR); note("通知、控制中心与多任务在打开时取一帧所选外屏背景，仅存内存，关闭即释放；省电或取样不可用时降低效果。"); related("问题诊断", "diagnostics"); }
     private void gestureSettings() {
-        begin("手势与导航避让", "gestures"); LinearLayout illustration = group("gesture-preview"); illustration.addView(new SettingsIllustration(this, SettingsIllustration.GESTURES, prefs)); note("白条默认隐藏，触摸入口保留：0° 在摄像头上方，其他方向在画面右下方。左侧上滑通知、右侧上滑控制中心；打开时白条淡入并保持显示，关闭后先淡到 50%，等 3 秒再淡出。");
-        LinearLayout gestures = group("gesture-options"); toggle(gestures, "白条上滑", "白条可见时长按可切换快捷按钮，隐藏时长按无效", "gestures_enabled", true); toggle(gestures, "震动反馈", "遵循系统震动设置", "haptics", true);
-        LinearLayout navigation = group("navigation-options"); toggle(navigation, "快捷按钮避让导航区", "仅移动快捷按钮；白条独立避开摄像头与系统强制手势区", "avoid_navigation", false); slider(navigation, "快捷按钮额外向内偏移", "navigation_gap", 0, 48, prefs.navigationGap(), "dp", value -> { }, value -> prefs.data.edit().putInt("navigation_gap", value).apply());
-        note("快捷按钮滑动翻页，不再拉出面板；收起按钮后仍保留新位置的上滑入口。未报告缺口时按位置校准估计入口，需在本机确认；系统 Home 手势保持不变。"); related("按钮与布局", "dock");
+        begin("手势与导航避让", "gestures");
+        LinearLayout illustration = group("gesture-preview"); SettingsIllustration preview = new SettingsIllustration(this, SettingsIllustration.GESTURES, prefs); illustration.addView(preview);
+        note("预览随下面的位置选择更新，不会旋转手机。两根白条始终横排：左条打开通知，右条打开控制中心。");
+        SettingsUi.section(body, "白条位置 · 按旋转方向分别设置");
+        LinearLayout positions = group("gesture-positions");
+        for (int rotation = 0; rotation < 4; rotation++) {
+            final int angle = rotation;
+            if (angle == 2) { positions.addView(SettingsUi.settingRow(this, 0, "180° · 固定左顶部", "向下滑入，面板从上方展开", null)); continue; }
+            String[] values = angle == 0 ? new String[]{"top_left", "bottom_right"} : new String[]{"top_left", "top_right"};
+            String[] labels = new String[]{SettingsIllustration.entryLabel(values[0]), SettingsIllustration.entryLabel(values[1])};
+            choice(positions, angle * 90 + "° · 白条位置", "entry-position-" + angle, labels, values, () -> prefs.entryPosition(angle), value -> { prefs.entryPosition(angle, (String) value); preview.refreshGestures(); });
+        }
+        note("顶部白条向下滑，通知和控制中心从上方跟手展开、向上收起；右底部白条向上滑，面板从下方展开、向下收起。白条平时隐藏，触摸入口仍保留。");
+        LinearLayout gestures = group("gesture-options"); toggle(gestures, "白条滑入", "白条可见时长按可切换快捷按钮，隐藏时长按无效", "gestures_enabled", BuildConfig.DEFAULTS_DOCK_GESTURES); toggle(gestures, "震动反馈", "遵循系统震动设置", "haptics", BuildConfig.DEFAULTS_DOCK_HAPTICS);
+        LinearLayout navigation = group("navigation-options"); toggle(navigation, "快捷按钮避让导航区", "仅移动快捷按钮；白条位置由上方各方向选项设置", "avoid_navigation", false); slider(navigation, "快捷按钮额外向内偏移", "navigation_gap", 0, 48, prefs.navigationGap(), "dp", value -> { }, value -> prefs.data.edit().putInt("navigation_gap", value).apply());
+        SettingsUi.section(body, "为什么各方向的选项不同？");
+        note("三星外屏侧边滑入仍可能触发系统返回，底边上滑也可能回到时钟。现在改用顶部或右底部的横向入口，并结合摄像头缺口避让；可按握持习惯分别选择位置。180° 固定左顶部。");
+        note("这是调整本应用的入口，不会关闭系统 Home 或返回。不同系统版本、保护壳和起手位置仍可能影响识别；请从预览所示的白条区域起手。");
+        note("面板打开时白条淡入并保持显示，关闭后先淡到 50%，等 3 秒再淡出。快捷按钮滑动只翻页；收起按钮后仍保留白条入口。未报告缺口时使用校准估计，需在本机确认。"); related("按钮与布局", "dock");
     }
     private void handSettings() {
         begin("单手布局", "hand"); LinearLayout preview = group("hand-preview"); addDockPreview(preview); visualOptions(group("hand-options"), new String[]{"auto", "left", "right"}, new String[]{"默认", "左手", "右手"}, prefs.handSide(), value -> { prefs.data.edit().putString("hand_side", value).apply(); preview.removeAllViews(); addDockPreview(preview); }, "hand-");
@@ -295,11 +335,15 @@ public final class MainActivity extends Activity {
             DockView dock = new DockView(this, prefs, placement, 0, new DockView.Listener() { @Override public void action(String id) { toast("预览：" + ActionCatalog.label(MainActivity.this, id)); } @Override public void configure() { } }); preview.addView(dock, new FrameLayout.LayoutParams(width, height, Gravity.CENTER));
         });
     }
-    private void visibilitySettings() { begin("自动显示与收起", "visibility"); LinearLayout group = group("visibility-options"); toggle(group, "按前台应用自动收起", "桌面与系统面板隐藏快捷按钮，底部上滑入口保留", "dock_auto_hide", true); toggle(group, "键盘出现时收起", "仅检测外屏输入法窗口，收起后恢复", "avoid_keyboard", true); link(group, 0, "指定应用隐藏快捷按钮", prefs.compactApps().size() + " 个应用", "visibility_apps"); note("白条可见时长按临时切换，隐藏时长按无效；换应用后恢复自动规则。只读取外屏窗口元数据，不读取页面文字或输入内容。"); }
+    private void visibilitySettings() { begin("自动显示与收起", "visibility"); LinearLayout group = group("visibility-options"); toggle(group, "按前台应用自动收起", "桌面与系统面板隐藏快捷按钮，底部上滑入口保留", "dock_auto_hide", BuildConfig.DEFAULTS_DOCK_AUTO_HIDE); toggle(group, "键盘出现时收起", "仅检测外屏输入法窗口，收起后恢复", "avoid_keyboard", BuildConfig.DEFAULTS_DOCK_AVOID_KEYBOARD); link(group, 0, "指定应用隐藏快捷按钮", prefs.compactApps().size() + " 个应用", "visibility_apps"); note("白条可见时长按临时切换，隐藏时长按无效；换应用后恢复自动规则。只读取外屏窗口元数据，不读取页面文字或输入内容。"); }
     private void applicationList(boolean orientations) {
         begin(orientations ? "应用方向" : "指定应用隐藏快捷按钮", orientations ? "orientations" : "visibility_apps");
         SettingsApplications list = new SettingsApplications(this, prefs, orientations ? "orientations" : "visibility", pageState, entry -> { orientationPackage = entry.packageName(); orientationTitle = entry.label(); appOrientation(); });
         showApplications(list);
+    }
+    private void statusApplications() {
+        begin("隐藏状态栏的应用", "status_apps");
+        showApplications(new SettingsApplications(this, prefs, "status", pageState, null));
     }
     private void showApplications(SettingsApplications list) { outer.removeView(scroll); body = list; outer.addView(list, new LinearLayout.LayoutParams(-1, 0, 1)); }
     private void appOrientation() {
@@ -425,7 +469,7 @@ public final class MainActivity extends Activity {
         Display display = Displays.selected(this, prefs); if (display == null) { toast("请先选择外屏"); return; }
         if (prefs.enabled() && CoverService.instance != null && CoverService.instance.display != null && CoverService.instance.display.getDisplayId() == display.getDisplayId()) { CoverService.instance.launchApp(id); return; }
         if (prefs.appRotation(ActionCatalog.component(id).getPackageName()) >= 0) toast("外屏助手未运行，将沿用当前方向打开");
-        try { startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(ActionCatalog.component(id)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK), ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle()); }
+        try { startActivity(AppLauncher.applicationIntent(ActionCatalog.component(id)), ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle()); }
         catch (RuntimeException e) { toast("应用不能在此外屏启动：" + e.getClass().getSimpleName()); }
     }
     private void permissions() {
@@ -472,13 +516,14 @@ public final class MainActivity extends Activity {
     }
     private void restoreLayout(boolean undo) { try { prefs.restoreLayout(undo); layoutSettings(); toast(undo ? "已撤销恢复" : "已恢复，可撤销"); } catch (Exception e) { toast("恢复失败：" + e.getMessage()); } }
     private void about() {
-        begin("关于与更新日志", "about"); LinearLayout info = group("about-info"); info.addView(SettingsUi.settingRow(this, R.drawable.ic_launcher, "外屏快捷栏", "版本 " + BuildConfig.VERSION_NAME + "（构建 " + BuildConfig.VERSION_CODE + "）\n" + (BuildConfig.DEBUG ? "验证版" : "正式版") + " · Android 11 及以上", null));
+        begin("关于与更新日志", "about"); LinearLayout info = group("about-info"); info.addView(SettingsUi.settingRow(this, R.drawable.ic_launcher, getString(R.string.app_name), "版本 " + BuildConfig.VERSION_NAME + "（构建 " + BuildConfig.VERSION_CODE + "）\n" + (BuildConfig.DEBUG ? "验证版" : "正式版") + " · Android 11 及以上", null));
+        updateSettings = new UpdateSettings(this, this::back); SettingsUi.add(body, updateSettings.view);
         SettingsUi.section(body, "更新日志"); LinearLayout changelog = group("about-changelog"); try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(getAssets().open("changelog.txt"), StandardCharsets.UTF_8))) { TextView log = SettingsUi.text(this, reader.lines().collect(java.util.stream.Collectors.joining("\n")), 14, SettingsUi.TEXT); log.setPadding(Ui.dp(this, 14), Ui.dp(this, 14), Ui.dp(this, 14), Ui.dp(this, 14)); changelog.addView(log); } catch (java.io.IOException e) { note("更新日志暂不可用"); }
-        note("通知仅在内存中处理；应用不联网、不上传信息。Shizuku 使用 MIT 许可，Material Symbols 与 AndroidX 使用 Apache 2.0 许可，许可原文随应用打包。"); related("问题诊断", "diagnostics");
+        note("通知仅在内存中处理；仅手动更新检查和下载使用网络，不上传通知、配置或设备信息。Shizuku 使用 MIT 许可，Material Symbols 与 AndroidX 使用 Apache 2.0 许可，许可原文随应用打包。"); related("问题诊断", "diagnostics");
     }
     private void diagnostics() {
         begin("问题诊断", "diagnostics"); Display selected = Displays.selected(this, prefs); LinearLayout summary = group("diagnostic-summary"); summary.addView(SettingsUi.settingRow(this, R.drawable.ic_ms_info, "当前运行状态", CoverService.status, null)); summary.addView(SettingsUi.settingRow(this, R.drawable.ic_ms_phone_android, "目标外屏", displaySummary(), null));
-        StringBuilder report = new StringBuilder("外屏快捷栏 ").append(BuildConfig.VERSION_NAME).append("\nAndroid ").append(android.os.Build.VERSION.RELEASE).append(" / API ").append(android.os.Build.VERSION.SDK_INT).append('\n');
+        StringBuilder report = new StringBuilder(getString(R.string.app_name)).append(' ').append(BuildConfig.VERSION_NAME).append("\nAndroid ").append(android.os.Build.VERSION.RELEASE).append(" / API ").append(android.os.Build.VERSION.SDK_INT).append('\n');
         report.append("快捷栏状态：").append(CoverService.status).append("\n显示开关：").append(prefs.enabled()).append("\n系统报告锁屏：").append(getSystemService(android.app.KeyguardManager.class).isKeyguardLocked()).append('\n');
         report.append("面板模糊开关：").append(prefs.panelBlur()).append("\n系统允许跨窗口模糊：").append(android.os.Build.VERSION.SDK_INT >= 31 && getSystemService(android.view.WindowManager.class).isCrossWindowBlurEnabled()).append("\n省电模式：").append(getSystemService(android.os.PowerManager.class).isPowerSaveMode()).append('\n');
         for (Display display : Displays.all(this)) report.append(Displays.describe(display)).append("\n状态：").append(display.getState()).append("\n缺口：").append(display.getCutout()).append('\n');
@@ -491,25 +536,25 @@ public final class MainActivity extends Activity {
     private void exportConfiguration() { open(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, "flip-cover-config.json"), 201); }
     private void importConfiguration() { open(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE), 202); }
     JSONObject exportConfigurationData() throws org.json.JSONException {
-        JSONObject config = new JSONObject().put("version", 14).put("rotations", prefs.rotationRules()).put("layout", prefs.layoutSnapshot()).put("avoidKeyboard", prefs.avoidKeyboard()).put("haptics", prefs.haptics()).put("favorites", new JSONArray(prefs.actions("favorites"))).put("hubPinned", prefs.hubPinned()).put("statusEnabled", prefs.statusEnabled()).put("gestures", prefs.data.getBoolean("gestures_enabled", true)).put("pinned", prefs.pinnedAction()).put("blur", prefs.panelBlur()).put("dock", new JSONArray(prefs.actions("dock"))).put("panel", new JSONArray(prefs.actions("panel"))).put("perPage", prefs.perPage()).put("damping", prefs.damping());
+        JSONObject config = new JSONObject().put("version", 15).put("rotations", prefs.rotationRules()).put("layout", prefs.layoutSnapshot()).put("avoidKeyboard", prefs.avoidKeyboard()).put("haptics", prefs.haptics()).put("favorites", new JSONArray(prefs.actions("favorites"))).put("hubPinned", prefs.hubPinned()).put("statusEnabled", prefs.statusEnabled()).put("gestures", prefs.gesturesEnabled()).put("pinned", prefs.pinnedAction()).put("blur", prefs.panelBlur()).put("dock", new JSONArray(prefs.actions("dock"))).put("panel", new JSONArray(prefs.actions("panel"))).put("perPage", prefs.perPage()).put("damping", prefs.damping());
         JSONObject statusItems = new JSONObject();
         for (String item : new String[]{"time", "wifi", "battery", "notifications", "alarm", "speed", "cellular"}) statusItems.put(item, prefs.statusItem(item));
         config.put("statusItems", statusItems);
         config.put("dockAutoHide", prefs.autoHideDock()).put("compactApps", new JSONArray(prefs.compactApps()));
-        config.put("widgetTemplates", CoverApp.widgets(this).exportTemplates());
+        config.put("widgetTemplates", CoverApp.widgets(this).exportTemplates()).put("inputEnabled", CoverApp.inputs(this).enabled());
         return config;
     }
     void applyConfigurationData(JSONObject config) throws org.json.JSONException {
         for (String key : new String[]{"version", "perPage", "damping"}) {
             Object raw = config.get(key); if (!(raw instanceof Number value) || value.doubleValue() != value.intValue()) throw new IllegalArgumentException("配置数字无效：" + key);
         }
-        for (String key : new String[]{"avoidKeyboard", "haptics", "statusEnabled", "gestures", "blur", "dockAutoHide"}) if (config.has(key) && !(config.get(key) instanceof Boolean)) throw new IllegalArgumentException("配置开关值无效：" + key);
+        for (String key : new String[]{"avoidKeyboard", "haptics", "statusEnabled", "gestures", "blur", "dockAutoHide", "inputEnabled"}) if (config.has(key) && !(config.get(key) instanceof Boolean)) throw new IllegalArgumentException("配置开关值无效：" + key);
         for (String key : new String[]{"favorites", "compactApps"}) if (config.has(key) && !(config.get(key) instanceof JSONArray)) throw new IllegalArgumentException("配置列表无效：" + key);
         if (config.has("statusItems")) {
             JSONObject items = config.getJSONObject("statusItems");
             for (String item : Prefs.STATUS_ITEMS) if (items.has(item) && !(items.get(item) instanceof Boolean)) throw new IllegalArgumentException("状态栏开关值无效");
         }
-        if (config.getInt("version") < 1 || config.getInt("version") > 14) throw new IllegalArgumentException("不支持的配置版本");
+        if (config.getInt("version") < 1 || config.getInt("version") > 15) throw new IllegalArgumentException("不支持的配置版本");
         java.util.Map<String, List<String>> parsed = new java.util.HashMap<>();
         for (String key : new String[]{"dock", "panel"}) {
             JSONArray array = config.getJSONArray(key); List<String> ids = new ArrayList<>();
@@ -535,6 +580,7 @@ public final class MainActivity extends Activity {
             for (int i = 0; i < compactApps.length(); i++) { String name = compactApps.getString(i); if (!name.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")) throw new IllegalArgumentException("无效应用规则"); names.add(name); }
             update.putStringSet("dock_compact_apps", names);
         }
+        update.putBoolean("input_enabled", config.optBoolean("inputEnabled", false));
         update.putBoolean("dock_auto_hide", config.optBoolean("dockAutoHide", true)).putString("home_action", "cards");
         if (favorites != null) update.putString("favorites", new JSONArray(savedFavorites).toString());
         update.putString("pinned_action", pinned).putBoolean("panel_blur", config.optBoolean("blur", true)).putString("dock", new JSONArray(parsed.get("dock")).toString()).putString("panel", new JSONArray(parsed.get("panel")).toString()).putInt("per_page", count).putInt("damping", damping);
@@ -542,6 +588,8 @@ public final class MainActivity extends Activity {
         if (config.getInt("version") >= 4) prefs.prepareLayout(config.getJSONObject("layout"), update);
         else {
             update.putInt("panel_columns", 4);
+            update.remove("status_hidden_apps");
+            for (int rotation = 0; rotation < 4; rotation++) update.putString("panel_entry_" + rotation, Prefs.defaultEntryPosition(rotation));
             for (String key : new String[]{"panel_density", "panel_labels", "panel_label_size", "panel_tools_position", "panel_brightness", "panel_volume", "panel_media", "panel_media_idle", "panel_undo", "hub_workspace", "hub_workspace_compact", "hub_workspace_locked", "hub_workspace_labels", "hub_workspace_badges", "hub_workspace_density", "hub_workspace_aliases", "status_safe_left", "status_safe_right"}) update.remove(key);
         }
         if (config.getInt("version") >= 5) prefs.prepareRotations(config.getJSONObject("rotations"), update);

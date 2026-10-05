@@ -20,14 +20,17 @@ final class WidgetGridEditor extends ViewGroup {
     private final IntConsumer selected;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final WidgetGrid.Item candidate;
+    private final float aspect;
     private WidgetGrid.Item dragging;
     private float startX, startY;
     private int offsetX, offsetY;
     private boolean active, changed;
+    private final Runnable startDrag = () -> performLongClick();
     WidgetGridEditor(Context c, NativeWidgetBridge bridge, int outer, List<WidgetGrid.Item> items, WidgetGrid.Item candidate, Consumer<WidgetGrid.Item> moved, IntConsumer selected) {
         super(c); this.items = List.copyOf(items); this.candidate = candidate; this.moved = moved; this.selected = selected;
+        android.util.SizeF full = bridge.size(outer); aspect = full.getHeight() / Math.max(1, full.getWidth());
         setTag("widget-grid"); setWillNotDraw(false); setBackground(Ui.background(c, SettingsUi.SURFACE, 20)); setClipChildren(true);
-        setContentDescription("4乘4布局。点按组件编辑，拖动改变位置；也可在组件详情中使用方向按钮。");
+        setLongClickable(true); setContentDescription("4乘4布局。点按组件编辑，长按后拖动改变位置；上下滑动浏览页面，也可在组件详情中使用方向按钮。");
         for (WidgetGrid.Item item : items) {
             FrameLayout tile = new FrameLayout(c); tile.setBackground(Ui.background(c, 0xff262a34, 12));
             WidgetPreview preview = new WidgetPreview(c); android.appwidget.AppWidgetProviderInfo info = bridge.info(item.id()); android.widget.RemoteViews remote = bridge.preview(item.id());
@@ -35,14 +38,14 @@ final class WidgetGridEditor extends ViewGroup {
             try { if (info != null && remote != null) preview.remote(info, remote, size.getWidth(), size.getHeight()); else if (info != null && android.os.Build.VERSION.SDK_INT >= 31 && info.previewLayout != 0) preview.remote(info, new android.widget.RemoteViews(info.provider.getPackageName(), info.previewLayout), size.getWidth(), size.getHeight()); else preview.unavailable(""); } catch (RuntimeException ignored) { preview.unavailable(""); }
             tile.addView(preview, new FrameLayout.LayoutParams(-1, -1));
             boolean hasPreview = remote != null || (info != null && android.os.Build.VERSION.SDK_INT >= 31 && info.previewLayout != 0);
-            TextView label = SettingsUi.text(c, hasPreview ? item.sizeLabel() : bridge.widgetLabel(item.id()) + " · " + item.sizeLabel(), 14, SettingsUi.TEXT); label.setMaxLines(hasPreview ? 1 : 2); label.setEllipsize(android.text.TextUtils.TruncateAt.END); label.setBackgroundColor(0xda171719); label.setPadding(Ui.dp(c, 4), 0, Ui.dp(c, 4), 0);
+            TextView label = NativeWidgetUi.text(c, hasPreview ? item.sizeLabel() : bridge.widgetLabel(item.id()) + " · " + item.sizeLabel(), 11, SettingsUi.TEXT); label.setMaxLines(hasPreview ? 1 : 2); label.setEllipsize(android.text.TextUtils.TruncateAt.END); label.setBackgroundColor(0xda171719); label.setPadding(Ui.dp(c, 4), 0, Ui.dp(c, 4), 0);
             tile.addView(label, new FrameLayout.LayoutParams(-1, -2, android.view.Gravity.BOTTOM)); tile.setTag(item); tile.setContentDescription(bridge.widgetLabel(item.id()) + "，" + item.sizeLabel() + "，第" + (item.y() + 1) + "行第" + (item.x() + 1) + "列"); tile.setFocusable(true); tile.setOnClickListener(v -> selected.accept(item.id())); addView(tile);
         }
     }
     private float cellWidth() { return getWidth() / 4f; }
     private float cellHeight() { return getHeight() / 4f; }
     @Override protected void onMeasure(int w, int h) {
-        int width = MeasureSpec.getSize(w), height = resolveSize(Math.min(width, Ui.dp(getContext(), 220)), h); setMeasuredDimension(width, height);
+        int width = MeasureSpec.getSize(w), height = resolveSize(Math.max(1, Math.round(width * aspect)), h); setMeasuredDimension(width, height);
         for (int i = 0; i < getChildCount(); i++) { View child = getChildAt(i); WidgetGrid.Item item = (WidgetGrid.Item) child.getTag(); child.measure(MeasureSpec.makeMeasureSpec(Math.max(1, width * item.width() / 4 - Ui.dp(getContext(), 6)), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(Math.max(1, height * item.height() / 4 - Ui.dp(getContext(), 6)), MeasureSpec.EXACTLY)); }
     }
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) { super.onSizeChanged(w, h, oldw, oldh); if (w != oldw || h != oldh) cancelDrag(); }
@@ -63,25 +66,37 @@ final class WidgetGridEditor extends ViewGroup {
     @Override public boolean onInterceptTouchEvent(MotionEvent event) { return true; }
     @Override public boolean onTouchEvent(MotionEvent e) {
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            cancelDrag();
             startX = e.getX(); startY = e.getY(); int x = Math.min(3, (int) (startX / cellWidth())), y = Math.min(3, (int) (startY / cellHeight()));
             dragging = candidate;
             if (dragging == null) for (WidgetGrid.Item item : items) if (x >= item.x() && x < item.x() + item.width() && y >= item.y() && y < item.y() + item.height()) { dragging = item; break; }
-            active = dragging != null; changed = false;
-            if (active) { offsetX = candidate == null ? x - dragging.x() : 0; offsetY = candidate == null ? y - dragging.y() : 0; getParent().requestDisallowInterceptTouchEvent(true); if (candidate != null) update(e); }
+            if (dragging != null) {
+                boolean inside = x >= dragging.x() && x < dragging.x() + dragging.width() && y >= dragging.y() && y < dragging.y() + dragging.height();
+                offsetX = inside ? x - dragging.x() : 0; offsetY = inside ? y - dragging.y() : 0;
+                postDelayed(startDrag, android.view.ViewConfiguration.getLongPressTimeout());
+            }
             return true;
         }
         if (e.getPointerCount() > 1 || e.getActionMasked() == MotionEvent.ACTION_CANCEL) { cancelDrag(); return true; }
-        if (!active) return true;
-        if (e.getActionMasked() == MotionEvent.ACTION_MOVE) { if (Math.hypot(e.getX() - startX, e.getY() - startY) > android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop()) changed = true; if (changed) update(e); }
+        if (dragging == null) return true;
+        if (e.getActionMasked() == MotionEvent.ACTION_MOVE) {
+            if (!active) { if (Math.hypot(e.getX() - startX, e.getY() - startY) > android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop()) cancelDrag(); }
+            else { changed = true; update(e); }
+        }
         if (e.getActionMasked() == MotionEvent.ACTION_UP) {
-            WidgetGrid.Item result = dragging; boolean shouldMove = changed || candidate != null; cancelDrag();
+            if (candidate != null && !active) update(e);
+            WidgetGrid.Item result = dragging; boolean shouldMove = active || changed || candidate != null; cancelDrag();
             if (shouldMove) { if (WidgetGrid.fits(items, result)) moved.accept(result); else announceForAccessibility("该位置放不下，请选择连续空位"); }
             else { performClick(); selected.accept(result.id()); }
         }
         return true;
     }
     private void update(MotionEvent e) { int x = Math.max(0, Math.min(4 - dragging.width(), (int) (e.getX() / cellWidth()) - offsetX)), y = Math.max(0, Math.min(4 - dragging.height(), (int) (e.getY() / cellHeight()) - offsetY)); dragging = dragging.at(x, y); invalidate(); }
-    private void cancelDrag() { active = false; dragging = null; if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false); invalidate(); }
+    private void cancelDrag() { removeCallbacks(startDrag); active = false; changed = false; dragging = null; if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false); invalidate(); }
+    @Override public boolean performLongClick() {
+        if (dragging == null) return false;
+        removeCallbacks(startDrag); active = true; getParent().requestDisallowInterceptTouchEvent(true); performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); invalidate(); return true;
+    }
     @Override public boolean performClick() { super.performClick(); return true; }
     @Override protected void onDetachedFromWindow() { cancelDrag(); super.onDetachedFromWindow(); }
 }

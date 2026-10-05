@@ -65,7 +65,10 @@ final class SettingsApplications extends LinearLayout implements AppCatalogCache
         for (AppCatalogCache.Entry entry : catalog.snapshot()) all.putIfAbsent(mode.equals("picker") ? entry.id() : entry.packageName(), entry);
         if (!mode.equals("picker")) {
             Set<String> packages = new java.util.LinkedHashSet<>();
+            // These system hosts have no launcher entry; unchecked rules must remain selectable.
+            if (mode.equals("visibility") || mode.equals("status")) packages.addAll(Set.of("com.android.systemui", "com.sec.android.app.launcher"));
             if (mode.equals("visibility")) packages.addAll(prefs.compactApps());
+            else if (mode.equals("status")) packages.addAll(prefs.statusHiddenApps());
             else { java.util.Iterator<String> keys = prefs.rotationRules().keys(); while (keys.hasNext()) packages.add(keys.next()); }
             for (String name : packages) if (!all.containsKey(name)) {
                 String label = name.equals("com.android.systemui") ? "三星外屏与系统面板" : name.equals("com.sec.android.app.launcher") ? "三星 One UI 桌面" : name;
@@ -74,7 +77,7 @@ final class SettingsApplications extends LinearLayout implements AppCatalogCache
         }
         items.clear(); String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
         for (AppCatalogCache.Entry entry : all.values()) if ((entry.searchKey() + entry.packageName()).contains(query)) items.add(entry);
-        String message = !catalog.ready() ? catalog.failed() ? "读取失败，点此重试" : "正在读取应用…" : items.isEmpty() ? query.isEmpty() ? "当前没有可选应用" : "没有找到应用" : mode.equals("orientations") ? "选择应用设置方向 · " + items.size() + " 个" : mode.equals("visibility") ? "开启后，该应用只显示横条" : "选择应用 · " + items.size() + " 个";
+        String message = !catalog.ready() ? catalog.failed() ? "读取失败，点此重试" : "正在读取应用…" : items.isEmpty() ? query.isEmpty() ? "当前没有可选应用" : "没有找到应用" : mode.equals("orientations") ? "选择应用设置方向 · " + items.size() + " 个" : mode.equals("visibility") ? "开启后，该应用只显示横条" : mode.equals("status") ? "进入选中应用时隐藏外屏常驻状态栏，离开后恢复；控制中心状态行保留" : "选择应用 · " + items.size() + " 个";
         if (!message.contentEquals(status.getText())) status.setText(message); status.setOnClickListener(catalog.failed() ? v -> catalog.warm() : null);
         adapter.notifyDataSetChanged();
         if (!restored && catalog.ready()) { restored = true; android.os.Parcelable position = saved.getParcelable("list-settings-app-list"); if (position != null) list.onRestoreInstanceState(position); if ("settings-query".equals(saved.getString("focus"))) search.requestFocus(); }
@@ -98,9 +101,10 @@ final class SettingsApplications extends LinearLayout implements AppCatalogCache
             if (entry.id().isEmpty() && !entry.packageName().startsWith("com.android.systemui") && !entry.packageName().equals("com.sec.android.app.launcher")) summary += "\n应用当前不可用 · 可修改已保存规则";
             long sameNames = items.stream().filter(e -> e.label().equals(entry.label())).count(); if (sameNames > 1) summary += (summary.isEmpty() ? "" : "\n") + entry.packageName();
             if (!summary.isEmpty()) { TextView value = SettingsUi.text(c, summary.trim(), 14, SettingsUi.ACCENT); value.setPadding(0, Ui.dp(c, 4), 0, 0); words.addView(value); } row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-            if (mode.equals("visibility")) {
-                Switch toggle = new Switch(c); toggle.setTag("app-toggle-" + entry.packageName()); toggle.setContentDescription(entry.label() + "，只显示横条"); toggle.setMinimumWidth(Ui.dp(c, 48)); toggle.setMinimumHeight(Ui.dp(c, 48)); toggle.setChecked(prefs.compactApps().contains(entry.packageName())); toggle.setThumbTintList(android.content.res.ColorStateList.valueOf(SettingsUi.TEXT)); toggle.setTrackTintList(new android.content.res.ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{SettingsUi.CONTROL, 0xFF65656C}));
-                toggle.setOnCheckedChangeListener((button, enabled) -> { Set<String> selected = prefs.compactApps(); if (enabled) selected.add(entry.packageName()); else selected.remove(entry.packageName()); prefs.data.edit().putStringSet("dock_compact_apps", selected).apply(); }); row.addView(toggle, new LinearLayout.LayoutParams(Ui.dp(c, 48), Ui.dp(c, 48))); row.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked())); words.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            if (mode.equals("visibility") || mode.equals("status")) {
+                boolean statusRule = mode.equals("status");
+                Switch toggle = new Switch(c); toggle.setTag("app-toggle-" + entry.packageName()); toggle.setContentDescription(entry.label() + (statusRule ? "，隐藏外屏常驻状态栏" : "，只显示横条")); toggle.setMinimumWidth(Ui.dp(c, 48)); toggle.setMinimumHeight(Ui.dp(c, 48)); toggle.setChecked((statusRule ? prefs.statusHiddenApps() : prefs.compactApps()).contains(entry.packageName())); toggle.setThumbTintList(android.content.res.ColorStateList.valueOf(SettingsUi.TEXT)); toggle.setTrackTintList(new android.content.res.ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{SettingsUi.CONTROL, 0xFF65656C}));
+                toggle.setOnCheckedChangeListener((button, enabled) -> { Set<String> selected = statusRule ? prefs.statusHiddenApps() : prefs.compactApps(); if (enabled) selected.add(entry.packageName()); else selected.remove(entry.packageName()); if (statusRule) prefs.saveStatusHiddenApps(selected); else prefs.data.edit().putStringSet("dock_compact_apps", selected).apply(); }); row.addView(toggle, new LinearLayout.LayoutParams(Ui.dp(c, 48), Ui.dp(c, 48))); row.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked())); words.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             } else { row.setOnClickListener(v -> select.accept(entry)); row.setFocusable(true); }
             return row;
         }

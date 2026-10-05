@@ -44,6 +44,7 @@ final class PanelGlassChecks {
         main(() -> { activity.getWindow().setDecorFitsSystemWindows(false); activity.getWindow().getInsetsController().hide(WindowInsets.Type.systemBars()); }); idle();
         try {
             mount("controls",0,4);
+            checkDetailHeaders();
             for (String id:List.of("wifi","volume","nfc","hotspot","media")) {
                 main(() -> owner.showDetails(id,null)); idle();
                 DetailSheet sheet=root.findViewWithTag("detail-sheet"); View card=sheet.findViewWithTag("detail-card"); android.graphics.Rect initial=layoutBounds(card);
@@ -185,7 +186,7 @@ final class PanelGlassChecks {
             float alpha=sheet.getAlpha(), scale=card.getScaleX(), x=card.getTranslationX(), y=card.getTranslationY();
             if (interrupt && android.animation.ValueAnimator.areAnimatorsEnabled()) require(alpha>0 && alpha<1,"close interrupts an actual opening frame");
             root.getViewTreeObserver().addOnPreDrawListener(listener);
-            if (action==0) sheet.findViewWithTag("detail-close").performClick(); else if (action==1) sheet.performClick(); else owner.act("back");
+            if (action==0) sheet.close(); else if (action==1) sheet.performClick(); else owner.act("back");
             if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
                 require(sheet.isAttachedToWindow(),"close keeps sheet mounted until the reverse animation completes");
                 require(sheet.getAlpha()==alpha && card.getScaleX()==scale && card.getTranslationX()==x && card.getTranslationY()==y,"closing starts at the current pose without a jump");
@@ -264,15 +265,24 @@ final class PanelGlassChecks {
     }
     String runCaptureChecks() {
         activity=test.startActivitySync(new Intent(test.getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        try { checkRequests(); checkScaledBackdrop(); return "PASS: "+assertions+" glass capture/scale assertions; hardware texture mapping and lifecycle on disposable emulator"; }
+        try { checkCardCaptureAreas(); checkRequests(); checkScaledBackdrop(); return "PASS: "+assertions+" glass capture/scale assertions; rotation-aware card coverage, hardware texture mapping and lifecycle on disposable emulator"; }
         finally { main(activity::finish); }
     }
     String runOriginalTabs() throws Exception {
         activity=test.startActivitySync(new Intent(test.getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         SystemClock.sleep(700); test.waitForIdleSync();
         main(() -> { activity.getWindow().setDecorFitsSystemWindows(false); activity.getWindow().getInsetsController().hide(WindowInsets.Type.systemBars()); }); idle();
-        try { checkOriginalTabs(); return "PASS: "+assertions+" original LiquidBottomTabs host and interaction assertions"; }
+        try { checkOriginalTabs(); checkRotationTabs(); return "PASS: "+assertions+" original LiquidBottomTabs source/rotation host and interaction assertions"; }
         finally { main(() -> { if (session!=null) session.close(); activity.setContentView(new FrameLayout(activity)); activity.finish(); }); if (source!=null && !source.isRecycled()) source.recycle(); }
+    }
+    String runNotifications() throws Exception {
+        activity=test.startActivitySync(new Intent(test.getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        SystemClock.sleep(700); test.waitForIdleSync();
+        main(() -> { activity.getWindow().setDecorFitsSystemWindows(false); activity.getWindow().getInsetsController().hide(WindowInsets.Type.systemBars()); }); idle();
+        try {
+            checkNotificationUpdates();
+            return "PASS: " + assertions + " notification glass assertions; real rendering, plain expanded chevron, centered icons and icon-only actions";
+        } finally { main(() -> { if (session != null) session.close(); if (root!=null) root.setBackground(null); activity.setContentView(new FrameLayout(activity)); activity.finish(); }); if (source != null && !source.isRecycled()) source.recycle(); }
     }
     String run() throws Exception {
         Instrumentation.ActivityMonitor monitor=test.addMonitor(MainActivity.class.getName(),null,false);
@@ -377,11 +387,7 @@ final class PanelGlassChecks {
         }
         checkOriginalTabs();
         mount("controls",0,4);
-        for (String id:List.of("rotation","media","volume","brightness","wifi","bluetooth","data","dnd","airplane","system_controls","nfc","hotspot","torch","screenshot","lock","apps")) {
-            main(() -> owner.showDetails(id,null)); idle();
-            View close=root.findViewWithTag("detail-close"); require(close!=null && Math.abs(close.getWidth()*close.getScaleX()-Ui.dp(activity,36)*.8f)<1,"detail close matches compact36dp action artwork: "+id);
-            require(checkCompactActions(root.findViewWithTag("detail-card"))>0,"detail actions audited: "+id); main(owner::dismissDetails); idle();
-        }
+        checkDetailHeaders();
         main(() -> owner.showDetails("media",null)); idle(); View picker=root.findViewWithTag("media-player-picker"); ViewGroup pickerSlot=(ViewGroup)picker.getParent(); int[] hiddenClicks={0};
         main(() -> { picker.setOnClickListener(v -> hiddenClicks[0]++); picker.setVisibility(View.GONE); }); idle(); require(pickerSlot.getVisibility()==View.GONE,"hidden media action removes its whole visual and layout slot");
         main(() -> { touch(pickerSlot,0,1,1); touch(pickerSlot,1,1,1); }); require(hiddenClicks[0]==0,"hidden slot cannot invoke action");
@@ -474,6 +480,18 @@ final class PanelGlassChecks {
         int[] targetLocation=new int[2],rootLocation=new int[2]; target.getLocationOnScreen(targetLocation); root.getLocationOnScreen(rootLocation);
         touch(root,action,x+targetLocation[0]-rootLocation[0],y+targetLocation[1]-rootLocation[1]);
     }
+    private void checkDetailHeaders() {
+        for (String id:List.of("rotation","media","volume","brightness","wifi","bluetooth","data","dnd","airplane","system_controls","nfc","hotspot","torch","screenshot","lock","apps")) {
+            main(() -> owner.showDetails(id,null)); idle();
+            ViewGroup card=root.findViewWithTag("detail-card"); require(card.findViewWithTag("detail-close")==null,"control detail has no close button: "+id);
+            require(card.getChildAt(0).getHeight()==Ui.dp(activity,PanelUi.SLOT),"detail header retains its original height: "+id);
+            checkCompactActions(card); main(owner::dismissDetails); idle();
+        }
+        main(owner::editControls); idle(); main(() -> panel.findViewWithTag("control-selected-wifi").performClick()); idle();
+        require(panel.findViewWithTag("detail-close")==null && panel.findViewWithTag("order-menu-remove")!=null,"control editor detail retains its actions without a close button");
+        main(() -> owner.act("back")); SystemClock.sleep(850); idle(); main(() -> owner.act("back")); idle();
+        mount("controls",0,4);
+    }
     private int checkCompactActions(View view) {
         int count=0;
         if (view instanceof android.widget.ImageButton || view instanceof android.widget.Button) { require(view.getParent() instanceof PanelActionSlot,"detail action retains an original-sized touch slot"); require(view.getScaleX()<=.8f && view.getScaleY()<=.8f,"detail artwork is compact"); count++; }
@@ -560,12 +578,63 @@ final class PanelGlassChecks {
     }
     private Object ownerField(String name) { try { java.lang.reflect.Field field=CoverService.class.getDeclaredField(name); field.setAccessible(true); return field.get(owner); } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); } }
     private void setOwnerField(String name,Object value) { try { java.lang.reflect.Field field=CoverService.class.getDeclaredField(name); field.setAccessible(true); field.set(owner,value); } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); } }
+    private void checkRotationTabs() throws Exception {
+        mount("controls",0,4); main(() -> owner.showDetails("rotation",null)); SystemClock.sleep(950); idle();
+        ControlRotationTabs actual=root.findViewWithTag("detail-rotation-tabs");
+        View backplate=root.findViewWithTag("detail-card");
+        require(actual!=null && actual.getChildAt(0).getVisibility()==View.VISIBLE,"rotation sheet uses the original liquid renderer");
+        require(backplate.getWidth()==Ui.dp(activity,240),"rotation backplate is compact with room for expanded end tabs");
+        require(actual.getWidth()==Ui.dp(activity,ControlRotationTabs.WIDTH) && Math.abs(actual.getLeft()-(((View)actual.getParent()).getWidth()-actual.getWidth())/2)<=1,"four rotation labels use a compact centered strip");
+        int right=0;
+        for (int i=0;i<4;i++) { View angle=actual.findViewWithTag("detail-angle-"+i); require(angle.getVisibility()==View.INVISIBLE && angle.getTop()==Ui.dp(activity,2) && angle.getLeft()>=right && angle.getWidth()>0,"four angles share one row without drawing fallback buttons"); right=angle.getRight(); }
+        require(root.findViewWithTag("detail-switch-rotation")!=null,"rotation tab keeps the automatic switch");
+        capture("rotation-tabs");
+        Bitmap resting=test.getUiAutomation().takeScreenshot(); int[] stripPosition=new int[2]; actual.getLocationOnScreen(stripPosition);
+        float pressX=actual.getWidth()/8f,pressY=actual.getHeight()/2f;
+        main(() -> touchThroughRoot(actual,0,pressX,pressY)); SystemClock.sleep(400); idle(); capture("rotation-tabs-pressed");
+        Bitmap pressed=test.getUiAutomation().takeScreenshot(); int upper=0,lower=0,left=0;
+        for (int dx=-Ui.dp(activity,12);dx<=Ui.dp(activity,12);dx++) for (int dy=2;dy<=Ui.dp(activity,4);dy++) {
+            int x=stripPosition[0]+Math.round(pressX)+dx,top=stripPosition[1]-dy,bottom=stripPosition[1]+actual.getHeight()+dy;
+            int a=resting.getPixel(x,top),b=pressed.getPixel(x,top); if (Math.abs(Color.red(a)-Color.red(b))+Math.abs(Color.green(a)-Color.green(b))+Math.abs(Color.blue(a)-Color.blue(b))>24) upper++;
+            a=resting.getPixel(x,bottom); b=pressed.getPixel(x,bottom); if (Math.abs(Color.red(a)-Color.red(b))+Math.abs(Color.green(a)-Color.green(b))+Math.abs(Color.blue(a)-Color.blue(b))>24) lower++;
+        }
+        for (int dy=-Ui.dp(activity,6);dy<=Ui.dp(activity,6);dy++) for (int dx=2;dx<=Ui.dp(activity,4);dx++) {
+            int x=stripPosition[0]-dx,y=stripPosition[1]+actual.getHeight()/2+dy,a=resting.getPixel(x,y),b=pressed.getPixel(x,y);
+            if (Math.abs(Color.red(a)-Color.red(b))+Math.abs(Color.green(a)-Color.green(b))+Math.abs(Color.blue(a)-Color.blue(b))>24) left++;
+        }
+        require(rotationCardEdgeChanges(resting,pressed,backplate,stripPosition[1],actual.getHeight())==0,"expanded first tab keeps clear space before the backplate edge"); pressed.recycle();
+        main(() -> touchThroughRoot(actual,2,actual.getWidth()*7/8f,pressY)); SystemClock.sleep(400); idle(); capture("rotation-tabs-drag-right");
+        Bitmap last=test.getUiAutomation().takeScreenshot(); require(rotationCardEdgeChanges(resting,last,backplate,stripPosition[1],actual.getHeight())==0,"expanded last tab keeps clear space before the backplate edge"); last.recycle();
+        resting.recycle(); main(() -> touchThroughRoot(actual,3,pressX,pressY)); SystemClock.sleep(400); idle();
+        require(upper>30 && lower>30 && left>30,"pressed rotation thumb draws beyond strip edges: upper="+upper+", lower="+lower+", left="+left);
+        main(owner::dismissDetails); idle();
+        int[] commits={0},chosen={-1}; ControlRotationTabs[] host={null};
+        main(() -> { host[0]=new ControlRotationTabs(activity,0,angle -> { commits[0]++; chosen[0]=angle; }); root.removeAllViews(); root.addView(host[0],new FrameLayout.LayoutParams(Ui.dp(activity,260),Ui.dp(activity,PanelUi.SLOT))); session.decorate(); }); idle(); ControlRotationTabs tabs=host[0];
+        main(() -> tabs.source(2)); SystemClock.sleep(400); idle(); require(commits[0]==0,"programmatic current-angle updates cannot execute rotation");
+        float y=tabs.getHeight()/2f,from=tabs.getWidth()*5/8f,to=tabs.getWidth()/8f;
+        main(() -> touch(tabs,0,from,y)); idle(); main(() -> touch(tabs,1,from,y)); SystemClock.sleep(400); idle();
+        require(commits[0]==1 && chosen[0]==2,"clicking the current angle still explicitly locks it");
+        main(() -> touch(tabs,0,from,y)); idle(); main(() -> touch(tabs,2,to,y)); idle(); require(commits[0]==1,"drag does not execute before release");
+        main(() -> touch(tabs,3,to,y)); SystemClock.sleep(400); idle(); require(commits[0]==1,"canceled rotation drag cannot execute late");
+        main(() -> touch(tabs,0,from,y)); idle(); main(() -> touch(tabs,2,to,y)); idle(); main(() -> touch(tabs,1,to,y)); SystemClock.sleep(600); idle();
+        require(commits[0]==2 && chosen[0]==0,"released drag executes its selected angle once");
+        main(() -> { session.close(); owner.panelGlass=null; tabs.setLayoutParams(new FrameLayout.LayoutParams(Ui.dp(activity,180),Ui.dp(activity,PanelUi.SLOT))); }); idle();
+        require(tabs.getChildAt(0).getVisibility()==View.GONE,"missing backdrop restores native angle tabs");
+        main(() -> tabs.findViewWithTag("detail-angle-3").performClick()); idle(); require(commits[0]==3 && chosen[0]==3,"native fallback angle remains usable at narrow width");
+        main(() -> { touch(tabs,0,to,y); root.removeView(tabs); }); SystemClock.sleep(400); idle(); require(commits[0]==3,"unmount cancels pending rotation input");
+    }
+    private int rotationCardEdgeChanges(Bitmap before,Bitmap after,View card,int stripTop,int stripHeight) {
+        int[] location=new int[2]; card.getLocationOnScreen(location); int changed=0,padding=Ui.dp(activity,4);
+        for (int edge:new int[]{location[0],location[0]+card.getWidth()}) for (int x=edge-padding;x<edge+padding;x++) for (int y=stripTop-Ui.dp(activity,8);y<stripTop+stripHeight+Ui.dp(activity,8);y++) {
+            int a=before.getPixel(x,y),b=after.getPixel(x,y);
+            if (Math.abs(Color.red(a)-Color.red(b))+Math.abs(Color.green(a)-Color.green(b))+Math.abs(Color.blue(a)-Color.blue(b))>24) changed++;
+        }
+        return changed;
+    }
     private void checkSelectedDetail() {
         android.widget.Button button=root.findViewWithTag("detail-angle-"+activity.getDisplay().getRotation());
-        require(button!=null && button.isSelected() && button.getCurrentTextColor()==Ui.ON_ACTIVE,"selected detail retains its dark semantic foreground");
-        Bitmap rendered=test.getUiAutomation().takeScreenshot(); int[] location=new int[2]; button.getLocationOnScreen(location); int bright=0,total=0;
-        for (int y=4;y<button.getHeight()-4;y+=2) for (int x=4;x<button.getWidth()-4;x+=2) { int color=rendered.getPixel(location[0]+x,location[1]+y); if (Color.red(color)+Color.green(color)+Color.blue(color)>600) bright++; total++; }
-        rendered.recycle(); require(total>0 && bright>total*.5,"selected detail uses a light glass field behind dark text");
+        require(button!=null && button.isSelected() && button.getCurrentTextColor()==0xFF0091FF && button.getVisibility()==View.INVISIBLE,"current angle retains blue tab semantics under the liquid renderer");
+        Bitmap rendered; int[] location=new int[2]; int bright,total;
         DetailSheet sheet=(DetailSheet)root.getChildAt(root.getChildCount()-1);
         android.widget.ImageButton picker=Ui.iconButton(activity,R.drawable.ic_ms_apps,"播放器选择",() -> { });
         main(() -> { picker.setSelected(true); sheet.content.addView(picker,0,new LinearLayout.LayoutParams(Ui.dp(activity,36),Ui.dp(activity,36))); }); idle();
@@ -608,14 +677,71 @@ final class PanelGlassChecks {
         return list;
     }
     private void checkNotificationUpdates() throws Exception {
+        mount("controls",1,4);
+        ViewGroup referenceHeader = panel.findViewWithTag("panel-header"), referenceSlot = (ViewGroup) referenceHeader.getChildAt(1);
+        View referenceAction = referenceSlot.getChildAt(0);
+        int referenceSize = referenceSlot.getWidth(), referenceGap = referenceHeader.getChildAt(2).getLeft() - referenceSlot.getRight();
+        float referenceDiameter = referenceAction.getWidth() * referenceAction.getScaleX();
         mount("notifications",1,4); showNotifications();
+        ViewGroup notificationHeader = panel.findViewWithTag("panel-header");
+        for (int i = 1; i < notificationHeader.getChildCount(); i++) {
+            ViewGroup slot = (ViewGroup) notificationHeader.getChildAt(i); View action = slot.getChildAt(0);
+            require(slot.getHeight() == referenceSize && action.getScaleY() == referenceAction.getScaleY(), "notification header shares control header height and artwork scale");
+            if (i + 1 < notificationHeader.getChildCount()) require(notificationHeader.getChildAt(i + 1).getLeft() - slot.getRight() == referenceGap, "notification header shares control header action spacing");
+        }
         ViewGroup list=panel.findViewWithTag("notification-list"); View first=list.getChildAt(0);
         main(() -> { NotificationCenterView center=panel.findViewWithTag("notification-center"); List<android.service.notification.StatusBarNotification> items=notices(35); for (int i=0;i<60;i++) center.update(true,items); }); idle();
         require(list.getChildAt(0)==first && session.captures==0 && session.preparations==1,"notification bursts reuse rows and the same texture");
         NotificationSwipeRow row=(NotificationSwipeRow)((ViewGroup)first).getChildAt(0);
         main(() -> row.surface.performClick()); idle(); capture("notification-expanded");
+        main(() -> {
+            View expand = row.findViewWithTag("notification-expand");
+            require(!expand.isSelected() && expand.getBackground() instanceof android.graphics.drawable.RippleDrawable && !(expand.getParent() instanceof PanelActionSlot), "expanded chevron retains transparent feedback without a white selected glass disc");
+            require(expand.getContentDescription().toString().equals("收起通知组"), "plain chevron still announces its actual expanded state");
+            View icon = row.findViewWithTag("notification-icon"); int[] image = new int[2], card = new int[2]; icon.getLocationInWindow(image); row.surface.getLocationInWindow(card);
+            require(Math.abs(image[1] + icon.getHeight() / 2f - card[1] - row.surface.getHeight() / 2f) <= Ui.dp(activity, 1), "notification app icon is vertically centered inside its card");
+            for (String tag : List.of("notification-settings", "notification-clear")) {
+                ViewGroup action = row.findViewWithTag(tag); require(action.getChildCount() == 1 && action.getContentDescription().length() > 0 && action.getWidth() == Ui.dp(activity, PanelUi.SLOT), "icon-only action keeps its accessible label and matches control header slot: " + tag);
+                View face = action.findViewWithTag("notification-action-face");
+                require(action.getWidth() == referenceSize && Math.abs(face.getWidth() * face.getScaleX() - referenceDiameter) < .1f, "card action matches the actual control header button dimensions");
+                if (tag.equals("notification-settings")) require(row.findViewWithTag("notification-clear").getLeft() - action.getRight() == referenceGap, "card buttons match actual control header spacing");
+            }
+        });
         main(() -> row.showActions(true)); idle(); capture("notification-actions");
         require(row.willNotDraw() && row.getBackground()==null,"stack's old opaque painter is disabled");
+    }
+    private void checkCardCaptureAreas() {
+        DockGeometry.Box[] cutouts = {new DockGeometry.Box(379,654,369,66), new DockGeometry.Box(654,0,66,369), new DockGeometry.Box(0,0,369,66), new DockGeometry.Box(0,379,66,369)};
+        Prefs prefs = new Prefs(activity);
+        boolean effects = prefs.panelBlur(); prefs.data.edit().putBoolean("panel_blur",true).commit();
+        try {
+            for (int rotation=0;rotation<4;rotation++) {
+                int angle=rotation;
+                int width=rotation%2==0 ? 748 : 720, height=rotation%2==0 ? 720 : 748;
+                DockGeometry.Placement dock=DockGeometry.resolve(width,height,List.of(cutouts[rotation]),1,(rotation+3)%4,.46f,.088f,true);
+                DockGeometry.Box safe=DockGeometry.panelContent(dock,width,height,List.of(cutouts[rotation]));
+                DockGeometry.Box content=new DockGeometry.Box(safe.x(),safe.y()+24,safe.width(),safe.height()-24);
+                android.graphics.Rect appBounds=new android.graphics.Rect(safe.x(),safe.y(),safe.right(),safe.bottom());
+                require(rotation!=0 || safe.y()==0 && safe.bottom()<height,"0-degree camera reserve is below the content");
+                require(rotation!=2 || safe.y()>0 && safe.bottom()==height,"180-degree camera reserve is above the content");
+                VirtualDisplay display=activity.getSystemService(DisplayManager.class).createVirtualDisplay("glass-card-coverage",width,height,160,null,DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY);
+                require(display!=null,"isolated rotated card display");
+                try {
+                    for (InterfaceCard.Definition definition:List.of(InterfaceCard.NOTIFICATIONS,InterfaceCard.CONTROLS,InterfaceCard.LAUNCHER,InterfaceCard.TASKS)) main(() -> {
+                        InterfaceCard card=new InterfaceCard(activity,prefs,definition,new FrameLayout(activity),() -> { },() -> { });
+                        try {
+                            card.frameBounds(new DockGeometry.Box(0,0,width,height),safe); card.contentSafeBounds(content);
+                            card.statusBounds(DockGeometry.statusBar(safe,width,20,1));
+                            card.prepareGlass(new Probe(activity),display.getDisplay(),prefs,() -> true,() -> { },false);
+                            PanelGlassSession glass=card.glass();
+                            require(glass!=null && glass.canCaptureWindow(appBounds),"app excluding rotation-specific system strip covers "+definition.id()+" at rotation "+angle);
+                            require(!glass.canCaptureWindow(new android.graphics.Rect(safe.x()+1,safe.y(),safe.right()-1,safe.bottom())),"cropped floating window remains rejected for "+definition.id()+" at rotation "+angle);
+                            if (definition.showStatusBar()) require(!glass.canCaptureWindow(new android.graphics.Rect(content.x(),content.y(),content.right(),content.bottom())),"control capture also requires its status row");
+                        } finally { card.release(); }
+                    });
+                } finally { display.release(); }
+            }
+        } finally { prefs.data.edit().putBoolean("panel_blur",effects).commit(); }
     }
     private void checkRequests() {
         VirtualDisplay display=activity.getSystemService(DisplayManager.class).createVirtualDisplay("glass-request-check",320,240,160,null,DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY);
@@ -646,6 +772,15 @@ final class PanelGlassChecks {
             require(finished[0]==1 && request[0].bytes()==0,"close cancels completion and retained data");
             main(() -> { request[0]=new PanelGlassSession(activity,display.getDisplay()); request[0].capture(service,() -> true,() -> finished[0]++); service.callback.onFailure(AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW); });
             require(request[0].state.startsWith("capture-") && !request[0].ready(),"protected content has explicit fallback"); main(request[0]::close);
+            android.hardware.HardwareBuffer obsolete=android.hardware.HardwareBuffer.create(320,240,android.hardware.HardwareBuffer.RGBA_8888,1,android.hardware.HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE | android.hardware.HardwareBuffer.USAGE_GPU_COLOR_OUTPUT);
+            int[] sourceFinished={0};
+            main(() -> {
+                request[0]=new PanelGlassSession(activity,display.getDisplay()); request[0].capture(service,() -> true,() -> sourceFinished[0]++);
+                request[0].sourceWindow(71,new android.graphics.Rect(0,0,320,240)); request[0].invalidateSource(); request[0].invalidateSource();
+                request[0].receive(obsolete,android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB),320,240);
+                request[0].capture(service,() -> true,() -> { throw new AssertionError("invalid source recaptured"); });
+            }); idle();
+            require(obsolete.isClosed() && sourceFinished[0]==1 && request[0].captures==1 && request[0].preparations==0 && request[0].bytes()==0 && request[0].state.equals("source-changed"),"source lost during preparation finishes once, releases late buffers and never retries"); main(request[0]::close);
             int calls=service.calls;
             main(() -> { request[0]=new PanelGlassSession(activity,activity.getDisplay()); request[0].capture(service,() -> true,() -> finished[0]++); });
             require(service.calls==calls && request[0].state.equals("unsupported"),"never capture default display"); main(request[0]::close);

@@ -19,15 +19,18 @@ public final class WidgetFixtureProvider extends AppWidgetProvider {
     }
     @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) { for (int id : ids) update(context, id, 1); }
     private void update(Context context, int id, int value) {
-        RemoteViews views = new RemoteViews(context.getPackageName(), io.github.flipcover.controls.test.R.layout.widget_fixture);
+        boolean fittedFixture = value == 11 || value == 12;
+        int layout = value == 11 ? io.github.flipcover.controls.test.R.layout.widget_fixture_fixed : value == 12 ? io.github.flipcover.controls.test.R.layout.widget_fixture_artwork : io.github.flipcover.controls.test.R.layout.widget_fixture;
+        RemoteViews views = new RemoteViews(context.getPackageName(), layout);
         views.setTextViewText(io.github.flipcover.controls.test.R.id.fixture_text, "跨应用更新 " + value);
         PendingIntent click = PendingIntent.getBroadcast(context, id, new Intent(context, WidgetFixtureProvider.class).setAction("fixture.CLICK"), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         views.setOnClickPendingIntent(io.github.flipcover.controls.test.R.id.fixture_button, click);
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
+        if (android.os.Build.VERSION.SDK_INT >= 31 && value == 12) views.setViewLayoutHeight(io.github.flipcover.controls.test.R.id.fixture_artwork, 120, android.util.TypedValue.COMPLEX_UNIT_DIP);
+        if (android.os.Build.VERSION.SDK_INT >= 31 && !fittedFixture) {
             RemoteViews row = new RemoteViews(context.getPackageName(), android.R.layout.simple_list_item_1); row.setTextViewText(android.R.id.text1, "列表内容 " + value);
             views.setRemoteAdapter(io.github.flipcover.controls.test.R.id.fixture_list, new RemoteViews.RemoteCollectionItems.Builder().addItem(1, row).setHasStableIds(true).build());
         }
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
+        if (android.os.Build.VERSION.SDK_INT >= 31 && !fittedFixture) {
             RemoteViews small = new RemoteViews(views), large = new RemoteViews(views);
             small.setTextViewText(io.github.flipcover.controls.test.R.id.fixture_variant, "SMALL");
             large.setTextViewText(io.github.flipcover.controls.test.R.id.fixture_variant, "LARGE");

@@ -19,7 +19,7 @@ final class PanelActionSlot extends FrameLayout {
     PanelActionSlot(View action) {
         super(action.getContext()); this.action=action; setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         int width=action.getLayoutParams()!=null && action.getLayoutParams().width==LayoutParams.WRAP_CONTENT ? LayoutParams.WRAP_CONTENT : LayoutParams.MATCH_PARENT;
-        action.setScaleX(.8f); action.setScaleY(.8f); addView(action,new LayoutParams(width,-1,android.view.Gravity.CENTER)); syncVisibility();
+        action.setScaleX(PanelUi.ACTION_SCALE); action.setScaleY(PanelUi.ACTION_SCALE); addView(action,new LayoutParams(width,-1,android.view.Gravity.CENTER)); syncVisibility();
         int slop=ViewConfiguration.get(getContext()).getScaledTouchSlop();
         setTouchDelegate(new TouchDelegate(target,action) {
             @Override public boolean onTouchEvent(MotionEvent event) {
@@ -44,8 +44,8 @@ final class PanelActionSlot extends FrameLayout {
         super.onLayout(changed,l,t,r,b);
         target.set(0,0,getWidth(),getHeight());
         if (action instanceof android.widget.ImageButton && Math.abs(action.getWidth()-action.getHeight())<2) {
-            float diameter=Ui.dp(getContext(),PanelUi.SLOT)*.8f; action.setScaleX(Math.min(.8f,diameter/Math.max(1,action.getWidth()))); action.setScaleY(Math.min(.8f,diameter/Math.max(1,action.getHeight())));
-            int pad=Math.round(action.getWidth()*8f/36f); if (action.getPaddingLeft()!=pad) action.setPadding(pad,pad,pad,pad);
+            float diameter=Ui.dp(getContext(),PanelUi.SLOT)*PanelUi.ACTION_SCALE; action.setScaleX(Math.min(PanelUi.ACTION_SCALE,diameter/Math.max(1,action.getWidth()))); action.setScaleY(Math.min(PanelUi.ACTION_SCALE,diameter/Math.max(1,action.getHeight())));
+            int pad=Math.round(action.getWidth()*(PanelUi.SLOT-PanelUi.ACTION_ICON)*.5f/PanelUi.SLOT); if (action.getPaddingLeft()!=pad) action.setPadding(pad,pad,pad,pad);
         }
     }
     @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); getViewTreeObserver().addOnPreDrawListener(visibility); }

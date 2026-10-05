@@ -21,6 +21,15 @@ public class RecentTasksTest {
         assertEquals(List.of(source.get(1), source.get(3)), RecentTasks.apps(source, Set.of("pin.app")));
         assertTrue(RecentTasks.apps(List.of(), Set.of()).isEmpty());
     }
+    @Test public void explicitDismissCanCloseForegroundButStillRequiresExactIdentity() {
+        RecentTasks.Task expected = task(7, "a.example", false), foreground = task(7, "a.example", true);
+        assertFalse(RecentTasks.canDismiss(expected, foreground, false));
+        assertTrue(RecentTasks.canDismiss(expected, foreground, true));
+        assertFalse(RecentTasks.canDismiss(expected, task(7, "b.example", true), true));
+        assertFalse(RecentTasks.canDismiss(expected, new RecentTasks.Task(7, 3, 0, "a.example/.Main", "a.example", true), true));
+        assertFalse(RecentTasks.canDismiss(expected, new RecentTasks.Task(7, 2, 10, "a.example/.Main", "a.example", true), true));
+        assertFalse(RecentTasks.canDismiss(expected, task(8, "a.example", true), true));
+    }
     @Test public void clearTargetsIncludeMatchingBackgroundTasksButNotPinsVisibleOrHiddenFifthApp() {
         List<RecentTasks.Task> source = List.of(task(1, "pin.app", false), task(2, "a.app", true), task(3, "a.app", false), task(4, "b.app", false), task(5, "c.app", false), task(6, "d.app", false), task(7, "e.app", false), task(8, "f.app", false));
         assertEquals(List.of(source.get(1), source.get(3), source.get(4), source.get(5)), RecentTasks.apps(source, Set.of("pin.app")));

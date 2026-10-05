@@ -32,6 +32,7 @@ final class ConfigurationChecks {
             test.waitForIdleSync();
             roundtrip();
             homeBehavior();
+            entryPositions();
             templates();
             malformed();
             compatibility();
@@ -43,8 +44,9 @@ final class ConfigurationChecks {
     }
 
     private void roundtrip() throws Exception {
-        prefs.data.edit().putBoolean("gestures_enabled", false).putBoolean("avoid_keyboard", false).putBoolean("haptics", false)
+        prefs.data.edit().putBoolean("input_enabled", true).putBoolean("gestures_enabled", false).putBoolean("avoid_keyboard", false).putBoolean("haptics", false)
             .putBoolean("dock_auto_hide", false).putStringSet("dock_compact_apps", Set.of("com.example.first", "com.example.second"))
+            .putStringSet("status_hidden_apps", Set.of("com.example.second"))
             .putString("app_rotations", "{\"com.example.first\":3,\"com.example.second\":4}")
             .putString("dock", "[\"home\",\"back\",\"app_dock\"]").putString("panel", "[\"wifi\",\"media\",\"system_controls\"]")
             .putString("favorites", "[\"torch\",\"screenshot\"]").putString("pinned_action", "home").putInt("per_page", 5).putInt("damping", 2)
@@ -63,8 +65,8 @@ final class ConfigurationChecks {
         // Ensure every exported default is materialized too, then compare every persisted portable key.
         JSONObject config = activity.exportConfigurationData(); activity.applyConfigurationData(config);
         Map<String, ?> expected = new HashMap<>(prefs.data.getAll());
-        for (String key : List.of("hub_default_migrated", "app_dock_migrated", "system_controls_migrated", "panel_undo")) expected.remove(key);
-        Map<String, Object> local = Map.of("display", 77, "enabled", false, "system_controls_disabled", true, "layout_backup", "local-backup", "layout_undo", "local-undo", "layout_saved_at", 123L);
+        for (String key : List.of("hub_default_migrated", "app_dock_migrated", "system_controls_migrated", "input_tile_migrated", "input_devices", "panel_undo")) expected.remove(key);
+        Map<String, Object> local = Map.of("display", 77, "enabled", false, "system_controls_disabled", true, "layout_backup", "local-backup", "layout_undo", "local-undo", "layout_saved_at", 123L, "input_tile_migrated", true, "input_devices", "{\"local-device\":{\"mode\":\"direction\"}}");
         restore(prefs.data, local); activity.applyConfigurationData(new JSONObject(config.toString()));
         for (String key : expected.keySet()) require(expected.get(key).equals(prefs.data.getAll().get(key)), "roundtrip preserves " + key);
         for (String key : local.keySet()) require(local.get(key).equals(prefs.data.getAll().get(key)), "import preserves local " + key);
@@ -85,7 +87,7 @@ final class ConfigurationChecks {
     private void malformed() throws Exception {
         JSONObject config = activity.exportConfigurationData();
         for (String key : new String[]{"version", "perPage", "damping"}) for (Object value : new Object[]{1.5, "2", JSONObject.NULL}) reject(new JSONObject(config.toString()).put(key, value), "invalid " + key);
-        for (String key : new String[]{"gestures", "haptics", "avoidKeyboard", "dockAutoHide", "statusEnabled", "blur"}) reject(new JSONObject(config.toString()).put(key, "false"), "non-boolean " + key);
+        for (String key : new String[]{"inputEnabled", "gestures", "haptics", "avoidKeyboard", "dockAutoHide", "statusEnabled", "blur"}) reject(new JSONObject(config.toString()).put(key, "false"), "non-boolean " + key);
         for (String key : new String[]{"favorites", "compactApps", "statusItems"}) reject(new JSONObject(config.toString()).put(key, JSONObject.NULL), "null " + key);
         for (String key : new String[]{"version", "perPage", "damping"}) { JSONObject bad = new JSONObject(config.toString()); bad.getJSONObject("layout").put(key, 1.5); reject(bad, "fractional layout " + key); }
         JSONObject bad = new JSONObject(config.toString()); bad.getJSONObject("layout").getJSONArray("corners").put(0, 1.5); reject(bad, "fractional corner");
@@ -116,6 +118,24 @@ final class ConfigurationChecks {
         activity.applyConfigurationData(legacy); require(prefs.homeAction().equals("cards"), "older layout defaults Home to native cards");
     }
 
+    private void entryPositions() throws Exception {
+        prefs.entryPosition(0, "top_left"); prefs.entryPosition(1, "top_right"); prefs.entryPosition(3, "top_left");
+        JSONObject saved = activity.exportConfigurationData();
+        prefs.entryPosition(0, "bottom_right"); prefs.entryPosition(1, "top_left"); prefs.entryPosition(3, "top_right");
+        activity.applyConfigurationData(saved);
+        require(prefs.entryPosition(0).equals("top_left") && prefs.entryPosition(1).equals("top_right") && prefs.entryPosition(2).equals("top_left") && prefs.entryPosition(3).equals("top_left"), "four independent entry choices roundtrip");
+        prefs.saveLayout(); prefs.entryPosition(0, "bottom_right"); prefs.restoreLayout(false);
+        require(prefs.entryPosition(0).equals("top_left"), "layout backup restores entry");
+        prefs.restoreLayout(true); require(prefs.entryPosition(0).equals("bottom_right"), "layout undo restores previous entry");
+        for (int rotation = 0; rotation < 4; rotation++) for (Object invalid : new Object[]{rotation == 0 ? "top_right" : "bottom_right", "side", 1, true, JSONObject.NULL}) {
+            JSONObject bad = new JSONObject(saved.toString()); bad.getJSONObject("layout").getJSONArray("panelEntries").put(rotation, invalid); reject(bad, "invalid entry choice " + rotation);
+        }
+        JSONObject bad = new JSONObject(saved.toString()); bad.getJSONObject("layout").put("panelEntries", new JSONArray(List.of("top_left"))); reject(bad, "four entry choices required");
+        bad = new JSONObject(saved.toString()); bad.getJSONObject("layout").remove("panelEntries"); reject(bad, "new layout requires entry choices");
+        JSONObject legacy = new JSONObject(saved.toString()); legacy.getJSONObject("layout").put("version", 10).remove("panelEntries"); activity.applyConfigurationData(legacy);
+        for (int rotation = 0; rotation < 4; rotation++) require(prefs.entryPosition(rotation).equals(Prefs.defaultEntryPosition(rotation)), "legacy entry default " + rotation);
+    }
+
     private void templates() throws Exception {
         WidgetTemplates.Card card = new WidgetTemplates.Card(6, List.of(new WidgetTemplates.Entry("com.example.widgets/.Provider", 0, 0, 2, 2), new WidgetTemplates.Entry("com.example.widgets/.Provider", 2, 2, 2, 2)));
         JSONObject config = activity.exportConfigurationData().put("widgetTemplates", WidgetTemplates.json(List.of(card)));
@@ -141,7 +161,7 @@ final class ConfigurationChecks {
 
     private void compatibility() throws Exception {
         JSONObject current = activity.exportConfigurationData();
-        for (int version = 1; version <= 14; version++) {
+        for (int version = 1; version <= 15; version++) {
             JSONObject legacy = new JSONObject(current.toString()).put("version", version);
             if (version < 4) legacy.remove("layout");
             if (version < 5) legacy.remove("rotations");

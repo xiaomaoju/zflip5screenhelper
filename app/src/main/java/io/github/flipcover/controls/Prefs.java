@@ -12,11 +12,13 @@ import java.util.List;
 public final class Prefs {
     static final String[] STATUS_ITEMS = {"time", "wifi", "battery", "notifications", "alarm", "speed", "cellular"};
     public final SharedPreferences data;
+    private final android.content.ContentResolver resolver;
     public Prefs(Context context) {
+        resolver = context.getContentResolver();
         data = context.getSharedPreferences("cover", Context.MODE_PRIVATE);
         if (!data.getBoolean("hub_default_migrated", false)) {
             SharedPreferences.Editor edit = data.edit().putBoolean("hub_default_migrated", true);
-            if (!data.contains("pinned_action") || data.getString("pinned_action", "").equals("controls")) edit.putString("pinned_action", "app_hub");
+            if (!data.contains("pinned_action") || data.getString("pinned_action", "").equals("controls")) edit.putString("pinned_action", data.contains("pinned_action") ? "app_hub" : BuildConfig.DEFAULTS_DOCK_PINNED_ACTION);
             edit.apply();
         }
         if (!data.getBoolean("app_dock_migrated", false)) {
@@ -36,12 +38,20 @@ public final class Prefs {
             edit.apply();
         }
     }
+    void migrateInputTile() {
+        if (data.getBoolean("input_tile_migrated", false)) return;
+        List<String> ids = actions("panel"); SharedPreferences.Editor update = data.edit().putBoolean("input_tile_migrated", true);
+        if (!ids.contains("external_devices") && ids.size() < 30) { ids.add("external_devices"); update.putString("panel", new JSONArray(ids).toString()); } update.apply();
+    }
     public boolean enabled() { return data.getBoolean("enabled", false); }
     boolean systemControlsDisabled() { return data.getBoolean("system_controls_disabled", false); }
     void systemControlsDisabled(boolean disabled) { data.edit().putBoolean("system_controls_disabled", disabled).apply(); }
     public int displayId() { return data.getInt("display", -1); }
-    public int perPage() { return Math.max(2, Math.min(5, data.getInt("per_page", 4))); }
-    public String pinnedAction() { String id = data.getString("pinned_action", "app_hub"); return ActionCatalog.valid(id) ? id : "app_hub"; }
+    /** Local settings readability; independent of runtime layout exports and widget editor sizing. */
+    int settingsScale() { return Math.max(70, Math.min(130, data.getInt("settings_scale", BuildConfig.DEFAULTS_SETTINGS_SCALE))); }
+    void settingsScale(int percent) { if (percent < 70 || percent > 130) throw new IllegalArgumentException("设置缩放范围为70%–130%"); data.edit().putInt("settings_scale", percent).apply(); }
+    public int perPage() { return Math.max(2, Math.min(5, data.getInt("per_page", BuildConfig.DEFAULTS_DOCK_PER_PAGE))); }
+    public String pinnedAction() { String id = data.getString("pinned_action", BuildConfig.DEFAULTS_DOCK_PINNED_ACTION); return ActionCatalog.valid(id) ? id : BuildConfig.DEFAULTS_DOCK_PINNED_ACTION; }
     public String hubPinned() { List<String> ids = hubPins(); return ids.isEmpty() ? "" : ids.get(0); }
     public List<String> hubPins() {
         try { String raw = data.getString("hub_pins", null); if (raw != null) return checkedHubPins(new JSONArray(raw)); }
@@ -62,13 +72,23 @@ public final class Prefs {
         try { SharedPreferences.Editor update = prepareHubPins(new JSONArray(ids), data.edit()); for (String id : ids) if (layout.apps().contains(id)) throw new IllegalArgumentException("常驻应用不能同时占用桌面格位"); update.putString("hub_workspace", workspaceStorage(layout)).apply(); }
         catch (JSONException e) { throw new IllegalArgumentException(e); }
     }
-    public String hubSort() { String value = data.getString("hub_sort", "manual"); return validHubSort(value) ? value : "manual"; }
+    public String hubSort() { String value = data.getString("hub_sort", BuildConfig.DEFAULTS_LAUNCHER_SORT); return validHubSort(value) ? value : BuildConfig.DEFAULTS_LAUNCHER_SORT; }
+    int launcherPage() {
+        int boot = android.provider.Settings.Global.getInt(resolver, android.provider.Settings.Global.BOOT_COUNT, -1);
+        return boot >= 0 && data.getInt("launcher_page_boot", -1) == boot ? Math.max(0, data.getInt("launcher_page", 0)) : 0;
+    }
+    void launcherPage(int page) {
+        int boot = android.provider.Settings.Global.getInt(resolver, android.provider.Settings.Global.BOOT_COUNT, -1);
+        page = Math.max(0, page);
+        if (boot < 0 || data.getInt("launcher_page_boot", -1) == boot && data.getInt("launcher_page", 0) == page) return;
+        data.edit().putInt("launcher_page_boot", boot).putInt("launcher_page", page).apply();
+    }
     static boolean validHubSort(String value) { return java.util.Set.of("manual", "name", "reverse", "recent").contains(value); }
-    boolean workspaceCompact() { return data.getBoolean("hub_workspace_compact", false); }
-    boolean workspaceLocked() { return data.getBoolean("hub_workspace_locked", false); }
-    boolean workspaceLabels() { return data.getBoolean("hub_workspace_labels", true); }
-    boolean workspaceBadges() { return data.getBoolean("hub_workspace_badges", false); }
-    String workspaceDensity() { return data.getString("hub_workspace_density", "compact"); }
+    boolean workspaceCompact() { return data.getBoolean("hub_workspace_compact", BuildConfig.DEFAULTS_LAUNCHER_COMPACT); }
+    boolean workspaceLocked() { return data.getBoolean("hub_workspace_locked", BuildConfig.DEFAULTS_LAUNCHER_LOCKED); }
+    boolean workspaceLabels() { return data.getBoolean("hub_workspace_labels", BuildConfig.DEFAULTS_LAUNCHER_LABELS); }
+    boolean workspaceBadges() { return data.getBoolean("hub_workspace_badges", BuildConfig.DEFAULTS_LAUNCHER_BADGES); }
+    String workspaceDensity() { return data.getString("hub_workspace_density", BuildConfig.DEFAULTS_LAUNCHER_DENSITY); }
     JSONObject workspaceAliases() { try { return new JSONObject(data.getString("hub_workspace_aliases", "{}")); } catch (JSONException error) { return new JSONObject(); } }
     String workspaceAlias(String id) { return workspaceAliases().optString(id, ""); }
     void workspaceAlias(String id, String name) {
@@ -104,22 +124,30 @@ public final class Prefs {
         try { data.edit().putString("hub_workspace", workspaceStorage(layout)).putBoolean("hub_workspace_compact", compact).apply(); }
         catch (JSONException error) { throw new IllegalArgumentException(error); }
     }
-    public int statusScale() { return Math.max(50, Math.min(150, data.getInt("status_scale", 70))); }
-    public int statusSafeLeft() { return Math.max(0, Math.min(48, data.getInt("status_safe_left", 16))); }
-    public int statusSafeRight() { return Math.max(0, Math.min(48, data.getInt("status_safe_right", 16))); }
-    public boolean batteryPercent() { return data.getBoolean("battery_percent", false); }
-    public String chromeStyle() { String style = data.getString("chrome_style", "contrast"); return validChrome(style) ? style : "contrast"; }
+    public int statusScale() { return Math.max(50, Math.min(150, data.getInt("status_scale", BuildConfig.DEFAULTS_STATUS_SCALE))); }
+    public int statusSafeLeft() { return Math.max(0, Math.min(48, data.getInt("status_safe_left", BuildConfig.DEFAULTS_STATUS_SAFE_LEFT_DP))); }
+    public int statusSafeRight() { return Math.max(0, Math.min(48, data.getInt("status_safe_right", BuildConfig.DEFAULTS_STATUS_SAFE_RIGHT_DP))); }
+    public boolean batteryPercent() { return data.getBoolean("battery_percent", BuildConfig.DEFAULTS_STATUS_BATTERY_PERCENT); }
+    public String chromeStyle() { String style = data.getString("chrome_style", BuildConfig.DEFAULTS_STATUS_CHROME_STYLE); return validChrome(style) ? style : BuildConfig.DEFAULTS_STATUS_CHROME_STYLE; }
     static boolean validChrome(String style) { return java.util.Set.of("contrast", "black", "light", "dark").contains(style); }
     public boolean avoidNavigation() { return data.getBoolean("avoid_navigation", false); }
     public int navigationGap() { return Math.max(0, Math.min(48, data.getInt("navigation_gap", 8))); }
     // Keep the legacy configuration field readable/exportable, but never restore tap-to-panel.
     public boolean tapHandles() { return false; }
-    public boolean statusEnabled() { return data.getBoolean("status_enabled", true); }
-    public boolean autoHideDock() { return data.getBoolean("dock_auto_hide", true); }
-    public String homeAction() { String value = data.getString("home_action", "cards"); return validHomeAction(value) ? value : "cards"; }
+    public boolean statusEnabled() { return data.getBoolean("status_enabled", BuildConfig.DEFAULTS_STATUS_ENABLED); }
+    public java.util.Set<String> statusHiddenApps() { return new java.util.HashSet<>(data.getStringSet("status_hidden_apps", java.util.Set.of())); }
+    void saveStatusHiddenApps(java.util.Set<String> packages) { try { data.edit().putStringSet("status_hidden_apps", checkedStatusHiddenApps(new JSONArray(packages))).apply(); } catch (JSONException error) { throw new IllegalArgumentException(error); } }
+    static java.util.Set<String> checkedStatusHiddenApps(JSONArray source) throws JSONException {
+        java.util.Set<String> result = new java.util.HashSet<>();
+        for (int i = 0; i < source.length(); i++) { Object value = source.get(i); if (!(value instanceof String name) || !name.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")) throw new IllegalArgumentException("隐藏状态栏的应用规则无效"); result.add(name); }
+        return result;
+    }
+    public boolean autoHideDock() { return data.getBoolean("dock_auto_hide", BuildConfig.DEFAULTS_DOCK_AUTO_HIDE); }
+    public String homeAction() { String value = data.getString("home_action", BuildConfig.DEFAULTS_DOCK_HOME_ACTION); return validHomeAction(value) ? value : BuildConfig.DEFAULTS_DOCK_HOME_ACTION; }
     static boolean validHomeAction(String value) { return "clock".equals(value) || "cards".equals(value); }
-    public boolean avoidKeyboard() { return data.getBoolean("avoid_keyboard", true); }
-    public boolean haptics() { return data.getBoolean("haptics", true); }
+    public boolean avoidKeyboard() { return data.getBoolean("avoid_keyboard", BuildConfig.DEFAULTS_DOCK_AVOID_KEYBOARD); }
+    public boolean haptics() { return data.getBoolean("haptics", BuildConfig.DEFAULTS_DOCK_HAPTICS); }
+    boolean gesturesEnabled() { return data.getBoolean("gestures_enabled", BuildConfig.DEFAULTS_DOCK_GESTURES); }
     public String handSide() { String value = data.getString("hand_side", "auto"); return validHand(value) ? value : "auto"; }
     static boolean validHand(String value) { return value.equals("auto") || value.equals("left") || value.equals("right"); }
     public boolean leftHand() { return handSide().equals("left"); }
@@ -160,24 +188,24 @@ public final class Prefs {
         else if (ids.size() < 30) ids.add(0, pinnedAction());
         data.edit().putString("pinned_action", id).putString("dock", new JSONArray(ids).toString()).apply();
     }
-    public int damping() { return Math.max(0, Math.min(2, data.getInt("damping", 1))); }
-    public int panelColumns() { int value = data.getInt("panel_columns", 4); return validPanelColumns(value) ? value : 4; }
+    public int damping() { return Math.max(0, Math.min(2, data.getInt("damping", BuildConfig.DEFAULTS_DOCK_DAMPING))); }
+    public int panelColumns() { int value = data.getInt("panel_columns", BuildConfig.DEFAULTS_CONTROL_CENTER_COLUMNS); return validPanelColumns(value) ? value : BuildConfig.DEFAULTS_CONTROL_CENTER_COLUMNS; }
     static boolean validPanelColumns(int value) { return value >= 3 && value <= 5; }
-    public int panelDensity() { int value = data.getInt("panel_density", 1); return value >= 0 && value <= 2 ? value : 1; }
-    public boolean panelLabels() { return data.getBoolean("panel_labels", true); }
-    public int panelLabelSize() { int value = data.getInt("panel_label_size", 1); return value >= 0 && value <= 2 ? value : 1; }
-    public String panelToolsPosition() { String value = data.getString("panel_tools_position", "auto"); return validPanelToolsPosition(value) ? value : "auto"; }
+    public int panelDensity() { int value = data.getInt("panel_density", BuildConfig.DEFAULTS_CONTROL_CENTER_DENSITY); return value >= 0 && value <= 2 ? value : BuildConfig.DEFAULTS_CONTROL_CENTER_DENSITY; }
+    public boolean panelLabels() { return data.getBoolean("panel_labels", BuildConfig.DEFAULTS_CONTROL_CENTER_LABELS); }
+    public int panelLabelSize() { int value = data.getInt("panel_label_size", BuildConfig.DEFAULTS_CONTROL_CENTER_LABEL_SIZE); return value >= 0 && value <= 2 ? value : BuildConfig.DEFAULTS_CONTROL_CENTER_LABEL_SIZE; }
+    public String panelToolsPosition() { String value = data.getString("panel_tools_position", BuildConfig.DEFAULTS_CONTROL_CENTER_TOOLS_POSITION); return validPanelToolsPosition(value) ? value : BuildConfig.DEFAULTS_CONTROL_CENTER_TOOLS_POSITION; }
     static boolean validPanelToolsPosition(String value) { return "auto".equals(value) || "side".equals(value) || "bottom".equals(value); }
-    public boolean panelBrightness() { return data.getBoolean("panel_brightness", true); }
-    public boolean panelVolume() { return data.getBoolean("panel_volume", true); }
-    public boolean panelMedia() { return data.getBoolean("panel_media", true); }
-    public boolean panelMediaIdle() { return data.getBoolean("panel_media_idle", false); }
+    public boolean panelBrightness() { return data.getBoolean("panel_brightness", BuildConfig.DEFAULTS_CONTROL_CENTER_BRIGHTNESS); }
+    public boolean panelVolume() { return data.getBoolean("panel_volume", BuildConfig.DEFAULTS_CONTROL_CENTER_VOLUME); }
+    public boolean panelMedia() { return data.getBoolean("panel_media", BuildConfig.DEFAULTS_CONTROL_CENTER_MEDIA); }
+    public boolean panelMediaIdle() { return data.getBoolean("panel_media_idle", BuildConfig.DEFAULTS_CONTROL_CENTER_MEDIA_IDLE); }
     JSONObject panelSnapshot() throws JSONException {
         return new JSONObject().put("columns", panelColumns()).put("density", panelDensity()).put("labels", panelLabels()).put("labelSize", panelLabelSize()).put("toolsPosition", panelToolsPosition())
             .put("brightness", panelBrightness()).put("volume", panelVolume()).put("media", panelMedia()).put("mediaIdle", panelMediaIdle());
     }
     private static JSONObject defaultPanelSettings() throws JSONException {
-        return new JSONObject().put("columns", 4).put("density", 1).put("labels", true).put("labelSize", 1).put("toolsPosition", "auto").put("brightness", true).put("volume", true).put("media", true).put("mediaIdle", false);
+        return new JSONObject().put("columns", BuildConfig.DEFAULTS_CONTROL_CENTER_COLUMNS).put("density", BuildConfig.DEFAULTS_CONTROL_CENTER_DENSITY).put("labels", BuildConfig.DEFAULTS_CONTROL_CENTER_LABELS).put("labelSize", BuildConfig.DEFAULTS_CONTROL_CENTER_LABEL_SIZE).put("toolsPosition", BuildConfig.DEFAULTS_CONTROL_CENTER_TOOLS_POSITION).put("brightness", BuildConfig.DEFAULTS_CONTROL_CENTER_BRIGHTNESS).put("volume", BuildConfig.DEFAULTS_CONTROL_CENTER_VOLUME).put("media", BuildConfig.DEFAULTS_CONTROL_CENTER_MEDIA).put("mediaIdle", BuildConfig.DEFAULTS_CONTROL_CENTER_MEDIA_IDLE);
     }
     /** Validates the complete local snapshot before its editor may be applied. */
     private SharedPreferences.Editor preparePanelSettings(JSONObject settings, SharedPreferences.Editor update) throws JSONException {
@@ -220,11 +248,9 @@ public final class Prefs {
         if (panelColumns() == 3 && panelDensity() == 2 && panelLabelSize() == 2) return "easy";
         return "custom";
     }
-    public boolean panelBlur() { return data.getBoolean("panel_blur", true); }
+    public boolean panelBlur() { return data.getBoolean("panel_blur", BuildConfig.DEFAULTS_CONTROL_CENTER_BLUR); }
     public List<String> actions(String kind) {
-        String[] defaults = kind.equals("favorites") ? new String[]{"screenshot", "rotation", "notification_list"} : kind.equals("dock")
-            ? new String[]{"app_dock", "controls", "rotation", "notifications", "back", "home", "recents", "torch", "screenshot", "configure"}
-            : new String[]{"wifi", "bluetooth", "data", "torch", "dnd", "airplane", "rotation", "screenshot", "lock", "media", "apps", "system_controls"};
+        String[] defaults = kind.equals("favorites") ? BuildConfig.DEFAULTS_DOCK_FAVORITES : kind.equals("dock") ? BuildConfig.DEFAULTS_DOCK_ACTIONS : BuildConfig.DEFAULTS_CONTROL_CENTER_ACTIONS;
         String saved = data.getString(kind, null);
         if (saved == null) return new ArrayList<>(Arrays.asList(defaults));
         List<String> result = new ArrayList<>();
@@ -239,14 +265,21 @@ public final class Prefs {
     }
     public void saveActions(String kind, List<String> ids) { data.edit().putString(kind, new JSONArray(ids).toString()).apply(); }
     public int corner(int rotation) { return data.getInt("corner_" + rotation, (3 + rotation) % 4); }
-    public float widthRatio() { return Math.max(.25f, Math.min(.70f, data.getFloat("dock_width", .46f))); }
-    public float heightRatio() { return Math.max(.05f, Math.min(.22f, data.getFloat("dock_height", .088f))); }
+    static String defaultEntryPosition(int rotation) { return rotation == 0 ? "bottom_right" : rotation == 3 ? "top_right" : "top_left"; }
+    static boolean validEntryPosition(int rotation, String position) {
+        return rotation >= 0 && rotation < 4 && ("top_left".equals(position) || rotation == 0 && "bottom_right".equals(position) || (rotation == 1 || rotation == 3) && "top_right".equals(position));
+    }
+    String entryPosition(int rotation) { String value = data.getString("panel_entry_" + rotation, defaultEntryPosition(rotation)); return validEntryPosition(rotation, value) ? value : defaultEntryPosition(rotation); }
+    void entryPosition(int rotation, String position) { if (!validEntryPosition(rotation, position)) throw new IllegalArgumentException("此方向不支持该白条位置"); data.edit().putString("panel_entry_" + rotation, position).apply(); }
+    public float widthRatio() { return Math.max(.25f, Math.min(.70f, data.getFloat("dock_width", BuildConfig.DEFAULTS_DOCK_WIDTH_RATIO))); }
+    public float heightRatio() { return Math.max(.05f, Math.min(.22f, data.getFloat("dock_height", BuildConfig.DEFAULTS_DOCK_HEIGHT_RATIO))); }
     JSONObject layoutSnapshot() throws JSONException {
         JSONObject panelOptions = panelSnapshot(); panelOptions.remove("columns");
-        JSONObject layout = new JSONObject().put("version", 10).put("workspace", workspaceJson(workspace())).put("workspaceColumns", workspace().columns()).put("workspaceRows", workspace().rows()).put("workspaceLocked", workspaceLocked()).put("workspaceLabels", workspaceLabels()).put("workspaceBadges", workspaceBadges()).put("workspaceDensity", workspaceDensity()).put("workspaceAliases", workspaceAliases()).put("workspaceCompact", workspaceCompact()).put("panelColumns", panelColumns()).put("panelOptions", panelOptions).put("hubPins", new JSONArray(hubPins())).put("hubSort", hubSort()).put("chrome", chromeStyle()).put("statusScale", statusScale()).put("statusSafeLeft", statusSafeLeft()).put("statusSafeRight", statusSafeRight()).put("batteryPercent", batteryPercent()).put("avoidNavigation", avoidNavigation()).put("navigationGap", navigationGap()).put("tapHandles", tapHandles()).put("hand", handSide()).put("perPage", perPage()).put("pinned", pinnedAction()).put("hubPinned", hubPinned()).put("damping", damping())
+        JSONObject layout = new JSONObject().put("version", 11).put("workspace", workspaceJson(workspace())).put("workspaceColumns", workspace().columns()).put("workspaceRows", workspace().rows()).put("workspaceLocked", workspaceLocked()).put("workspaceLabels", workspaceLabels()).put("workspaceBadges", workspaceBadges()).put("workspaceDensity", workspaceDensity()).put("workspaceAliases", workspaceAliases()).put("workspaceCompact", workspaceCompact()).put("panelColumns", panelColumns()).put("panelOptions", panelOptions).put("hubPins", new JSONArray(hubPins())).put("hubSort", hubSort()).put("chrome", chromeStyle()).put("statusScale", statusScale()).put("statusSafeLeft", statusSafeLeft()).put("statusSafeRight", statusSafeRight()).put("batteryPercent", batteryPercent()).put("avoidNavigation", avoidNavigation()).put("navigationGap", navigationGap()).put("tapHandles", tapHandles()).put("hand", handSide()).put("perPage", perPage()).put("pinned", pinnedAction()).put("hubPinned", hubPinned()).put("damping", damping())
             .put("dock", new JSONArray(actions("dock"))).put("panel", new JSONArray(actions("panel"))).put("favorites", new JSONArray(actions("favorites")))
             .put("automatic", data.getBoolean("auto_placement", true)).put("width", widthRatio()).put("height", heightRatio()).put("blur", panelBlur()).put("statusEnabled", statusEnabled());
-        layout.put("homeAction", homeAction());
+        layout.put("homeAction", homeAction()).put("statusHiddenApps", new JSONArray(statusHiddenApps()));
+        JSONArray entries = new JSONArray(); for (int rotation = 0; rotation < 4; rotation++) entries.put(entryPosition(rotation)); layout.put("panelEntries", entries);
         JSONArray corners = new JSONArray(); for (int rotation = 0; rotation < 4; rotation++) corners.put(corner(rotation)); layout.put("corners", corners);
         JSONObject status = new JSONObject(); for (String item : STATUS_ITEMS) status.put(item, statusItem(item)); return layout.put("statusItems", status);
     }
@@ -255,7 +288,16 @@ public final class Prefs {
         for (String key : new String[]{"version", "perPage", "damping"}) workspaceInteger(layout.get(key));
         for (String key : new String[]{"automatic", "blur", "statusEnabled", "batteryPercent", "avoidNavigation", "tapHandles"}) if (layout.has(key) && !(layout.get(key) instanceof Boolean)) throw new IllegalArgumentException("布局开关值无效");
         for (String key : new String[]{"width", "height"}) if (!(layout.get(key) instanceof Number)) throw new IllegalArgumentException("布局尺寸无效");
-        int version = layout.getInt("version"); if (version < 1 || version > 10) throw new IllegalArgumentException("不支持的布局版本");
+        int version = layout.getInt("version"); if (version < 1 || version > 11) throw new IllegalArgumentException("不支持的布局版本");
+        if (layout.has("statusHiddenApps") && !(layout.get("statusHiddenApps") instanceof JSONArray)) throw new IllegalArgumentException("隐藏状态栏的应用列表无效");
+        update.putStringSet("status_hidden_apps", checkedStatusHiddenApps(layout.has("statusHiddenApps") ? layout.getJSONArray("statusHiddenApps") : new JSONArray()));
+        JSONArray entries = version >= 11 ? layout.getJSONArray("panelEntries") : null;
+        if (entries != null && entries.length() != 4) throw new IllegalArgumentException("缺少四方向白条位置");
+        for (int rotation = 0; rotation < 4; rotation++) {
+            Object value = entries == null ? defaultEntryPosition(rotation) : entries.get(rotation);
+            if (!(value instanceof String position) || !validEntryPosition(rotation, position)) throw new IllegalArgumentException("白条位置与旋转方向不匹配");
+            update.putString("panel_entry_" + rotation, position);
+        }
         Object home = version >= 10 ? layout.get("homeAction") : "cards";
         if (!(home instanceof String action) || !validHomeAction(action)) throw new IllegalArgumentException("Home 按钮效果无效");
         update.putString("home_action", (String) home);
@@ -315,6 +357,7 @@ public final class Prefs {
     void resetLayout() throws JSONException {
         SharedPreferences.Editor update = data.edit().putString("layout_undo", layoutSnapshot().toString());
         update.remove("home_action");
+        update.remove("status_hidden_apps");
         update.remove("hub_workspace").remove("hub_workspace_compact").remove("hub_workspace_locked").remove("hub_workspace_labels").remove("hub_workspace_badges").remove("hub_workspace_density").remove("hub_workspace_aliases");
         for (String key : new String[]{"panel_columns", "panel_density", "panel_labels", "panel_label_size", "panel_tools_position", "panel_brightness", "panel_volume", "panel_media", "panel_media_idle", "panel_undo", "hub_pins", "hub_sort", "chrome_style", "status_scale", "status_safe_left", "status_safe_right", "battery_percent", "avoid_navigation", "navigation_gap", "tap_handles", "hand_side", "per_page", "damping", "pinned_action", "hub_pinned", "dock", "panel", "favorites", "auto_placement", "dock_width", "dock_height", "panel_blur", "status_enabled"}) update.remove(key);
         for (int rotation = 0; rotation < 4; rotation++) update.remove("corner_" + rotation);

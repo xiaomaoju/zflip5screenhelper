@@ -57,7 +57,7 @@ final class ControlGridChecks {
     }
     int runOnPanel(Activity activity, Prefs prefs, CoverService owner, boolean layoutOnly) throws Exception { this.activity = activity; this.prefs = prefs; this.owner = owner; check(layoutOnly); return assertions; }
     private void check(boolean layoutOnly) throws Exception {
-        View panel = tag("test-panel-surface"); List<String> initial = prefs.actions("panel"); click("control-add"); screenshot("both-grids");
+        View panel = tag("test-panel-surface"); List<String> initial = prefs.actions("panel"); click("control-edit"); screenshot("both-grids");
         require(tag("control-selected-grid") != null && tag("control-candidates") != null, "selected and candidates share the screen");
         ControlEditGrid selectedGrid = (ControlEditGrid) tag("control-selected-grid"); int editorColumns = selectedGrid.columns();
         require(editorColumns > 5, "cover editor fits more than five columns, actual=" + editorColumns);

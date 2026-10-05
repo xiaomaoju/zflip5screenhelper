@@ -4,6 +4,22 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class WidgetSafeAreaTest {
+    @Test public void quarterTurnUsesMeasuredScreenWhenSamsungKeepsUnrotatedFullScreenOptions() {
+        float density = 2.125f;
+        var canvas = WidgetSafeArea.canvas(352, 339, 720 / density, 748 / density, true);
+        var safe = new DockGeometry.Box(66, 72, 654, 630);
+        assertEquals(720 / density, canvas.width(), .001f);
+        assertEquals(748 / density, canvas.height(), .001f);
+        var frame = WidgetSafeArea.fit(canvas.width(), canvas.height(), 720, 748, density, safe);
+        assertEquals(safe.x(), frame.left() * density, .001f);
+        assertEquals(safe.y(), frame.top() * density, .001f);
+        assertEquals(safe.bottom(), (frame.top() + frame.height()) * density, .001f);
+    }
+    @Test public void canvasKeepsResizedCardsAndNonQuarterTurnsBounded() {
+        assertEquals(new WidgetSafeArea.Frame(0, 0, 310, 280), WidgetSafeArea.canvas(310, 280, 339, 352, true));
+        assertEquals(new WidgetSafeArea.Frame(0, 0, 339, 339), WidgetSafeArea.canvas(352, 339, 339, 352, false));
+        assertEquals(new WidgetSafeArea.Frame(0, 0, 339, 352), WidgetSafeArea.canvas(339, 352, 339, 352, true));
+    }
     @Test public void normalPostureKeepsContentAboveControlsAndBelowStatus() {
         var frame = WidgetSafeArea.fit(352, 339, 720, 748, 2, new DockGeometry.Box(0, 48, 720, 604));
         assertEquals(new WidgetSafeArea.Frame(0, 24, 352, 267), frame);

@@ -18,7 +18,10 @@ final class PanelDrag {
     static float progress(float start, float distance, float extent) {
         return Math.max(0, Math.min(1, start + distance / Math.max(1, extent)));
     }
-    /** Align a fresh panel's top with the actual DOWN in display coordinates. */
+    /** Align a fresh panel's leading edge with the actual DOWN in display coordinates. */
+    static float entryStart(int edge, float originY, float frameTop, float extent) {
+        return edge == DockGeometry.TOP ? progress(0, originY - frameTop, extent) : entryStart(originY, frameTop, extent);
+    }
     static float entryStart(float originY, float frameTop, float extent) {
         return progress(0, frameTop + extent - originY, extent);
     }
@@ -29,5 +32,8 @@ final class PanelDrag {
         if (extent <= 0) return false;
         if (velocity < -450 * density) return false;
         return distance >= Math.min(extent * .22f, 40 * density) || distance >= 12 * density && velocity >= 450 * density;
+    }
+    static boolean shouldDismissDock(float distance, float height, float velocity, float minimumFlingVelocity) {
+        return distance > height * .4f || distance > 0 && velocity >= minimumFlingVelocity;
     }
 }

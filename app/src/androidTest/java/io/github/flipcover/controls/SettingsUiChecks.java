@@ -78,8 +78,19 @@ final class SettingsUiChecks {
             open("main"); main(() -> { activity.onActivityResult(202, Activity.RESULT_OK, new Intent().setData(android.net.Uri.fromFile(importFile))); tag("settings-link-group_appearance").performClick(); }); SystemClock.sleep(350); require(tag("settings-confirm") == null, "stale import read cannot replace a later page"); importFile.delete();
             widget = (NativeWidgetActivity) test.startActivitySync(new Intent(test.getTargetContext(), NativeWidgetActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); test.waitForIdleSync();
             main(() -> widget.onActivityResult(51, Activity.RESULT_CANCELED, null)); NativeWidgetActivity oldWidget = widget; main(() -> widget.recreate()); for (int i = 0; i < 40 && widget == oldWidget; i++) SystemClock.sleep(50); test.waitForIdleSync(); require(findText(widget.findViewById(android.R.id.content), "已取消本次授权，原布局保持不变") != null, "widget cancellation explanation survives recreation"); main(() -> widget.finish());
+            open("gestures"); View entryScroll = tag("settings-scroll");
+            SettingsIllustration entryPreview = (SettingsIllustration) ((ViewGroup) tag("gesture-preview")).getChildAt(0);
+            require(tag("entry-position-2") == null && findText(root(), "180° · 固定左顶部") != null, "180 degree entry has no unsupported choices");
+            click("entry-position-0"); require(tag("settings-choice-top_right") == null, "0 degrees cannot select top right"); back();
+            String savedEntry = prefs.entryPosition(0); click("entry-position-0"); back(); require(prefs.entryPosition(0).equals(savedEntry), "canceling position picker preserves choice");
+            click("entry-position-0"); click("settings-choice-top_left");
+            click("entry-position-1"); require(tag("settings-choice-bottom_right") == null, "side rotation cannot select bottom entry"); click("settings-choice-top_right");
+            click("entry-position-3"); click("settings-choice-top_left");
+            require(tag("settings-scroll") == entryScroll && prefs.entryPosition(0).equals("top_left") && prefs.entryPosition(1).equals("top_right") && prefs.entryPosition(3).equals("top_left"), "entry choices update independently without rebuilding the page");
+            require(entryPreview.getContentDescription().toString().contains("90°：右顶部") && entryPreview.getContentDescription().toString().contains("270°：左顶部"), "live preview announces selected corners");
+            screenshot("gesture-positions-changed"); open("gestures"); require(prefs.entryPosition(1).equals("top_right"), "entry selection survives reopening settings");
             require(prefs.displayId() == -1 && !prefs.enabled(), "settings do not authorize or select main display");
-            for (String page : new String[]{"group_dock", "group_appearance", "group_apps", "group_device", "group_backup", "gestures", "visibility", "appearance", "hand", "layout_backup", "hub", "favorites", "permissions", "display", "calibrate", "diagnostics", "about"}) { open(page); main(() -> checkText(root())); if (page.equals("permissions")) screenshot("permissions"); }
+            for (String page : new String[]{"group_dock", "group_appearance", "group_apps", "group_device", "group_backup", "gestures", "visibility", "appearance", "hand", "layout_backup", "hub", "favorites", "permissions", "display", "calibrate", "diagnostics", "about"}) { open(page); main(() -> checkText(root())); if (page.equals("permissions") || page.equals("gestures")) screenshot(page); }
             return "PASS: One UI settings; " + assertions + " assertions; real Activity, navigation, cancellation, accessibility slider, draft, preview and readable text; physical Samsung validation pending";
         } finally {
             if (activity != null) main(() -> activity.finish()); application.unregisterActivityLifecycleCallbacks(lifecycle);

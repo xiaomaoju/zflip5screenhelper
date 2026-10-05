@@ -78,6 +78,9 @@ final class SystemRecentTasks {
         return result;
     }
     JSONObject execute(int display, String request, boolean clear) throws Exception {
+        return execute(display, request, clear, false);
+    }
+    JSONObject execute(int display, String request, boolean clear, boolean explicit) throws Exception {
         List<RecentTasks.Task> before = read(display), targets = new ArrayList<>(), accepted = new ArrayList<>();
         int requestedCount = 0;
         if (clear) {
@@ -90,13 +93,13 @@ final class SystemRecentTasks {
             for (int i = 0; i < items.length(); i++) {
                 RecentTasks.Task expected = requested(display, items.getJSONObject(i));
                 if (!ids.add(expected.id())) throw new IllegalArgumentException("重复任务");
-                if (before.stream().anyMatch(task -> RecentTasks.canClear(expected, task))) targets.add(expected);
+                if (before.stream().anyMatch(task -> RecentTasks.canDismiss(expected, task, explicit))) targets.add(expected);
             }
             Method remove = contract.getMethod("removeTask", int.class);
             for (RecentTasks.Task expected : targets) {
                 // Re-read just before every mutation: task IDs can be reused or moved to another display.
                 List<RecentTasks.Task> current = read(display);
-                if (current.stream().anyMatch(task -> RecentTasks.canClear(expected, task)) && Boolean.TRUE.equals(remove.invoke(service, expected.id()))) accepted.add(expected);
+                if (current.stream().anyMatch(task -> RecentTasks.canDismiss(expected, task, explicit)) && Boolean.TRUE.equals(remove.invoke(service, expected.id()))) accepted.add(expected);
             }
         }
         List<RecentTasks.Task> after = clear ? read(display) : before;
@@ -106,7 +109,7 @@ final class SystemRecentTasks {
         return new JSONObject().put("tasks", rows).put("complete", complete).put("removed", removed).put("retained", requestedCount - removed)
             .put("canOpen", available("android.permission.START_TASKS_FROM_RECENTS", "startActivityFromRecents", int.class, Bundle.class))
             .put("canClear", available("android.permission.REMOVE_TASKS", "removeTask", int.class))
-            .put("canSnapshot", available("android.permission.READ_FRAME_BUFFER", "getTaskSnapshot", int.class, boolean.class));
+            .put("canSnapshot", available("android.permission.READ_FRAME_BUFFER", "getTaskSnapshot", int.class, boolean.class) || available("android.permission.READ_FRAME_BUFFER", "getTaskSnapshot", int.class, boolean.class, boolean.class));
     }
     JSONObject open(int display, String request) throws Exception {
         RecentTasks.Task expected = requested(display, request);
@@ -125,16 +128,20 @@ final class SystemRecentTasks {
     Bundle snapshot(int display, String request) throws Exception {
         RecentTasks.Task expected = requested(display, request);
         requirePermission("android.permission.READ_FRAME_BUFFER");
-        if (read(display).stream().noneMatch(task -> RecentTasks.sameTask(expected, task))) throw new IllegalStateException("任务已改变");
-        Object snapshot = contract.getMethod("getTaskSnapshot", int.class, boolean.class).invoke(service, expected.id(), true);
-        Bundle result = new Bundle(); result.putString("message", "暂无可用预览");
+        RecentTasks.Task current = read(display).stream().filter(task -> RecentTasks.sameTask(expected, task)).findFirst().orElseThrow(() -> new IllegalStateException("任务已改变"));
+        Object snapshot = null;
+        // One on-demand foreground snapshot. updateCache=true preserves the system's app-theme/secure rules.
+        if (current.visible() && available("android.permission.READ_FRAME_BUFFER", "takeTaskSnapshot", int.class, boolean.class)) snapshot = contract.getMethod("takeTaskSnapshot", int.class, boolean.class).invoke(service, expected.id(), true);
+        if (snapshot == null) snapshot = cachedSnapshot(expected.id(), true);
+        if (snapshot == null) snapshot = cachedSnapshot(expected.id(), false);
+        Bundle result = new Bundle(); result.putString("message", "暂无可用预览"); result.putBoolean("retryable", snapshot == null);
         if (snapshot == null) return result;
         Class<?> type = Class.forName("android.window.TaskSnapshot");
         HardwareBuffer buffer = (HardwareBuffer) type.getMethod("getHardwareBuffer").invoke(snapshot);
         Bitmap wrapped = null, scaled = null, copy = null;
         try {
             ComponentName top = (ComponentName) type.getMethod("getTopActivityComponent").invoke(snapshot);
-            if (!Boolean.TRUE.equals(type.getMethod("isRealSnapshot").invoke(snapshot)) || top == null || !expected.packageName().equals(top.getPackageName()) || buffer == null) return result;
+            if (!Boolean.TRUE.equals(type.getMethod("isRealSnapshot").invoke(snapshot)) || top == null || !expected.packageName().equals(top.getPackageName()) || buffer == null) { result.putString("message", "系统未提供可用画面"); return result; }
             if (buffer.getWidth() < 1 || buffer.getHeight() < 1 || (long) buffer.getWidth() * buffer.getHeight() > 8_000_000) return result;
             wrapped = Bitmap.wrapHardwareBuffer(buffer, (ColorSpace) type.getMethod("getColorSpace").invoke(snapshot));
             if (wrapped == null) return result;
@@ -151,6 +158,12 @@ final class SystemRecentTasks {
             if (wrapped != null) wrapped.recycle();
             if (buffer != null) buffer.close();
         }
+    }
+    private Object cachedSnapshot(int taskId, boolean lowResolution) throws Exception {
+        Method method;
+        try { method = contract.getMethod("getTaskSnapshot", int.class, boolean.class); }
+        catch (NoSuchMethodException oldContract) { return contract.getMethod("getTaskSnapshot", int.class, boolean.class, boolean.class).invoke(service, taskId, lowResolution, false); }
+        return method.invoke(service, taskId, lowResolution);
     }
     static JSONObject json(RecentTasks.Task task) throws org.json.JSONException {
         return new JSONObject().put("id", task.id()).put("displayId", task.displayId()).put("userId", task.userId()).put("component", task.component()).put("visible", task.visible());

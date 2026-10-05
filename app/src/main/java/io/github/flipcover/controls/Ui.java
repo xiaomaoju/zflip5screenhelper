@@ -18,7 +18,7 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 
 public final class Ui {
-    public static final float CONTROL_CORNER_DP = 15;
+    public static final float CONTROL_CORNER_DP = BuildConfig.APPEARANCE_PANEL_CONTROL_CORNER_DP;
     public static final int BACKGROUND = Color.BLACK, SURFACE = Color.rgb(22, 24, 28),
         TEXT = Color.rgb(244, 245, 247), MUTED = Color.rgb(151, 158, 170), ACTIVE = Color.rgb(204, 222, 240),
         ACCENT = Color.rgb(175, 205, 235), ON_ACTIVE = Color.rgb(16, 29, 43);
@@ -35,7 +35,7 @@ public final class Ui {
     public static int chromeColor(Prefs prefs) { return prefs.chromeStyle().equals("dark") ? Color.rgb(25, 28, 32) : TEXT; }
     public static Drawable chromeIcon(Context context, Drawable source, Prefs prefs, boolean tint) {
         if (tint) source.setTint(chromeColor(prefs));
-        return prefs.chromeStyle().equals("contrast") ? new ContrastDrawable(source, dp(context, .7f)) : source;
+        return prefs.chromeStyle().equals("contrast") ? ChromeShadowDrawable.forIcon(source, context.getResources().getDisplayMetrics().density) : source;
     }
     public static LinearLayout column(Context context) {
         LinearLayout view = new LinearLayout(context); view.setOrientation(LinearLayout.VERTICAL); return view;

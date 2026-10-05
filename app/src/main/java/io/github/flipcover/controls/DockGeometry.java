@@ -9,44 +9,70 @@ public final class DockGeometry {
     public record Box(int x, int y, int width, int height) {
         public int right() { return x + width; }
         public int bottom() { return y + height; }
+        public Box intersect(Box other) {
+            int left = Math.max(x, other.x), top = Math.max(y, other.y);
+            return new Box(left, top, Math.max(0, Math.min(right(), other.right()) - left), Math.max(0, Math.min(bottom(), other.bottom()) - top));
+        }
     }
     public record Placement(Box visual, Box touch, Box panel, int edge, boolean measured) {
         public boolean vertical() { return edge == LEFT || edge == RIGHT; }
     }
     public record Slots(Box pager, Box fixed, int pageSize, int extent) { }
     public record Chrome(Box icons, Box firstHandle, Box secondHandle) { }
-    /** Always horizontal at the current bottom-right; normal camera-bottom posture uses its ledge. */
-    public static Placement panelEntry(Placement anchor, Placement dock, int width, int height, List<Box> cutouts, float density, int homeInset) {
-        int margin = Math.max(4, Math.round(3 * density)), thickness = Math.max(1, Math.round(16 * density));
-        Box bottomCamera = null;
-        for (Box cut : cutouts) if (cut.bottom() >= height && cut.height() < height / 3 && (bottomCamera == null || cut.width() > bottomCamera.width())) bottomCamera = cut;
-        Box safe = panelContent(dock, width, height, cutouts), v = anchor.visual();
-        int right = safe.right() - margin, left = Math.max(safe.x() + margin, right - Math.round(safe.width() * .38f));
-        int bottom = Math.min(safe.bottom(), height - Math.max(0, homeInset));
-        if (bottomCamera != null) {
-            left = Math.max(safe.x() + margin, bottomCamera.x() + margin);
-            right = Math.min(right, bottomCamera.right() - margin);
-            bottom = Math.min(bottom, bottomCamera.y());
-        } else if (cutouts.isEmpty() && anchor.edge() == BOTTOM) {
-            // Normal posture without reported cutout: retain the user's calibrated camera-side estimate.
-            left = Math.max(safe.x() + margin, v.right() + margin); bottom = Math.min(bottom, v.y());
+    /** Horizontal entry at the selected top corner or the original camera-bottom right position. */
+    public static Placement panelEntry(Placement anchor, Placement dock, int width, int height, List<Box> cutouts, float density, int homeInset, String position) {
+        return panelEntry(anchor, dock, width, height, cutouts, density, homeInset, position, 0);
+    }
+    public static int panelEntryTopInset(String position, int statusScale, float density) {
+        if (position.equals("bottom_right")) return 0;
+        // Control center still displays its status row when the floating row is disabled.
+        int gap = position.equals("top_left") ? 2 : 10;
+        return Math.round(Math.round(20 * density) * statusScale / 100f) + Math.round(gap * density);
+    }
+    public static Placement panelEntry(Placement anchor, Placement dock, int width, int height, List<Box> cutouts, float density, int homeInset, String position, int topInset) {
+        int margin = Math.max(4, Math.round(3 * density)), thickness = Math.max(1, Math.round((topInset > 0 ? 24 : 16) * density));
+        Box safe = panelContent(dock, width, height, cutouts), touch = dock.touch();
+        boolean topEntry = !position.equals("bottom_right"), leftEntry = position.equals("top_left");
+        int right = safe.right() - margin, left = safe.x() + margin;
+        int length = Math.max(1, Math.round(safe.width() * .38f));
+        if (leftEntry) right = Math.min(right, left + length); else left = Math.max(left, right - length);
+        int top, bottom;
+        if (topEntry) {
+            top = safe.y() + topInset;
+            for (Box cut : cutouts) if (cut.y() == 0 && cut.height() < height / 3 && left < cut.right() && right > cut.x()) top = Math.max(top, cut.bottom() + margin);
+            bottom = Math.min(height, top + thickness);
+        } else {
+            bottom = Math.min(safe.bottom(), height - Math.max(0, homeInset));
+            for (Box cut : cutouts) if (cut.bottom() >= height && cut.height() < height / 3) {
+                left = Math.max(safe.x() + margin, cut.x() + margin); right = Math.min(right, cut.right() - margin); bottom = Math.min(bottom, cut.y());
+            }
+            if (cutouts.isEmpty() && anchor.edge() == BOTTOM) { left = Math.max(safe.x() + margin, anchor.visual().right() + margin); bottom = Math.min(bottom, anchor.visual().y()); }
+            top = Math.max(safe.y(), bottom - thickness);
         }
-        Box touch = dock.touch();
-        if (bottom > touch.y() && bottom - thickness < touch.bottom() && left < touch.right() && right > touch.x()) {
+        if (bottom > touch.y() && top < touch.bottom() && left < touch.right() && right > touch.x()) {
             if (dock.edge() == RIGHT) right = Math.min(right, touch.x() - margin);
             else if (dock.edge() == LEFT) left = Math.max(left, touch.right() + margin);
-            else bottom = Math.min(bottom, touch.y() - margin);
+            else if (topEntry) { top = touch.bottom() + margin; bottom = Math.min(height, top + thickness); }
+            else { bottom = Math.min(bottom, touch.y() - margin); top = Math.max(safe.y(), bottom - thickness); }
         }
-        left = Math.min(left, right - 1);
-        int top = Math.max(safe.y(), bottom - thickness);
-        Box strip = new Box(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
-        Placement entry = new Placement(strip, strip, dock.panel(), BOTTOM, !cutouts.isEmpty());
-        return new Placement(strip, strip, panelContent(entry, width, height, cutouts), BOTTOM, entry.measured());
+        left = Math.max(0, Math.min(left, width - 1)); right = Math.max(left + 1, Math.min(width, right));
+        top = Math.max(0, Math.min(top, height - 1)); bottom = Math.max(top + 1, Math.min(height, bottom));
+        Box strip = new Box(left, top, right - left, bottom - top); int edge = topEntry ? TOP : BOTTOM;
+        // Android chooses the gesture's window on DOWN: the lowered artwork must
+        // not leave a dead band between the display edge and the touch window.
+        Box entryTouch = topEntry && topInset > 0 ? new Box(left, safe.y(), right - left, bottom - safe.y()) : strip;
+        Placement entry = new Placement(strip, entryTouch, dock.panel(), edge, !cutouts.isEmpty());
+        return new Placement(strip, entryTouch, panelContent(entry, width, height, cutouts), edge, entry.measured());
     }
     /** View-local drawing bounds. The physical edge touch target stays unchanged. */
     public static Chrome chrome(Placement p, float density) { return chrome(p, density, 5); }
-    /** The dedicated entry sits one dp inside its cutout/Home-safe edge. */
-    public static Chrome panelEntryChrome(Placement p, float density) { return chrome(p, density, 1); }
+    /** The dedicated entry sits one dp inside its selected safe edge. */
+    public static Chrome panelEntryChrome(Placement p, float density) {
+        Chrome result = chrome(p, density, 1);
+        int offset = p.edge() == TOP ? p.visual().y() - p.touch().y() : 0;
+        Box a = result.firstHandle(), b = result.secondHandle();
+        return new Chrome(result.icons(), new Box(a.x(), a.y() + offset, a.width(), a.height()), new Box(b.x(), b.y() + offset, b.width(), b.height()));
+    }
     private static Chrome chrome(Placement p, float density, int edgeInsetDp) {
         Box v = p.visual(), t = p.touch(); boolean vertical = p.vertical();
         int x = v.x() - t.x(), y = v.y() - t.y();
@@ -82,11 +108,11 @@ public final class DockGeometry {
     }
     /** Include the very first physical display pixel so bezel-to-screen swipes have a DOWN target. */
     public static Placement edgeTouch(Placement p, int width, int height) {
-        Box v = p.visual(); Box touch = switch (p.edge()) {
-            case TOP -> new Box(v.x(), 0, v.width(), v.bottom());
-            case LEFT -> new Box(0, v.y(), v.right(), v.height());
-            case RIGHT -> new Box(v.x(), v.y(), width - v.x(), v.height());
-            default -> new Box(v.x(), v.y(), v.width(), height - v.y());
+        Box v = p.visual(), t = p.touch(); Box touch = switch (p.edge()) {
+            case TOP -> new Box(t.x(), 0, t.width(), v.bottom());
+            case LEFT -> new Box(0, t.y(), v.right(), t.height());
+            case RIGHT -> new Box(v.x(), t.y(), width - v.x(), t.height());
+            default -> new Box(t.x(), v.y(), t.width(), height - v.y());
         };
         return new Placement(v, touch, p.panel(), p.edge(), p.measured());
     }
@@ -103,11 +129,31 @@ public final class DockGeometry {
         switch (p.edge()) { case TOP -> top = Math.max(top, v.bottom()); case LEFT -> left = Math.max(left, v.right()); case RIGHT -> right = Math.min(right, v.x()); default -> bottom = Math.min(bottom, v.y()); }
         return new Box(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
     }
-    /** Hub covers the temporarily suspended entry, while retaining notch, chrome and Home safety. */
-    public static Box hubContent(Placement placement, int width, int height, List<Box> cutouts, int homeInset) {
+    /** Non-touchable status spans the safe top, preserving left/right groups regardless of entry position. */
+    public static Box statusBar(Box area, int displayWidth, int height, float density) {
+        int margin = Math.max(4, Math.round(3 * density));
+        int left = area.x() <= margin ? 0 : area.x(), top = area.y();
+        int right = area.right() >= displayWidth - margin ? displayWidth : area.right();
+        int bottom = area.y() + height;
+        return new Box(left, top, right - left, bottom - top);
+    }
+    /** Native cards sit behind the entry window; reserve its artwork, not the panel's gesture band. */
+    public static Box widgetContent(Placement dock, Placement entry, Box status, int width, int height, List<Box> cutouts, float density) {
+        Box safe = panelContent(dock, width, height, cutouts); Chrome chrome = panelEntryChrome(entry, density);
+        int top = safe.y(), bottom = safe.bottom();
+        if (status != null) top = Math.max(top, status.bottom());
+        if (entry.edge() == TOP) top = Math.max(top, entry.touch().y() + Math.max(chrome.firstHandle().bottom(), chrome.secondHandle().bottom()));
+        else bottom = Math.min(bottom, entry.touch().y() + Math.min(chrome.firstHandle().y(), chrome.secondHandle().y()));
+        return new Box(safe.x(), top, safe.width(), Math.max(0, bottom - top));
+    }
+    /** Reclaim the entry band before applying all current system edges; preserve the existing upward shift. */
+    public static Box hubContent(Placement placement, int width, int height, List<Box> cutouts, Box systemSafe) {
         Box safe = panelContent(placement, width, height, cutouts);
-        int top = Math.max(safe.y(), placement.panel().y()), bottom = Math.min(safe.bottom(), height - Math.max(0, homeInset));
-        return new Box(safe.x(), top, safe.width(), Math.max(1, bottom - top));
+        int top = Math.max(safe.y(), placement.panel().y()), bottom = Math.min(safe.bottom(), systemSafe.bottom());
+        // Move the whole launcher above visible navigation before reducing its height.
+        // System top safety and the notch/shortcut edge both limit that movement.
+        top = Math.max(Math.max(safe.y(), systemSafe.y()), top - Math.max(0, safe.bottom() - bottom));
+        return new Box(safe.x(), top, safe.width(), Math.max(0, bottom - top)).intersect(systemSafe);
     }
     /** Move along the inward normal only; preserve physical cutout handedness. */
     public static Placement avoidEdge(Placement p, int screenWidth, int screenHeight, int inset, int gap) {
@@ -127,9 +173,10 @@ public final class DockGeometry {
     public static Slots slots(Placement placement, int total, boolean fixedFirst) {
         int count = Math.max(2, Math.min(5, total));
         int width = placement.touch.width, height = placement.touch.height;
-        int length = placement.vertical() ? height : width;
+        int length = placement.vertical() ? placement.visual.height : placement.visual.width;
+        int rowStart = placement.vertical() ? placement.visual.y - placement.touch.y : placement.visual.x - placement.touch.x;
         int extent = length - length / count;
-        int start = fixedFirst ? length - extent : 0, fixedStart = fixedFirst ? 0 : extent;
+        int start = rowStart + (fixedFirst ? length - extent : 0), fixedStart = rowStart + (fixedFirst ? 0 : extent);
         Box pager = new Box(placement.vertical() ? 0 : start, placement.vertical() ? start : 0, placement.vertical() ? width : extent, placement.vertical() ? extent : height);
         Box fixed = placement.vertical() ? new Box(0, fixedStart, width, length - extent) : new Box(fixedStart, 0, length - extent, height);
         return new Slots(pager, fixed, count - 1, extent);
@@ -174,7 +221,19 @@ public final class DockGeometry {
         if (measured) {
             edge = lane.edge;
             Box c = lane.box;
-            visual = new Box(c.x + margin, c.y + margin, c.width - margin * 2, c.height - margin * 2);
+            int visualWidth = c.width - margin * 2, visualHeight = c.height - margin * 2;
+            int x = c.x + margin, y = c.y + margin;
+            // Keep the outer endpoint; leave one eighth of the tail clear toward the camera.
+            if (edge % 2 == 0) {
+                int compactWidth = Math.max(1, Math.round(visualWidth * .875f));
+                if (c.x > 0) x += visualWidth - compactWidth;
+                visualWidth = compactWidth;
+            } else {
+                int compactHeight = Math.max(1, Math.round(visualHeight * .875f));
+                if (c.y > 0) y += visualHeight - compactHeight;
+                visualHeight = compactHeight;
+            }
+            visual = new Box(x, y, visualWidth, visualHeight);
         } else {
             int length = Math.round(Math.min(width, height) * widthRatio);
             int thickness = Math.round(Math.min(width, height) * heightRatio);
@@ -190,11 +249,13 @@ public final class DockGeometry {
             visual = new Box(corner == 0 || corner == 3 ? safeLeft : safeRight - visualWidth,
                 corner < 2 ? safeTop : safeBottom - visualHeight, visualWidth, visualHeight);
         }
+        // The narrower artwork leaves a camera-side extension for the pinned action.
+        Box footprint = measured ? new Box(lane.box.x + margin, lane.box.y + margin, lane.box.width - margin * 2, lane.box.height - margin * 2) : visual;
         int target = Math.round(44 * density);
-        int touchWidth = edge % 2 == 0 ? visual.width : Math.max(visual.width, target);
-        int touchHeight = edge % 2 == 0 ? Math.max(visual.height, target) : visual.height;
-        Box touch = new Box(edge == RIGHT ? visual.right() - touchWidth : visual.x,
-            edge == BOTTOM ? visual.bottom() - touchHeight : visual.y, touchWidth, touchHeight);
+        int touchWidth = edge % 2 == 0 ? footprint.width : Math.max(footprint.width, target);
+        int touchHeight = edge % 2 == 0 ? Math.max(footprint.height, target) : footprint.height;
+        Box touch = new Box(edge == RIGHT ? footprint.right() - touchWidth : footprint.x,
+            edge == BOTTOM ? footprint.bottom() - touchHeight : footprint.y, touchWidth, touchHeight);
         switch (edge) {
             case BOTTOM -> bottom = Math.min(bottom, touch.y - margin);
             case TOP -> top = Math.max(top, touch.bottom() + margin);

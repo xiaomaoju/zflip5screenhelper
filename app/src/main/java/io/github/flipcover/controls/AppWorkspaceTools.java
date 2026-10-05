@@ -31,6 +31,7 @@ final class AppWorkspaceTools {
     private boolean external;
     AppWorkspaceTools(AppHubView hub, AppWorkspaceView grid, Prefs prefs) { this.hub = hub; this.grid = grid; this.prefs = prefs; context = hub.getContext(); }
     String opened() { return opened; }
+    void invalidateForce() { if (sheet != null) LauncherMotionLayout.invalidateForce(sheet); }
     boolean back() { if (sheet == null) return false; if (external) grid.cancelInteraction(); sheet.close(); return true; }
     private void toast(String text) { android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show(); }
     private void attempt(Runnable action) { try { action.run(); } catch (IllegalArgumentException error) { toast(error.getMessage()); } }
@@ -47,15 +48,16 @@ final class AppWorkspaceTools {
         final DetailSheet[] ref = new DetailSheet[1];
         DetailSheet current = new DetailSheet(context, name, () -> { if (sheet != ref[0]) return; close(); if (back != null) back.run(); }); ref[0] = current; sheet = current;
         current.handleWindowBack();
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(hub.getWidth(), hub.getHeight()); params.leftMargin = hub.getLeft() - host.getPaddingLeft(); params.topMargin = hub.getTop() - host.getPaddingTop(); host.addView(current, params);
+        current.launcherStyle(); sheetInsets(current, host); host.addView(current, new FrameLayout.LayoutParams(-1, -1));
         hub.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS); current.enter(null); return current;
     }
     void resize() {
         if (external) { close(); return; }
         if (sheet == null || !(sheet.getParent() instanceof FrameLayout host)) return;
         if (members != null) members.cancel();
-        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) sheet.getLayoutParams(); params.width = hub.getWidth(); params.height = hub.getHeight(); params.leftMargin = hub.getLeft() - host.getPaddingLeft(); params.topMargin = hub.getTop() - host.getPaddingTop(); sheet.setLayoutParams(params);
+        sheetInsets(sheet, host);
     }
+    private void sheetInsets(DetailSheet current, FrameLayout host) { current.setPadding(Math.max(0, hub.getLeft() - host.getPaddingLeft()), Math.max(0, hub.getTop() - host.getPaddingTop()), Math.max(0, host.getWidth() - host.getPaddingRight() - hub.getRight()), Math.max(0, host.getHeight() - host.getPaddingBottom() - hub.getBottom())); }
     /** Context actions share the selected display's existing safe host, never an anchored subwindow. */
     Actions actions(String title, Runnable back) { return new Actions(show(title, back)); }
     final class Actions {
@@ -63,7 +65,7 @@ final class AppWorkspaceTools {
         Actions(DetailSheet owner) { this.owner = owner; owner.setTag("workspace-actions"); owner.title.setSingleLine(); owner.title.setEllipsize(android.text.TextUtils.TruncateAt.END); }
         void add(String label, Runnable action) { add(label, true, action); }
         void add(String label, boolean enabled, Runnable action) {
-            TextView row = Ui.text(context, label, 12, Ui.TEXT); row.setGravity(android.view.Gravity.CENTER_VERTICAL); row.setMinHeight(Ui.dp(context, 48)); row.setPadding(Ui.dp(context, 6), Ui.dp(context, 6), Ui.dp(context, 6), Ui.dp(context, 6));
+            TextView row = Ui.text(context, label, 12, Ui.TEXT); row.setGravity(android.view.Gravity.CENTER_VERTICAL); row.setMinHeight(Ui.dp(context, AppLauncherStyle.FOLDER_ACTION_HEIGHT)); row.setPadding(Ui.dp(context, 6), Ui.dp(context, 3), Ui.dp(context, 6), Ui.dp(context, 3));
             row.setBackground(Ui.ripple(context, android.graphics.Color.TRANSPARENT, 8)); row.setEnabled(enabled); row.setAlpha(enabled ? 1 : .4f); row.setFocusable(true);
             row.setOnClickListener(v -> { if (sheet != owner) return; close(); attempt(action); }); owner.content.addView(row, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -75,7 +77,8 @@ final class AppWorkspaceTools {
         DetailSheet current = show(folder.name() + " · " + folder.members().size() + "/9", null); opened = id; current.setTag("folder-sheet");
         current.title.setSingleLine(); current.title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         View more = Ui.iconButton(context, R.drawable.ic_ms_edit, "文件夹管理", () -> menu(sheet.title, id)); current.folderStyle(folder.name(), folder.members().size(), more);
-        members = new AppFolderGrid(context, folder.members(), !prefs.workspaceLocked(), app -> { View cell = hub.shortcut(app, hub.label(app), AppLauncherStyle.FOLDER_MEMBER_ICON, AppLauncherStyle.LABEL_SP, () -> hub.launchApplication(app)); cell.setMinimumHeight(Ui.dp(context, AppLauncherStyle.FOLDER_MEMBER_HEIGHT)); return cell; }, new AppFolderGrid.Listener() {
+        InputNavigation.exclude(more);
+        members = new AppFolderGrid(context, folder.members(), !prefs.workspaceLocked(), app -> { View cell = hub.shortcut(app, hub.label(app), AppLauncherStyle.FOLDER_MEMBER_ICON, AppLauncherStyle.LABEL_SP, () -> hub.launchApplication(app)); hub.folderForce(cell); cell.setMinimumHeight(Ui.dp(context, AppLauncherStyle.FOLDER_MEMBER_HEIGHT)); return cell; }, new AppFolderGrid.Listener() {
             public void launch(String app) { hub.launchApplication(app); }
             public void menu(View anchor, String app) { memberMenu(anchor, id, app); }
             public void reorder(List<String> order) { attempt(() -> grid.change(grid.projected().reorder(id, order))); }
@@ -87,13 +90,15 @@ final class AppWorkspaceTools {
             public void forward(MotionEvent event) { int[] origin = new int[2]; grid.getLocationOnScreen(origin); MotionEvent copy = MotionEvent.obtain(event); copy.setLocation(event.getRawX() - origin[0], event.getRawY() - origin[1]); grid.dispatchTouchEvent(copy); copy.recycle(); }
             public void endExternal() { close(); }
         }); current.content.addView(members, new LinearLayout.LayoutParams(-1, -2));
+        hub.folderForce(members); hub.folderPulse();
+        current.enter(grid.folderSource(id), hub.launcherGlass());
         current.title.setTooltipText("长按成员排序；拖出卡片移到桌面");
         current.title.setContentDescription(folder.name() + "，" + folder.members().size() + "个应用，长按成员排序，拖出卡片移到桌面");
     }
     void menu(View anchor, String id) {
         if (id.isEmpty()) { organize(null); return; }
         AppWorkspaceLayout.Folder folder = grid.layoutSnapshot().folder(id); if (folder == null) return;
-        Actions menu = actions(folder.name(), () -> folder(id)); menu.add("打开文件夹", () -> folder(id));
+        Actions menu = actions(folder.name(), null); menu.add("打开文件夹", () -> folder(id));
         menu.add("重命名", !prefs.workspaceLocked(), () -> text("文件夹名称", folder.name(), value -> grid.change(grid.projected().rename(id, value)), () -> folder(id)));
         menu.add("添加应用 · " + folder.members().size() + "/9", !prefs.workspaceLocked() && folder.members().size() < 9, () -> organize(id));
         menu.add("按名称整理成员", !prefs.workspaceLocked(), () -> { List<String> order = new ArrayList<>(folder.members()); order.sort((a, b) -> hub.label(a).compareToIgnoreCase(hub.label(b))); grid.change(grid.projected().reorder(id, order)); });
@@ -141,10 +146,10 @@ final class AppWorkspaceTools {
             if (!base.equals(grid.layoutSnapshot())) throw new IllegalArgumentException("布局已改变，请重新打开整理");
             if (selected.isEmpty()) throw new IllegalArgumentException("请先选择应用"); List<String> ids = List.copyOf(selected);
             if (destination != null) { AppWorkspaceLayout next = grid.projected(); for (String app : ids) next = next.merge(app, destination); preview("加入 " + ids.size() + " 个应用", next); }
-            else { PopupMenu actions = new PopupMenu(context, current.title);
-                actions.getMenu().add("新建文件夹（2–9个）").setEnabled(ids.size() >= 2 && ids.size() <= 9).setOnMenuItemClickListener(item -> { attempt(() -> preview("新建文件夹", grid.projected().create(ids, "文件夹", grid.page() * grid.capacity()))); return true; });
-                actions.getMenu().add("加入已有文件夹").setOnMenuItemClickListener(item -> { chooseFolder(ids, null); return true; });
-                actions.getMenu().add("移到其他页").setOnMenuItemClickListener(item -> { choosePage(ids); return true; }); actions.show(); }
+            else { InputPopupMenu actions = new InputPopupMenu(context, current.title);
+                actions.add("新建文件夹（2–9个）").setEnabled(ids.size() >= 2 && ids.size() <= 9).setOnMenuItemClickListener(item -> { attempt(() -> preview("新建文件夹", grid.projected().create(ids, "文件夹", grid.page() * grid.capacity()))); return true; });
+                actions.add("加入已有文件夹").setOnMenuItemClickListener(item -> { chooseFolder(ids, null); return true; });
+                actions.add("移到其他页").setOnMenuItemClickListener(item -> { choosePage(ids); return true; }); actions.show(); }
         }));
     }
     private void chooseFolder(List<String> apps, String excluded) {
@@ -175,10 +180,10 @@ final class AppWorkspaceTools {
         pageList(current, count, (page, reusable) -> {
             LinearLayout row; if (reusable instanceof LinearLayout existing) row = existing; else { row = Ui.row(context); TextView name = Ui.text(context, "", 12, Ui.TEXT); name.setSingleLine(); name.setEllipsize(android.text.TextUtils.TruncateAt.END); row.addView(name, new LinearLayout.LayoutParams(0, -2, 1)); row.addView(Ui.button(context, "查看", () -> { })); row.addView(Ui.button(context, "…", () -> { })); }
             TextView label = (TextView) row.getChildAt(0); label.setText("第 " + (page + 1) + " 页 · " + counts[page] + " 项"); row.getChildAt(1).setOnClickListener(v -> { close(); hub.manualMode(); grid.settlePage(page, true); });
-            row.getChildAt(2).setOnClickListener(v -> { PopupMenu menu = new PopupMenu(context, label);
-                menu.getMenu().add("向前一页移动").setEnabled(!prefs.workspaceLocked() && page > 0).setOnMenuItemClickListener(item -> { attempt(() -> { grid.change(grid.projected().swapPages(page, page - 1)); pages(); }); return true; });
-                menu.getMenu().add("向后一页移动").setEnabled(!prefs.workspaceLocked() && page + 1 < count).setOnMenuItemClickListener(item -> { attempt(() -> { grid.change(grid.projected().swapPages(page, page + 1)); pages(); }); return true; });
-                menu.getMenu().add("删除空页").setEnabled(!prefs.workspaceLocked()).setOnMenuItemClickListener(item -> { attempt(() -> { grid.change(grid.projected().removeEmptyPage(page)); pages(); }); return true; }); menu.show(); }); return row;
+            row.getChildAt(2).setOnClickListener(v -> { InputPopupMenu menu = new InputPopupMenu(context, label);
+                menu.add("向前一页移动").setEnabled(!prefs.workspaceLocked() && page > 0).setOnMenuItemClickListener(item -> { attempt(() -> { grid.change(grid.projected().swapPages(page, page - 1)); pages(); }); return true; });
+                menu.add("向后一页移动").setEnabled(!prefs.workspaceLocked() && page + 1 < count).setOnMenuItemClickListener(item -> { attempt(() -> { grid.change(grid.projected().swapPages(page, page + 1)); pages(); }); return true; });
+                menu.add("删除空页").setEnabled(!prefs.workspaceLocked()).setOnMenuItemClickListener(item -> { attempt(() -> { grid.change(grid.projected().removeEmptyPage(page)); pages(); }); return true; }); menu.show(); }); return row;
         });
     }
 }

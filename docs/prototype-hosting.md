@@ -11,9 +11,13 @@
 - `dist/flipcover-prototype.html`：与教程同内容的兼容入口，旧分享链接继续有效。
 - `dist/settings-oneui-prototype.html`：One UI 设置交互原型。
 - `dist/nfc-hotspot-prototype.html`：NFC 与移动热点开关、配置及连接设备交互原型。
+- `dist/notification-force-jelly.html`：通知弹性、顺序分裂和合并清除演示。
+- `dist/control-force-jelly.html`：控制中心单弹簧、同步回弹与局部反馈演示。
+- `dist/task-force-jelly.html`：任务页连续滚动、关闭、失败回弹与空态演示。
+- `dist/launcher-force-jelly.html`：启动器八区域受力、侧栏分裂与 Dock 演示。
 - `dist/device-frames/preview.html`：设备外框预览及 PNG / SVG 下载。
 
-教程两个入口各自内嵌完整脚本、样式、图标和设备外框。上述页面保留相对路径，既可通过普通浏览器直接打开，也可部署到 GitHub Pages 或 NAS。离线复制设置原型时，需要一并保留 `device-frames/` 内的 SVG；复制外框预览时，需要一并保留它链接的 PNG 与 SVG。
+教程两个入口各自内嵌完整教程脚本、样式、图标和设备外框。教程顶部“四个界面动效”按需加载上述四份独立 HTML，切换或返回时卸载旧演示，返回恢复此前自动播放状态；四份动画共用这些文件，不再维护教程专用副本。离线复制完整体验时，将这些 HTML 与 `device-frames/` 保持原相对位置。仅复制教程单文件仍可运行原教程，动效入口需要随附四份 HTML。上述页面不依赖 Codex、网络字体或本机绝对资源路径，可供普通浏览器直接打开或部署到 GitHub Pages / NAS。
 
 ## 发布与更新
 

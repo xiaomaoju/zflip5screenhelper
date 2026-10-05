@@ -10,7 +10,7 @@ import android.os.Bundle;
 public final class LauncherWidgetProvider extends AppWidgetProvider {
     static final String ACTION = "io.github.flipcover.controls.LAUNCHER_WIDGET";
     @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) { CoverApp.launcherWidgets(context).refresh(); }
-    @Override public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager, int id, Bundle options) { CoverApp.launcherWidgets(context).resize(id); }
+    @Override public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager, int id, Bundle options) { CoverApp.launcherWidgets(context).optionsChanged(id, options); }
     @Override public void onDeleted(Context context, int[] ids) { for (int id : ids) CoverApp.launcherWidgets(context).remove(id); }
     @Override public void onDisabled(Context context) { CoverApp.launcherWidgets(context).refresh(); }
     @Override public void onReceive(Context context, Intent intent) {

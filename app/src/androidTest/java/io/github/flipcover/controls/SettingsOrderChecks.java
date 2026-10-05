@@ -42,7 +42,7 @@ final class SettingsOrderChecks {
         main(() -> { TextView label = findText(activity.findViewById(android.R.id.content), "快捷按钮"); View parent = label; while (!parent.isClickable()) parent = (View) parent.getParent(); parent.performClick(); }); SystemClock.sleep(150);
     }
     private TextView findText(View view, String label) { if (view instanceof TextView text && label.contentEquals(text.getText())) return text; if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) { TextView result = findText(group.getChildAt(i), label); if (result != null) return result; } return null; }
-    private float[] point(View view, float fraction) { int[] location = new int[2]; main(() -> view.getLocationOnScreen(location)); return new float[]{location[0] + view.getWidth() / 2f, location[1] + view.getHeight() * fraction}; }
+    private float[] point(View view, float fraction) { android.graphics.Rect physical = new android.graphics.Rect(); main(() -> { physical.set(SettingsUi.Viewport.bounds(view, null, activity.findViewById(android.R.id.content))); int[] origin = new int[2]; activity.findViewById(android.R.id.content).getLocationOnScreen(origin); physical.offset(origin[0], origin[1]); }); return new float[]{physical.exactCenterX(), physical.top + physical.height() * fraction}; }
     private void input(long down, int action, float x, float y) { MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0); event.setSource(InputDevice.SOURCE_TOUCHSCREEN); require(test.getUiAutomation().injectInputEvent(event, true), "input accepted"); event.recycle(); }
     private void drag(float[] from, float[] to, int dwell) {
         long down = SystemClock.uptimeMillis(); input(down, MotionEvent.ACTION_DOWN, from[0], from[1]); SystemClock.sleep(700);
@@ -51,7 +51,8 @@ final class SettingsOrderChecks {
     }
     private void recreate() { MainActivity before = activity; main(() -> activity.recreate()); for (int i = 0; i < 60 && activity == before; i++) SystemClock.sleep(50); test.waitForIdleSync(); require(activity != before, "Activity recreated"); SystemClock.sleep(150); }
     private void screenshot(String name) throws Exception { test.waitForIdleSync(); SystemClock.sleep(250); Bitmap bitmap = test.getUiAutomation().takeScreenshot(); File file = new File(test.getTargetContext().getExternalFilesDir(null), "order-" + name + ".png"); try (FileOutputStream out = new FileOutputStream(file)) { bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); } bitmap.recycle(); }
-    String run() throws Exception {
+    String run() throws Exception { return run(true); }
+    String run(boolean includeRuntimeEditor) throws Exception {
         Application app = (Application) test.getTargetContext().getApplicationContext(); app.registerActivityLifecycleCallbacks(lifecycle); prefs = new Prefs(test.getTargetContext());
         // This scenario owns its disposable emulator; it never enables the overlay or selects a display.
         prefs.data.edit().clear().commit();
@@ -90,9 +91,9 @@ final class SettingsOrderChecks {
             open(); click("order-remove-" + saved.get(0)); main(() -> activity.onBackPressed()); click("settings-confirm"); require(prefs.actions("panel").equals(saved), "discard preserves saved configuration");
             open(); for (String id : new ArrayList<>(order())) click("order-remove-" + id); require(order().isEmpty(), "empty list supported"); require(findText(tag("order-list"), "还没有快捷项") != null, "empty state is visible"); click("order-undo"); require(order().size() == 1, "empty list can undo last removal");
             prefs.saveActions("panel", original); open(); screenshot("final");
-            checkInline();
+            if (includeRuntimeEditor) checkInline();
             require(prefs.displayId() == -1 && !prefs.enabled(), "no display or permission side effects");
-            return "PASS: shortcut editor; " + assertions + " assertions; native drag and edge scroll, undo/recreation, tabs, search restoration, inline panel add/edit/save/discard and subscription lifecycle";
+            return "PASS: " + (includeRuntimeEditor ? "shortcut editor" : "settings order") + "; " + assertions + " assertions; native drag and edge scroll, undo/recreation, tabs, search restoration" + (includeRuntimeEditor ? ", inline panel editor" : "");
         } finally { if (activity != null) main(() -> activity.finish()); app.unregisterActivityLifecycleCallbacks(lifecycle); }
     }
     private CoverService mountPanel() {

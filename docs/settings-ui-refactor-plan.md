@@ -172,7 +172,7 @@ flowchart TD
 
 ## 7. 必须覆盖的回归与验收任务
 
-- 按 `README.md` 执行 `:app:assembleDebug :app:testDebugUnitTest :app:lintDebug`，产物在 `Cache/build-output.nosync/app/`。
+- 按 [开发说明](development.md) 执行 `:app:assembleDebug :app:testDebugUnitTest :app:lintDebug`，产物在 `Cache/build-output.nosync/app/`。
 - 保持/适配已有 `PanelSettingsChecks`、`StatusSafeAreaChecks`、`ReadabilityChecks`、`NativeWidgetChecks` 与通用 `UiSmokeInstrumentation` 中受影响的用户行为；测试标识改变须更新映射，不按旧视图数量机械断言新布局。
 - 新的行为检查重点是：搜索直达再返回、来源栈恢复、旋转重建、单选取消、滑条触摸取消与 TalkBack 调整、排序完成/放弃、授权回读、失败保留上下文。只为实际风险补检查，不给纯颜色变化堆测试。
 - 本地 UI 尺寸覆盖 720×748 的 340/440dpi，交换宽高；字体 100%/130%/200%；四方向与缺口；最后一行可达；主屏无静默回退。

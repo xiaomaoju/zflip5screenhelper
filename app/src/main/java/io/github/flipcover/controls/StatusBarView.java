@@ -8,7 +8,11 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
+import android.graphics.PixelFormat;
 import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -33,15 +37,24 @@ import java.util.Locale;
 
 /** Read-only status overlay. Subscriptions and timers live only while this view is attached. */
 final class StatusBarView extends View {
+    static final Typeface CLOCK_TYPEFACE = Typeface.create(Typeface.SANS_SERIF, 700, false);
+    static final float CLOCK_SIZE_DP = BuildConfig.APPEARANCE_STATUS_CLOCK_DP;
+    private static final int BATTERY_TRACK = 0xFFC3C3C7;
+    private static final int BATTERY_CHARGE = 0xFFFFFFFF;
     private final Prefs prefs;
     private final boolean panelMode;
     private int previewScale;
     private int previewSafeLeft = -1, previewSafeRight = -1;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final ClockDrawable clockForeground = new ClockDrawable();
+    private final BatteryDrawable batteryForeground = new BatteryDrawable();
+    private Drawable clockDrawable, batteryDrawable;
+    private final Path batteryShape = new Path();
+    private final float batteryBodyWidth, batteryHeight, batteryTipRight;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Drawable> notificationIcons = new ArrayList<>();
     private final List<Cell> cells = new ArrayList<>();
-    private final Drawable wifiIcon, alarmIcon, boltIcon;
+    private Drawable wifiIcon, alarmIcon, boltIcon;
     private ConnectivityManager connectivity;
     private SubscriptionManager subscriptions;
     private boolean running, networkRegistered, receiverRegistered, subscriptionsRegistered, wifi, alarm, charging;
@@ -83,8 +96,12 @@ final class StatusBarView extends View {
         this(context, prefs, false);
     }
     StatusBarView(Context context, Prefs prefs, boolean panelMode) {
-        super(context); this.prefs = prefs; this.panelMode = panelMode; applyAppearance();
-        wifiIcon = Ui.icon(context, R.drawable.ic_ms_wifi, Ui.TEXT); alarmIcon = Ui.icon(context, R.drawable.ic_ms_alarm, Ui.TEXT); boltIcon = Ui.icon(context, R.drawable.ic_ms_bolt, Ui.TEXT);
+        super(context); this.prefs = prefs; this.panelMode = panelMode;
+        float line = Math.max(1, Ui.dp(context, .7f)); batteryBodyWidth = Ui.dp(context, 16) - line; batteryHeight = Ui.dp(context, 8); batteryTipRight = Ui.dp(context, 16) + line;
+        float radius = Math.min(Ui.dp(context, 2), batteryHeight / 2);
+        batteryShape.addRoundRect(0, -batteryHeight / 2, batteryBodyWidth, batteryHeight / 2, radius, radius, Path.Direction.CW);
+        batteryShape.addRoundRect(batteryBodyWidth - line, -batteryHeight / 4, batteryTipRight, batteryHeight / 4, line, line, Path.Direction.CW);
+        applyAppearance();
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
     int heightPixels() { return Math.max(1, Math.round(Ui.dp(getContext(), 20) * scaleFactor())); }
@@ -93,7 +110,16 @@ final class StatusBarView extends View {
     void previewSafeArea(int left, int right) { previewSafeLeft = Math.max(0, Math.min(48, left)); previewSafeRight = Math.max(0, Math.min(48, right)); invalidate(); }
     boolean showsPercentage() { return panelMode || prefs.batteryPercent(); }
     private int foreground() { return panelMode ? Ui.TEXT : Ui.chromeColor(prefs); }
-    private void applyAppearance() { setBackgroundColor(!panelMode && prefs.chromeStyle().equals("black") ? Ui.BACKGROUND : android.graphics.Color.TRANSPARENT); setLayerType(LAYER_TYPE_SOFTWARE, null); }
+    private Drawable withIconShadow(Drawable icon) { return !panelMode && prefs.chromeStyle().equals("contrast") ? ChromeShadowDrawable.forIcon(icon, getResources().getDisplayMetrics().density) : icon; }
+    private Drawable statusIcon(int resource) {
+        Drawable icon = Ui.icon(getContext(), resource, foreground());
+        return withIconShadow(icon);
+    }
+    private void applyAppearance() {
+        setBackgroundColor(!panelMode && prefs.chromeStyle().equals("black") ? Ui.BACKGROUND : android.graphics.Color.TRANSPARENT); setLayerType(LAYER_TYPE_SOFTWARE, null);
+        wifiIcon = statusIcon(R.drawable.ic_ms_wifi); alarmIcon = statusIcon(R.drawable.ic_ms_alarm); boltIcon = statusIcon(R.drawable.ic_ms_bolt);
+        clockDrawable = withIconShadow(clockForeground); batteryDrawable = withIconShadow(batteryForeground);
+    }
     static String formatRate(float bytes) { return bytes < 1024 * 1024 ? String.format(Locale.ROOT, "%.0fK/s", bytes / 1024) : String.format(Locale.ROOT, "%.1fM/s", bytes / (1024 * 1024)); }
     private void updateClock() { clock = android.text.format.DateFormat.getTimeFormat(getContext()).format(new java.util.Date()); }
     @Override protected void onAttachedToWindow() {
@@ -124,7 +150,7 @@ final class StatusBarView extends View {
             try {
                 android.graphics.drawable.Icon small = item.getNotification().getSmallIcon();
                 Drawable icon = small == null ? getContext().getPackageManager().getApplicationIcon(item.getPackageName()) : small.loadDrawable(getContext());
-                if (icon != null) { icon = icon.mutate(); icon.setTint(foreground()); notificationIcons.add(!panelMode && prefs.chromeStyle().equals("contrast") ? new ContrastDrawable(icon, Ui.dp(getContext(), .7f)) : icon); }
+                if (icon != null) { icon = icon.mutate(); icon.setTint(foreground()); notificationIcons.add(withIconShadow(icon)); }
             } catch (Exception ignored) { }
         }
         invalidate();
@@ -169,7 +195,7 @@ final class StatusBarView extends View {
         float scale = scaleFactor(); canvas.scale(scale, scale);
         float width = (getWidth() - leftInset - rightInset) / scale, height = getHeight() / scale;
         paint.setStyle(Paint.Style.FILL); paint.setColor(foreground()); paint.setTextSize(Ui.dp(getContext(), 10));
-        paint.clearShadowLayer();
+        ChromeShadowDrawable.applyShadow(paint, !panelMode && prefs.chromeStyle().equals("contrast") ? getResources().getDisplayMetrics().density : 0);
         float baseline = height / 2f - (paint.ascent() + paint.descent()) / 2, right = width - Ui.dp(getContext(), 6), x = Ui.dp(getContext(), 6);
         int icon = Ui.dp(getContext(), 13), gap = Ui.dp(getContext(), 5), middle = Math.round(height / 2);
         if (panelMode || prefs.statusItem("battery")) { right -= batteryWidth(); drawBattery(canvas, right, baseline, middle, showsPercentage()); right -= gap; }
@@ -182,30 +208,67 @@ final class StatusBarView extends View {
         }
         if (alarm && prefs.statusItem("alarm") && right - icon > x) { right -= icon; drawIcon(canvas, alarmIcon, right, middle, icon); right -= gap; }
         if (prefs.statusItem("speed") && !speed.isEmpty()) { paint.setTextSize(Ui.dp(getContext(), 8)); float length = paint.measureText(speed); if (right - length > x) { right -= length; text(canvas, speed, right, baseline); right -= gap; } paint.setTextSize(Ui.dp(getContext(), 10)); }
-        if (prefs.statusItem("time") && x + paint.measureText(clock) <= right) { text(canvas, clock, x, baseline); x += paint.measureText(clock) + gap * 2; }
+        paint.setTypeface(CLOCK_TYPEFACE); paint.setTextSize(getResources().getDisplayMetrics().density * CLOCK_SIZE_DP);
+        float clockAdvance = paint.measureText(clock), clockBaseline = height / 2f - (paint.ascent() + paint.descent()) / 2;
+        if (prefs.statusItem("time") && x + clockAdvance <= right) {
+            if (clockForeground.update(clock, paint.getTextSize(), foreground(), clockBaseline) && clockDrawable instanceof ChromeShadowDrawable shadow) shadow.invalidateShadow();
+            clockDrawable.setBounds(Math.round(x), 0, Math.round(x) + (int) Math.ceil(clockAdvance), (int) Math.ceil(height)); clockDrawable.draw(canvas); x += clockAdvance + gap * 2;
+        }
+        paint.setTypeface(Typeface.DEFAULT); paint.setTextSize(Ui.dp(getContext(), 10));
+        ChromeShadowDrawable.applyShadow(paint, !panelMode && prefs.chromeStyle().equals("contrast") ? getResources().getDisplayMetrics().density : 0);
         for (Drawable drawable : notificationIcons) { if (x + icon > right) break; drawIcon(canvas, drawable, x, middle, icon); x += icon + gap; }
         canvas.restoreToCount(save);
     }
     private void text(Canvas canvas, String value, float x, float y) {
-        if (!panelMode && prefs.chromeStyle().equals("contrast")) { paint.setColor(android.graphics.Color.BLACK); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Ui.dp(getContext(), 1)); canvas.drawText(value, x, y, paint); }
         paint.setColor(foreground()); paint.setStyle(Paint.Style.FILL); canvas.drawText(value, x, y, paint);
     }
     private String percent() { return battery < 0 ? "—%" : battery + "%"; }
     private float batteryWidth() { return Ui.dp(getContext(), 18) + (showsPercentage() ? Ui.dp(getContext(), 5) + paint.measureText(percent()) : 0) + (charging ? Ui.dp(getContext(), 18) : 0); }
     private float drawBattery(Canvas canvas, float x, float baseline, int middle, boolean percent) {
-        int width = Ui.dp(getContext(), 16), height = Ui.dp(getContext(), 8); float line = Math.max(1, Ui.dp(getContext(), .7f));
-        if (!panelMode && prefs.chromeStyle().equals("contrast")) { paint.setStyle(Paint.Style.FILL); paint.setColor(0xDD000000); canvas.drawRoundRect(x - line, middle - height / 2f - line, x + width, middle + height / 2f + line, line * 2, line * 2, paint); paint.setColor(foreground()); }
-        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(line); canvas.drawRoundRect(x, middle - height / 2f, x + width - line * 2, middle + height / 2f, line, line, paint);
-        paint.setStyle(Paint.Style.FILL); canvas.drawRect(x + width - line, middle - height / 4f, x + width + line, middle + height / 4f, paint);
-        if (battery >= 0) canvas.drawRect(x + line * 2, middle - height / 2f + line * 2, x + line * 2 + (width - line * 6) * battery / 100f, middle + height / 2f - line * 2, paint);
-        x += width + Ui.dp(getContext(), 2); if (percent) { x += Ui.dp(getContext(), 5); text(canvas, percent(), x, baseline); x += paint.measureText(percent()); }
+        int save = canvas.save(); canvas.translate(x, middle - batteryHeight / 2);
+        if (batteryForeground.update(battery, BATTERY_CHARGE) && batteryDrawable instanceof ChromeShadowDrawable shadow) shadow.invalidateShadow();
+        batteryDrawable.setBounds(0, 0, (int) Math.ceil(batteryTipRight), (int) Math.ceil(batteryHeight)); batteryDrawable.draw(canvas);
+        canvas.restoreToCount(save);
+        ChromeShadowDrawable.applyShadow(paint, !panelMode && prefs.chromeStyle().equals("contrast") ? getResources().getDisplayMetrics().density : 0);
+        x += Ui.dp(getContext(), 16) + Ui.dp(getContext(), 2); if (percent) { x += Ui.dp(getContext(), 5); text(canvas, percent(), x, baseline); x += paint.measureText(percent()); }
         if (charging) { x += Ui.dp(getContext(), 5); drawIcon(canvas, boltIcon, x, middle, Ui.dp(getContext(), 13)); x += Ui.dp(getContext(), 13); } return x;
+    }
+    /** Foreground adapters share the ordinary icon shadow renderer; content changes invalidate its mask. */
+    static final class ClockDrawable extends Drawable {
+        private final Paint glyph = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private String value = "";
+        private float baseline;
+        ClockDrawable() { glyph.setTypeface(CLOCK_TYPEFACE); }
+        boolean update(String text, float size, int color, float y) {
+            boolean changed = !value.equals(text) || glyph.getTextSize() != size || glyph.getColor() != color || baseline != y;
+            value = text; baseline = y; glyph.setTextSize(size); glyph.setColor(color); return changed;
+        }
+        float advance() { return glyph.measureText(value); }
+        @Override public void draw(Canvas canvas) { canvas.drawText(value, getBounds().left, getBounds().top + baseline, glyph); }
+        @Override public void setAlpha(int alpha) { glyph.setAlpha(alpha); }
+        @Override public int getAlpha() { return glyph.getAlpha(); }
+        @Override public void setColorFilter(ColorFilter filter) { glyph.setColorFilter(filter); }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+    private final class BatteryDrawable extends Drawable {
+        private final Paint body = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int level = -2, color, alpha = 255;
+        boolean update(int value, int tint) { boolean changed = level != value || color != tint; level = value; color = tint; return changed; }
+        @Override public void draw(Canvas canvas) {
+            int save = alpha == 255 ? canvas.save() : canvas.saveLayerAlpha(null, alpha); canvas.translate(getBounds().left, getBounds().top + batteryHeight / 2);
+            body.setColor(BATTERY_TRACK); canvas.drawPath(batteryShape, body);
+            canvas.clipPath(batteryShape); body.setColor(color);
+            if (level > 0) canvas.drawRect(0, -batteryHeight / 2, level >= 100 ? batteryTipRight : batteryBodyWidth * level / 100f, batteryHeight / 2, body);
+            canvas.restoreToCount(save);
+        }
+        @Override public void setAlpha(int value) { alpha = value; }
+        @Override public int getAlpha() { return alpha; }
+        @Override public void setColorFilter(ColorFilter filter) { body.setColorFilter(filter); }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
     private void drawIcon(Canvas canvas, Drawable drawable, float x, int middle, int size) {
         drawable.setBounds(Math.round(x), middle - size / 2, Math.round(x) + size, middle + size / 2);
-        if (drawable instanceof ContrastDrawable) { drawable.draw(canvas); return; }
-        if (!panelMode && prefs.chromeStyle().equals("contrast")) { drawable.setTint(android.graphics.Color.BLACK); float r = Ui.dp(getContext(), .7f); for (int a = -1; a <= 1; a++) for (int b = -1; b <= 1; b++) { if (a == 0 && b == 0) continue; int save = canvas.save(); canvas.translate(a * r, b * r); drawable.draw(canvas); canvas.restoreToCount(save); } }
-        drawable.setTint(foreground()); drawable.draw(canvas);
+        drawable.draw(canvas);
     }
     @Override protected void onDetachedFromWindow() {
         running = false; main.removeCallbacksAndMessages(null);

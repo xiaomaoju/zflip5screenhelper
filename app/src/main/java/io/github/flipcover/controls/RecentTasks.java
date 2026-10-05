@@ -14,6 +14,7 @@ final class RecentTasks {
             && expected.userId == current.userId && expected.component.equals(current.component) && expected.packageName.equals(current.packageName);
     }
     static boolean canClear(Task expected, Task current) { return sameTask(expected, current) && !current.visible; }
+    static boolean canDismiss(Task expected, Task current, boolean explicit) { return sameTask(expected, current) && (explicit || !current.visible); }
     static String key(Task task) { return task.displayId + ":" + task.userId + ":" + task.id + ":" + task.component; }
     /** The task page represents windows, including multiple windows of one application. */
     static List<Task> backgroundTargets(List<Task> tasks, Set<String> pinnedPackages) {

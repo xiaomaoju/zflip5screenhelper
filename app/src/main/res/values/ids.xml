@@ -1,4 +1,6 @@
 <resources>
+    <item name="input_target" type="id" />
+    <item name="input_excluded" type="id" />
     <item name="action_task_lock" type="id" />
     <item name="action_task_apps" type="id" />
     <item name="action_task_refresh" type="id" />

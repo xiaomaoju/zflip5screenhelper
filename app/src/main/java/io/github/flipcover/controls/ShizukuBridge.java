@@ -15,7 +15,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import rikka.shizuku.Shizuku;
 
 public final class ShizukuBridge {
-    record Snapshot(android.graphics.Bitmap bitmap, String message) { }
+    // Refresh the user service when task-snapshot behavior changes within a validation version.
+    private static final int SERVICE_REVISION = 1;
+    record Snapshot(android.graphics.Bitmap bitmap, String message, boolean retryable) {
+        Snapshot(android.graphics.Bitmap bitmap, String message) { this(bitmap, message, false); }
+    }
     public interface Callback { void accept(Result result); }
     public static final class Result {
         public final boolean ok;
@@ -43,6 +47,7 @@ public final class ShizukuBridge {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean busy = new AtomicBoolean();
+    private final AtomicBoolean taskBusy = new AtomicBoolean();
     private final AtomicBoolean snapshotBusy = new AtomicBoolean();
     private final Shizuku.UserServiceArgs args;
     private final CopyOnWriteArrayList<Runnable> observers = new CopyOnWriteArrayList<>();
@@ -59,7 +64,7 @@ public final class ShizukuBridge {
     public ShizukuBridge(Context context) {
         application = context.getApplicationContext();
         args = new Shizuku.UserServiceArgs(new ComponentName(context, ShellService.class))
-            .daemon(false).processNameSuffix("cover_shell").version(BuildConfig.VERSION_CODE);
+            .daemon(false).processNameSuffix("cover_shell").version(BuildConfig.VERSION_CODE * 100 + SERVICE_REVISION);
         Shizuku.addBinderReceivedListenerSticky(() -> main.post(this::connect));
         Shizuku.addBinderDeadListener(() -> main.post(() -> { remote = null; binding = false; changed(); }));
         Shizuku.addRequestPermissionResultListener((request, grant) -> main.post(() -> {
@@ -125,27 +130,39 @@ public final class ShizukuBridge {
     void run(String operation, int display, int value, String component, java.util.function.BooleanSupplier active, Callback callback) {
         IShellService service = remote;
         if (service == null) { connect(); callback.accept(new Result(false, status() + "，请稍后重试", "")); return; }
-        if (!busy.compareAndSet(false, true)) { callback.accept(new Result(false, "上一项仍在执行，请稍后重试", "", true)); return; }
+        if (taskBusy.get() || !busy.compareAndSet(false, true)) { callback.accept(new Result(false, "上一项仍在执行，请稍后重试", "", true)); return; }
+        execute(service, operation, display, value, component, active, busy, callback);
+    }
+    // One task operation waits behind work already submitted to the same serial worker.
+    // New previews cannot jump ahead of it; an obsolete page never executes its queued mutation.
+    void runTask(String operation, int display, String component, java.util.function.BooleanSupplier active, Callback callback) {
+        if (!java.util.Set.of("recent_tasks", "recent_clear", "recent_dismiss", "recent_open").contains(operation)) throw new IllegalArgumentException("Not a task operation");
+        IShellService service = remote;
+        if (service == null) { connect(); callback.accept(new Result(false, status() + "，请稍后重试", "")); return; }
+        if (!taskBusy.compareAndSet(false, true)) { callback.accept(new Result(false, "上一项任务请求仍在执行，请稍后重试", "", true)); return; }
+        execute(service, operation, display, 0, component, active, taskBusy, callback);
+    }
+    private void execute(IShellService service, String operation, int display, int value, String component, java.util.function.BooleanSupplier active, AtomicBoolean pending, Callback callback) {
         executor.execute(() -> {
             Result result;
-            try { result = active.getAsBoolean() ? Result.parse(service.execute(operation, display, value, component == null ? "" : component)) : new Result(false, "操作已取消，外屏状态已改变", ""); }
+            try { result = active.getAsBoolean() && remote == service ? Result.parse(service.execute(operation, display, value, component == null ? "" : component)) : new Result(false, "操作已取消，外屏状态已改变", ""); }
             catch (Exception e) { remote = null; changed(); result = new Result(false, "Shizuku 调用失败：" + e.getClass().getSimpleName(), ""); }
             Result delivered = result;
-            busy.set(false);
+            pending.set(false);
             main.post(() -> callback.accept(delivered));
         });
     }
-    boolean busy() { return busy.get() || snapshotBusy.get(); }
+    boolean busy() { return busy.get() || taskBusy.get() || snapshotBusy.get(); }
     void snapshot(int display, RecentTasks.Task task, java.util.function.Consumer<Snapshot> callback) {
         IShellService service = remote;
-        if (service == null || busy.get() || !snapshotBusy.compareAndSet(false, true)) { callback.accept(new Snapshot(null, "预览暂不可用")); return; }
+        if (service == null || taskBusy.get() || !snapshotBusy.compareAndSet(false, true)) { callback.accept(new Snapshot(null, "预览暂不可用", service != null)); return; }
         executor.execute(() -> {
             Snapshot result;
             try {
                 android.os.Bundle bundle = service.taskSnapshot(display, SystemRecentTasks.json(task).toString());
                 android.graphics.Bitmap bitmap = bundle == null ? null : bundle.getParcelable("bitmap");
                 if (bitmap != null && (bitmap.getWidth() > 256 || bitmap.getHeight() > 256)) { bitmap.recycle(); bitmap = null; }
-                result = new Snapshot(bitmap, bundle == null ? "预览不可用" : bundle.getString("message", "预览不可用"));
+                result = new Snapshot(bitmap, bundle == null ? "预览不可用" : bundle.getString("message", "预览不可用"), bundle != null && bundle.getBoolean("retryable"));
             } catch (Exception error) { result = new Snapshot(null, "预览不可用"); }
             Snapshot delivered = result; snapshotBusy.set(false); main.post(() -> callback.accept(delivered));
         });

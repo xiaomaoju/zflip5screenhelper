@@ -31,6 +31,8 @@ final class NotificationCenterChecks {
     private ScrollView scroll;
     private PanelSurface surface;
     private int assertions, panelDrags, opens, clears;
+    private float panelProgress = 1;
+    private boolean panelFinished, panelClosed;
     private StatusBarNotification settingsTarget;
     private List<StatusBarNotification> clearRequest = List.of();
     private final long now = System.currentTimeMillis();
@@ -38,8 +40,8 @@ final class NotificationCenterChecks {
     String run() throws Exception {
         activity = test.startActivitySync(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         try {
-            main(this::checkModel); mount(DockGeometry.BOTTOM); checkUi(); checkSwipes();
-            for (int edge : new int[]{DockGeometry.LEFT, DockGeometry.RIGHT, DockGeometry.TOP}) { mount(edge); checkSwipeAxis(); }
+            main(this::checkModel); mount(DockGeometry.BOTTOM); checkUi(); checkSwipes(); checkElasticity(1); checkElasticity(-1); checkLongListScrolling(DockGeometry.BOTTOM); checkBoundaryHandoff(DockGeometry.BOTTOM);
+            for (int edge : new int[]{DockGeometry.LEFT, DockGeometry.RIGHT, DockGeometry.TOP}) { mount(edge); checkSwipeAxis(); checkElasticity(1); checkElasticity(-1); if (edge == DockGeometry.TOP) { checkLongListScrolling(edge); checkBoundaryHandoff(edge); } }
             productPreview(); idle(); checkHeader(); screenshot("notifications-grouped");
             main(() -> firstRow().surface.performClick()); idle(); screenshot("notifications-group-expanded");
             main(() -> firstRow().surface.performClick()); idle(); main(() -> firstRow().showActions(true)); idle(); screenshot("notifications-actions");
@@ -47,7 +49,173 @@ final class NotificationCenterChecks {
         } finally { main(() -> activity.finish()); }
     }
     private void main(Runnable action) { test.runOnMainSync(action); }
-    private void idle() { test.waitForIdleSync(); SystemClock.sleep(220); }
+    String runInertia() throws Exception {
+        activity = test.startActivitySync(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try {
+            mount(DockGeometry.BOTTOM);
+            for (int direction : new int[]{1, -1}) for (int preparation = 0; preparation < 3; preparation++) checkInwardFling(direction, preparation);
+            return "PASS: " + assertions + " edge-fling assertions; top/bottom, resting/rebound/reversal";
+        } finally { main(() -> activity.finish()); }
+    }
+    String runForce() throws Exception {
+        activity = test.startActivitySync(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try {
+            mount(DockGeometry.BOTTOM); main(() -> firstRow().surface.performClick()); idle();
+            ViewGroup members = (ViewGroup) ((ViewGroup) list().getChildAt(0)).getChildAt(1);
+            NotificationSwipeRow first = (NotificationSwipeRow) members.getChildAt(0), second = (NotificationSwipeRow) members.getChildAt(1);
+            android.graphics.Rect[] baseline = new android.graphics.Rect[2];
+            float x = surface.getWidth() * .6f, y = top(scroll) - top(surface) + scroll.getHeight() * .4f; long at = SystemClock.uptimeMillis();
+            main(() -> {
+                first.surface.setBackgroundColor(android.graphics.Color.MAGENTA); second.surface.setBackgroundColor(android.graphics.Color.CYAN);
+                first.setWillNotDraw(true); second.setWillNotDraw(true);
+                baseline[0] = coloredBounds(android.graphics.Color.MAGENTA); baseline[1] = coloredBounds(android.graphics.Color.CYAN);
+                send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 60, MotionEvent.ACTION_MOVE, x, y + Ui.dp(activity, 60));
+                android.graphics.Rect a = coloredBounds(android.graphics.Color.MAGENTA), b = coloredBounds(android.graphics.Color.CYAN);
+                require(a.top > baseline[0].top && b.top - baseline[1].top > a.top - baseline[0].top, "expanded group members also translate and separate rather than being clipped by their group");
+                require(a.height() > baseline[0].height() && b.height() > baseline[1].height() && first.surface.getScaleY() == 1 && second.surface.getScaleY() == 1, "skip-draw glass path visibly deforms expanded cards without changing View scale or layout");
+                secondPointer(at, at + 70, x, y + Ui.dp(activity, 60));
+                require(deformation() == 0 && first.boundaryVisualOffset() == 0 && second.boundaryVisualOffset() == 0, "second pointer resets both whole-list and child forces");
+                require(coloredBounds(android.graphics.Color.MAGENTA).equals(baseline[0]), "multi-touch restores the actual original pixels");
+                send(at, at + 80, MotionEvent.ACTION_UP, x, y);
+            });
+            productPreview(); idle();
+            main(() -> { for (android.view.ViewParent parent = center.getParent(); parent != null; parent = parent.getParent()) if (parent instanceof NotificationScrollView found) { scroll = found; break; } });
+            screenshot("notification-force-rest");
+            for (int direction : new int[]{-1, 1}) {
+                main(() -> scroll.fullScroll(direction < 0 ? View.FOCUS_UP : View.FOCUS_DOWN)); idle();
+                float px = surface.getWidth() * .6f, py = top(scroll) - top(surface) + scroll.getHeight() * .4f; long start = SystemClock.uptimeMillis();
+                main(() -> { send(start, start, MotionEvent.ACTION_DOWN, px, py); send(start, start + 60, MotionEvent.ACTION_MOVE, px, py - direction * Ui.dp(activity, 60)); require(((NotificationScrollView) scroll).ownsPull() && deformation() * direction > 0, "product builder mounts the native force scroll for both edges"); });
+                screenshot(direction < 0 ? "notification-force-product-top" : "notification-force-product-bottom");
+                test.waitForIdleSync(); Bitmap frame = test.getUiAutomation().takeScreenshot(); require(frame != null, "hardware notification screenshot available");
+                File file = new File(context.getFilesDir(), "ui-smoke/notification-force-hardware-" + (direction < 0 ? "top" : "bottom") + ".png");
+                try (FileOutputStream output = new FileOutputStream(file)) { frame.compress(Bitmap.CompressFormat.PNG, 100, output); } finally { frame.recycle(); }
+                main(() -> { send(start, start + 80, MotionEvent.ACTION_CANCEL, px, py); require(deformation() == 0, "product force cancels without leaving offsets"); });
+            }
+            return "PASS: " + assertions + " notification force assertions; expanded groups, multi-touch, real product builder and hardware screenshots";
+        } finally { main(() -> activity.finish()); }
+    }
+    String runReadingForce() throws Exception {
+        activity = test.startActivitySync(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try {
+            mount(DockGeometry.BOTTOM);
+            for (int direction : new int[]{-1, 1}) {
+                List<StatusBarNotification> content = new ArrayList<>(); for (int i = 0; i < 24; i++) content.add(basic(2400 + i, "reading-force-" + i, now - i, "滚动联动 " + i));
+                main(() -> { center.update(false, List.of()); center.update(true, content); }); idle();
+                main(() -> scroll.scrollTo(0, Ui.dp(activity, 320))); idle();
+                NotificationSwipeRow[] marked = new NotificationSwipeRow[2]; android.graphics.Rect[] baseline = new android.graphics.Rect[2]; int[] before = {0}, layoutHeights = new int[2];
+                main(() -> {
+                    int count = 0;
+                    for (int i = 0; i < list().getChildCount() && count < 2; i++) {
+                        NotificationSwipeRow row = (NotificationSwipeRow) ((ViewGroup) list().getChildAt(i)).getChildAt(0); int local = top(row) - top(scroll);
+                        if (local >= Ui.dp(activity, direction < 0 ? 64 : 8) && local + row.getHeight() < scroll.getHeight() - Ui.dp(activity, direction > 0 ? 64 : 8)) marked[count++] = row;
+                    }
+                    require(count == 2, "ordinary scroll fixture has two fully visible middle cards");
+                    marked[0].surface.setBackgroundColor(android.graphics.Color.MAGENTA); marked[1].surface.setBackgroundColor(android.graphics.Color.CYAN);
+                    marked[0].setWillNotDraw(true); marked[1].setWillNotDraw(true);
+                    baseline[0] = coloredBounds(android.graphics.Color.MAGENTA); baseline[1] = coloredBounds(android.graphics.Color.CYAN); before[0] = scroll.getScrollY();
+                    layoutHeights[0] = marked[0].getHeight(); layoutHeights[1] = marked[1].getHeight();
+                    require(marked[0].scrollForce.position == 0 && marked[1].scrollForce.position == 0, "programmatic scroll does not inject a reading force");
+                });
+                float x = surface.getWidth() * .6f, y = top(scroll) - top(surface) + scroll.getHeight() * .5f; long at = SystemClock.uptimeMillis();
+                main(() -> send(at, at, MotionEvent.ACTION_DOWN, x, y));
+                for (int step = 1; step <= 12; step++) { final int n = step; SystemClock.sleep(18); main(() -> send(at, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, n * 3))); }
+                main(() -> {
+                    require(scroll.canScrollVertically(-1) && scroll.canScrollVertically(1) && deformation() == 0 && !((NotificationScrollView) scroll).ownsPull(), "reading force is visible in the middle, independently of boundary pull");
+                    int nativeTravel = before[0] - scroll.getScrollY(); android.graphics.Rect a = coloredBounds(android.graphics.Color.MAGENTA), b = coloredBounds(android.graphics.Color.CYAN);
+                    int reactionA = a.top - baseline[0].top - nativeTravel, reactionB = b.top - baseline[1].top - nativeTravel;
+                    require(reactionA * direction > Ui.dp(activity, 3) && reactionB * direction > Ui.dp(activity, 3), "skip-draw glass card pixels have visible force displacement beyond normal scrolling: " + reactionA + "/" + reactionB);
+                    require(Math.abs(reactionA - reactionB) >= Ui.dp(activity, 2), "adjacent glass cards have visibly different displacement: " + reactionA + "/" + reactionB);
+                    require(marked[0].getHeight() == layoutHeights[0] && marked[1].getHeight() == layoutHeights[1] && marked[0].surface.getScaleY() == 1, "reading jelly deforms only drawing, preserving layout and hit geometry");
+                    require(panelDrags == 0 && opens == 0 && clears == 0, "reading force does not launch, clear or dismiss");
+                });
+                screenshot(direction < 0 ? "notification-reading-up" : "notification-reading-down");
+                main(() -> send(at, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y + direction * Ui.dp(activity, 36))); SystemClock.sleep(1000); idle();
+                main(() -> require(marked[0].scrollForce.position == 0 && marked[1].scrollForce.position == 0, "ordinary scroll and fling return to exact resting positions"));
+                long next = SystemClock.uptimeMillis(); main(() -> send(next, next, MotionEvent.ACTION_DOWN, x, y));
+                for (int step = 1; step <= 4; step++) { final int n = step; SystemClock.sleep(18); main(() -> send(next, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, n * 6))); }
+                main(() -> { secondPointer(next, SystemClock.uptimeMillis(), x, y - direction * Ui.dp(activity, 24)); require(marked[0].scrollForce.position == 0 && marked[1].scrollForce.position == 0, "multi-pointer cancellation clears ordinary scroll forces"); send(next, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y); });
+            }
+            checkSceneForce();
+            checkLinkedForce();
+            return "PASS: " + assertions + " notification force-network assertions; skip-draw glass, hardware entry, ordinary scroll, header press, side swipe and cancellation";
+        } finally { main(() -> activity.finish()); }
+    }
+    private void checkSceneForce() throws Exception {
+        mount(DockGeometry.BOTTOM);
+        InterfaceCard[] card = new InterfaceCard[1]; NotificationSwipeRow[] marked = new NotificationSwipeRow[2];
+        main(() -> {
+            center.update(false, List.of()); List<StatusBarNotification> content = new ArrayList<>(); for (int i = 0; i < 24; i++) content.add(basic(2800 + i, "scene-force-" + i, now - i, "入场联动 " + i)); center.update(true, content);
+            ((ViewGroup) surface.getParent()).removeView(surface); card[0] = new InterfaceCard(activity, new Prefs(activity), InterfaceCard.NOTIFICATIONS, surface, () -> { }, () -> { });
+            activity.setContentView(card[0]);
+        }); idle(); main(() -> scroll.scrollTo(0, Ui.dp(activity, 320))); idle();
+        android.graphics.Rect[] baseline = new android.graphics.Rect[2]; int[] location = new int[2];
+        main(() -> {
+            int count = 0; for (int i = 0; i < list().getChildCount() && count < 2; i++) { NotificationSwipeRow row = (NotificationSwipeRow) ((ViewGroup) list().getChildAt(i)).getChildAt(0); int local = top(row) - top(scroll); if (local >= Ui.dp(activity, 24) && local + row.getHeight() < scroll.getHeight() - Ui.dp(activity, 50)) marked[count++] = row; }
+            require(count == 2, "scene has two fully visible cards");
+            marked[0].setWillNotDraw(true); marked[1].setWillNotDraw(true); marked[0].surface.setBackgroundColor(android.graphics.Color.MAGENTA); marked[1].surface.setBackgroundColor(android.graphics.Color.CYAN);
+            baseline[0] = coloredBounds(android.graphics.Color.MAGENTA); baseline[1] = coloredBounds(android.graphics.Color.CYAN);
+            card[0].enter(.65f, DockGeometry.BOTTOM, surface.getHeight());
+        });
+        for (int frame = 1; frame <= 18; frame++) { final int n = frame; SystemClock.sleep(18); main(() -> card[0].enter(.65f + .35f * n / 18, DockGeometry.BOTTOM, surface.getHeight())); }
+        main(() -> { require(marked[0].scrollForce.position > Ui.dp(activity, 4) && marked[1].scrollForce.position > marked[0].scrollForce.position + Ui.dp(activity, 2), "InterfaceCard entry drives staggered card inertia: " + marked[0].scrollForce.position + "/" + marked[1].scrollForce.position); surface.getLocationOnScreen(location); });
+        Bitmap hardware = test.getUiAutomation().takeScreenshot(); require(hardware != null, "hardware entry screenshot available");
+        try {
+            android.graphics.Rect a = coloredBounds(hardware, android.graphics.Color.MAGENTA), b = coloredBounds(hardware, android.graphics.Color.CYAN);
+            require(a.top - location[1] - baseline[0].top > Ui.dp(activity, 3) && b.top - location[1] - baseline[1].top > Ui.dp(activity, 3), "hardware display list renders entry spring in skip-draw glass mode");
+        } finally { hardware.recycle(); }
+        SystemClock.sleep(1300); idle(); main(() -> require(marked[0].scrollForce.position == 0 && marked[1].scrollForce.position == 0 && card[0].getTranslationY() == 0, "entry restores exact resting card geometry"));
+    }
+    private void checkLinkedForce() throws Exception {
+        NotificationForceHeader header = (NotificationForceHeader) surface.getChildAt(0);
+        NotificationSwipeRow[] rows = new NotificationSwipeRow[2]; android.graphics.Rect[] baseline = new android.graphics.Rect[2];
+        main(() -> {
+            int count = 0; for (int i = 0; i < list().getChildCount() && count < 2; i++) { NotificationSwipeRow row = (NotificationSwipeRow) ((ViewGroup) list().getChildAt(i)).getChildAt(0); int local = top(row) - top(scroll); if (local >= Ui.dp(activity, 24) && local + row.getHeight() < scroll.getHeight() - Ui.dp(activity, 50)) rows[count++] = row; }
+            require(count == 2, "linked force fixture has two visible cards");
+            header.getChildAt(0).setBackgroundColor(android.graphics.Color.YELLOW); rows[0].surface.setBackgroundColor(android.graphics.Color.MAGENTA); rows[1].surface.setBackgroundColor(android.graphics.Color.CYAN); rows[0].setWillNotDraw(true); rows[1].setWillNotDraw(true);
+            baseline[0] = coloredBounds(android.graphics.Color.YELLOW); baseline[1] = coloredBounds(android.graphics.Color.CYAN);
+            long at = SystemClock.uptimeMillis(); MotionEvent down = MotionEvent.obtain(at, at, MotionEvent.ACTION_DOWN, header.getChildAt(0).getWidth() * .5f, header.getHeight() * .5f, 0); header.dispatchTouchEvent(down); down.recycle();
+        }); SystemClock.sleep(90);
+        main(() -> {
+            require(header.moving() && coloredBounds(android.graphics.Color.YELLOW).top > baseline[0].top + Ui.dp(activity, 3), "header press moves actual title pixels through the shared force clock");
+            require(coloredBounds(android.graphics.Color.CYAN).top > baseline[1].top + Ui.dp(activity, 2), "header press propagates to nearby notification cards");
+            long at = SystemClock.uptimeMillis(); MotionEvent cancel = MotionEvent.obtain(at, at, MotionEvent.ACTION_CANCEL, 0, 0, 0); header.dispatchTouchEvent(cancel); cancel.recycle();
+            require(!header.moving() && rows[0].scrollForce.position == 0 && rows[1].scrollForce.position == 0, "canceled header touch clears the whole force network");
+            rows[0].showActions(true);
+        }); SystemClock.sleep(170);
+        main(() -> {
+            require(rows[1].sideForce.position < -Ui.dp(activity, 1), "side reveal transmits horizontal tension to another notification");
+            require(header.moving() && coloredBounds(android.graphics.Color.YELLOW).right < baseline[0].right, "side reveal also moves title/actions instead of remaining isolated in one card");
+            ((NotificationScrollView) scroll).cancelLinkedForce(); rows[0].showActions(false);
+        }); SystemClock.sleep(1300); idle();
+        main(() -> require(!header.moving() && rows[0].sideForce.position == 0 && rows[1].sideForce.position == 0, "side reveal and rejoin leave no residual network motion"));
+    }
+    private void checkInwardFling(int direction, int preparation) {
+        List<StatusBarNotification> content = new ArrayList<>(); for (int i = 0; i < 30; i++) content.add(basic(1800 + i, "fling-" + i, now - i, "惯性检查 " + i));
+        main(() -> { panelDrags = 0; center.update(false, List.of()); center.update(true, content); }); idle();
+        main(() -> scroll.fullScroll(direction > 0 ? View.FOCUS_DOWN : View.FOCUS_UP)); idle();
+        float x = surface.getWidth() * .6f, y = top(scroll) - top(surface) + scroll.getHeight() * .5f;
+        if (preparation == 1 && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            long at = SystemClock.uptimeMillis();
+            main(() -> { send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 20, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 40)); send(at, at + 30, MotionEvent.ACTION_UP, x, y - direction * Ui.dp(activity, 50)); });
+            SystemClock.sleep(40); main(() -> require(deformation() != 0, "rebound fixture still has elastic displacement"));
+        }
+        int[] released = {0}; long at = SystemClock.uptimeMillis();
+        main(() -> {
+            send(at, at, MotionEvent.ACTION_DOWN, x, y);
+            if (preparation == 2) send(at, at + 10, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 24));
+            for (int i = 1; i <= 6; i++) send(at, at + 10 + i * 10, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, i * 22));
+            send(at, at + 80, MotionEvent.ACTION_UP, x, y + direction * Ui.dp(activity, 145)); released[0] = scroll.getScrollY();
+            require(!((NotificationScrollView) scroll).ownsPull(), "inward scroll releases boundary ownership: " + direction + "/" + preparation);
+        });
+        SystemClock.sleep(160); test.waitForIdleSync();
+        main(() -> {
+            int travel = (released[0] - scroll.getScrollY()) * direction;
+            require(travel > Ui.dp(activity, 60), "inward fling continues after release: " + direction + "/" + preparation + " travel=" + travel);
+            require(panelDrags == 0 && !panelFinished, "inward fling never hands off to panel dismissal");
+            long cancel = SystemClock.uptimeMillis(); send(cancel, cancel, MotionEvent.ACTION_DOWN, x, y); send(cancel, cancel + 1, MotionEvent.ACTION_CANCEL, x, y);
+        });
+    }
+    private void idle() { test.waitForIdleSync(); SystemClock.sleep(TaskSpring.DURATION + 400); }
     private void require(boolean value, String message) { if (!value) throw new AssertionError(message); assertions++; }
     private StatusBarNotification item(int id, String pkg, String group, String shortcut, int user, long time, int flags, String title, String body) {
         Notification.Builder builder = new Notification.Builder(context, "notification-fixture").setSmallIcon(R.drawable.ic_ms_notifications).setContentTitle(title).setContentText(body).setWhen(time);
@@ -103,18 +271,19 @@ final class NotificationCenterChecks {
     }
     private void mount(int edge) {
         main(() -> {
-            panelDrags = 0;
+            panelDrags = 0; panelProgress = 1; panelFinished = panelClosed = false;
             // PanelSurface accepts a dock edge; its dismiss direction is the opposite edge.
-            surface = new PanelSurface(activity, edge, 700, false, new PanelHeaderView.Listener() { public void begin() { panelDrags++; } public void progress(float value) { } public void finish(boolean close) { } });
+            surface = new PanelSurface(activity, edge, 700, false, new PanelHeaderView.Listener() { public void begin() { panelDrags++; } public void progress(float value) { panelProgress = value; } public void finish(boolean close) { panelFinished = true; panelClosed = close; } });
             surface.setTag("panel-surface"); surface.setBackgroundColor(Ui.BACKGROUND); surface.setPadding(Ui.dp(activity, 9), Ui.dp(activity, 12), Ui.dp(activity, 9), Ui.dp(activity, 28));
+            surface.setClipChildren(false); surface.setClipToPadding(false);
             center = new NotificationCenterView(activity, new NotificationCenterView.Actions() {
                 public void open(StatusBarNotification item) { opens++; }
                 public void settings(StatusBarNotification item) { settingsTarget = item; }
                 public void permission() { }
                 public void clear(List<StatusBarNotification> items) { clears++; clearRequest = new ArrayList<>(items); }
             });
-            LinearLayout header = Ui.row(activity); header.addView(Ui.heading(activity, "通知中心", 17), new LinearLayout.LayoutParams(0, Ui.dp(activity, 40), 1)); header.addView(center.newNotice); header.addView(center.clearAll); surface.addView(header);
-            scroll = new ScrollView(activity); scroll.addView(center); surface.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+            LinearLayout header = new NotificationForceHeader(activity); header.addView(Ui.heading(activity, "通知中心", 17), new LinearLayout.LayoutParams(0, Ui.dp(activity, 40), 1)); header.addView(center.newNotice); header.addView(center.clearAll); surface.addView(header);
+            scroll = new NotificationScrollView(activity); scroll.addView(center); surface.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
             activity.setContentView(surface); center.update(true, demo());
         }); idle();
     }
@@ -182,7 +351,8 @@ final class NotificationCenterChecks {
             require(list().getChildCount() == 4, "request does not pretend system cancellation succeeded");
         });
         List<StatusBarNotification> reading = new ArrayList<>(); for (int i = 0; i < 12; i++) reading.add(basic(30 + i, "row-" + i, now - i * 60000, "阅读中的通知 " + i));
-        main(() -> center.update(true, reading)); idle();
+        // The preceding clear-request fixture may retain its cards for an exit animation.
+        main(() -> { center.update(false, List.of()); center.update(true, reading); }); idle();
         final int[] offset = {0}, changes = {0}; final View[] first = {null};
         main(() -> {
             first[0] = list().getChildAt(0); TextView title = findText(first[0], "阅读中的通知 0");
@@ -228,6 +398,178 @@ final class NotificationCenterChecks {
         int before = clears, oldOpens = opens; float x = surface.getWidth() * .72f, y = top(firstRow()) - top(surface) + firstRow().getHeight() / 2f;
         gesture(x, y, x - Ui.dp(activity, 130), y + 1, false);
         require(firstRow().opened(), "horizontal swipe exposes rail"); require(panelDrags == 0, "horizontal notification gesture never drags rotated panel"); require(clears == before && opens == oldOpens, "long swipe neither clears nor launches notification");
+    }
+    private float deformation() {
+        try { java.lang.reflect.Field field = NotificationScrollView.class.getDeclaredField("deformation"); field.setAccessible(true); return field.getFloat(scroll); }
+        catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+    }
+    private android.graphics.Rect coloredBounds(int color) {
+        Bitmap frame = Bitmap.createBitmap(surface.getWidth(), surface.getHeight(), Bitmap.Config.ARGB_8888); surface.draw(new Canvas(frame));
+        try { return coloredBounds(frame, color); } finally { frame.recycle(); }
+    }
+    private android.graphics.Rect coloredBounds(Bitmap frame, int color) {
+        int width = frame.getWidth(), height = frame.getHeight(); int[] pixels = new int[width * height]; frame.getPixels(pixels, 0, width, 0, 0, width, height);
+        android.graphics.Rect bounds = new android.graphics.Rect(width, height, 0, 0);
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) if (pixels[y * width + x] == color) { bounds.left = Math.min(bounds.left, x); bounds.top = Math.min(bounds.top, y); bounds.right = Math.max(bounds.right, x + 1); bounds.bottom = Math.max(bounds.bottom, y + 1); }
+        return bounds;
+    }
+    private void checkElasticity(int direction) throws Exception {
+        List<StatusBarNotification> content = new ArrayList<>(); for (int i = 0; i < 12; i++) content.add(basic(1000 + i, "elastic-" + i, now - i, "弹性通知 " + i));
+        main(() -> { center.closeActions(); center.update(false, List.of()); center.update(true, content); }); idle();
+        final int[] bottom = {0}, height = {0}; final View[] card = {null}; final android.graphics.Rect[] original = new android.graphics.Rect[2];
+        main(() -> {
+            scroll.fullScroll(direction > 0 ? View.FOCUS_DOWN : View.FOCUS_UP); card[0] = ((ViewGroup) list().getChildAt(direction > 0 ? list().getChildCount() - 1 : 0)).getChildAt(0); height[0] = card[0].getHeight();
+            ((NotificationSwipeRow) card[0]).surface.setBackgroundColor(android.graphics.Color.MAGENTA);
+            ((NotificationSwipeRow) card[0]).setWillNotDraw(true);
+            NotificationSwipeRow neighbor = (NotificationSwipeRow) ((ViewGroup) list().getChildAt(direction > 0 ? list().getChildCount() - 2 : 1)).getChildAt(0); neighbor.surface.setBackgroundColor(android.graphics.Color.CYAN);
+        }); idle();
+        float x = surface.getWidth() * .6f, y = top(scroll) - top(surface) + scroll.getHeight() * .5f;
+        long start = SystemClock.uptimeMillis(); int oldOpens = opens, oldClears = clears;
+        main(() -> {
+            bottom[0] = scroll.getScrollY(); original[0] = coloredBounds(android.graphics.Color.MAGENTA); original[1] = coloredBounds(android.graphics.Color.CYAN);
+            send(start, start, MotionEvent.ACTION_DOWN, x, y);
+            send(start, start + 20, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 35));
+            send(start, start + 40, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 60));
+            require(deformation() * direction > 0 && ((NotificationScrollView) scroll).ownsPull(), "both boundaries have immediate elastic feedback");
+            android.graphics.Rect shifted = coloredBounds(android.graphics.Color.MAGENTA), neighbor = coloredBounds(android.graphics.Color.CYAN);
+            require(!original[0].isEmpty() && !original[1].isEmpty() && !shifted.isEmpty() && !neighbor.isEmpty(), "both edge cards are actually drawn");
+            int travel = shifted.top - original[0].top, neighborTravel = neighbor.top - original[1].top;
+            require(travel * direction < -Ui.dp(activity, 8), "whole card follows the continued edge pull: direction=" + direction + ", travel=" + travel);
+            require((neighborTravel - travel) * direction < 0, "edge pull opens card gaps rather than compressing them: edge=" + direction + ", travel=" + travel + ", neighbor=" + neighborTravel);
+            require(shifted.height() > original[0].height() && shifted.width() < original[0].width(), "continued boundary pull visibly stretches glass cards vertically and narrows them");
+            require(card[0].getHeight() == height[0] && scroll.getScrollY() == bottom[0], "stretch preserves layout height and reading position");
+            require(panelDrags == 0 && opens == oldOpens && clears == oldClears, "below-threshold elasticity neither dismisses panel nor activates notification");
+        }); screenshot(direction > 0 ? "notification-force-bottom" : "notification-force-top"); main(() -> {
+            send(start, start + 50, MotionEvent.ACTION_UP, x, y - direction * Ui.dp(activity, 75));
+            require(deformation() * direction > 0, "release retains displacement for inertial return");
+        }); SystemClock.sleep(750); test.waitForIdleSync();
+        main(() -> require(deformation() == 0 && scroll.getScrollY() == bottom[0], "spring settles exactly at original bottom"));
+        final long canceledStart = SystemClock.uptimeMillis();
+        main(() -> {
+            send(canceledStart, canceledStart, MotionEvent.ACTION_DOWN, x, y); send(canceledStart, canceledStart + 30, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 80));
+            float stretched = deformation() * direction; send(canceledStart, canceledStart + 35, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 50));
+            require(deformation() * direction > 0 && deformation() * direction < stretched, "reversing finger motion continuously reduces stretch");
+            send(canceledStart, canceledStart + 40, MotionEvent.ACTION_CANCEL, x, y - direction * Ui.dp(activity, 80));
+            require(deformation() == 0 && !((NotificationScrollView) scroll).ownsPull(), "cancellation clears deformation and pull ownership");
+            scroll.fling(direction * Ui.dp(activity, 2600));
+        });
+        final boolean[] impact = {false}; long deadline = SystemClock.uptimeMillis() + 350;
+        while (!impact[0] && SystemClock.uptimeMillis() < deadline) { main(() -> impact[0] = deformation() * direction > 0); if (!impact[0]) SystemClock.sleep(16); }
+        main(() -> require(impact[0] && panelDrags == 0, "fling hitting either edge stretches without dismissing panel: direction=" + direction + ", deformation=" + deformation() + ", drags=" + panelDrags + ", scroll=" + scroll.getScrollY()));
+        SystemClock.sleep(750); test.waitForIdleSync();
+        main(() -> {
+            require(deformation() == 0, "bottom fling spring releases all deformation");
+            long at = SystemClock.uptimeMillis();
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 20, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 60)); send(at, at + 25, MotionEvent.ACTION_UP, x, y - direction * Ui.dp(activity, 70));
+            float before = deformation(); send(at + 30, at + 30, MotionEvent.ACTION_DOWN, x, y);
+            require(before * direction > 0 && deformation() == before, "new touch takes over rebound without a visual jump");
+            scroll.layout(scroll.getLeft(), scroll.getTop(), scroll.getRight(), scroll.getBottom() + 1);
+            require(deformation() == 0 && !((NotificationScrollView) scroll).ownsPull(), "size change cancels deformation and touch ownership");
+            send(at + 30, at + 40, MotionEvent.ACTION_UP, x, y); scroll.requestLayout();
+        }); idle();
+        main(() -> {
+            long at = SystemClock.uptimeMillis();
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 20, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 70)); send(at, at + 30, MotionEvent.ACTION_UP, x, y - direction * Ui.dp(activity, 80));
+            require(deformation() * direction > 0, "unmount fixture has active rebound");
+            ViewGroup.LayoutParams params = scroll.getLayoutParams(); int index = surface.indexOfChild(scroll); surface.removeView(scroll);
+            require(deformation() == 0 && !((NotificationScrollView) scroll).ownsPull(), "unmount releases rebound immediately");
+            surface.addView(scroll, index, params); center.update(true, demo());
+        }); idle();
+    }
+    private void checkBoundaryHandoff(int edge) {
+        int direction = edge == DockGeometry.TOP ? -1 : 1;
+        List<StatusBarNotification> content = new ArrayList<>(); for (int i = 0; i < 12; i++) content.add(basic(1200 + i, "handoff-" + i, now - i, "任意位置收起 " + i));
+        for (int region = 0; region < 4; region++) {
+            final int target = region;
+            main(() -> { panelDrags = 0; panelProgress = 1; panelFinished = panelClosed = false; center.update(true, List.of()); if (target != 3) center.update(true, content); }); idle();
+            main(() -> scroll.fullScroll(direction < 0 ? View.FOCUS_DOWN : View.FOCUS_UP)); idle();
+            float x = target == 2 ? Ui.dp(activity, 20) : surface.getWidth() * .6f;
+            float y = target == 2 ? Ui.dp(activity, 24) : target == 1 ? surface.getHeight() - Ui.dp(activity, 10) : top(scroll) - top(surface) + scroll.getHeight() * .5f;
+            long at = SystemClock.uptimeMillis(); int oldOpens = opens, oldClears = clears;
+            float[] heldStretch = {0};
+            main(() -> {
+                send(at, at, MotionEvent.ACTION_DOWN, x, y);
+                send(at, at + 80, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 64));
+                require(panelDrags == 0 && panelProgress == 1, "all notification regions wait for dismissal threshold");
+                require(!scroll.canScrollVertically(-direction), "all handoff regions require the completed list boundary");
+                heldStretch[0] = deformation();
+                send(at, at + 160, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 120));
+                require(panelDrags == 1 && panelProgress < 1 && panelProgress > .8f, "continued boundary pull transfers immediately after elastic threshold: edge=" + edge + ", region=" + target + ", drags=" + panelDrags + ", progress=" + panelProgress + ", scroll=" + scroll.getScrollY());
+                require(deformation() == heldStretch[0], "panel handoff preserves pre-threshold card stretch");
+            }); SystemClock.sleep(180);
+            main(() -> {
+                require(deformation() == heldStretch[0], "holding the finger past threshold does not start card rebound");
+                float transferred = panelProgress;
+                send(at, at + 240, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 150));
+                require(panelDrags == 1 && panelProgress < transferred, "after threshold the entire notification panel follows the finger");
+                send(at, at + 260, MotionEvent.ACTION_UP, x, y + direction * Ui.dp(activity, 150));
+                require(panelDrags == 1 && panelFinished && panelClosed && opens == oldOpens && clears == oldClears, "release completes boundary dismissal without activating notification");
+            }); SystemClock.sleep(750); test.waitForIdleSync();
+            main(() -> require(deformation() == 0, "handoff releases card deformation"));
+        }
+        main(() -> { panelDrags = 0; panelFinished = panelClosed = false; center.update(true, List.of()); center.update(true, content); }); idle();
+        main(() -> scroll.fullScroll(direction < 0 ? View.FOCUS_UP : View.FOCUS_DOWN)); idle();
+        float x = surface.getWidth() * .6f, y = top(scroll) - top(surface) + scroll.getHeight() * .5f;
+        main(() -> {
+            long at = SystemClock.uptimeMillis();
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 80, MotionEvent.ACTION_MOVE, x, y - direction * Ui.dp(activity, 140));
+            require(panelDrags == 0 && ((NotificationScrollView) scroll).ownsPull(), "large pull opposite to closing direction stays elastic");
+            send(at, at + 100, MotionEvent.ACTION_CANCEL, x, y - direction * Ui.dp(activity, 140));
+            require(deformation() == 0 && !panelFinished, "canceling opposite pull does not dismiss panel");
+            scroll.fullScroll(direction < 0 ? View.FOCUS_DOWN : View.FOCUS_UP);
+        }); idle();
+        main(() -> {
+            long at = SystemClock.uptimeMillis();
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 100, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 120));
+            require(panelDrags == 1 && !panelFinished, "continued boundary pull immediately starts a panel drag");
+            secondPointer(at, at + 110, x, y + direction * Ui.dp(activity, 120));
+            require(panelFinished && !panelClosed, "second finger cancels transferred panel drag without closing");
+            send(at, at + 130, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 160));
+            require(panelDrags == 1 && !panelClosed, "canceled multi-pointer tail cannot restart dismissal");
+            send(at, at + 140, MotionEvent.ACTION_UP, x, y + direction * Ui.dp(activity, 160));
+            require(panelFinished && !panelClosed && panelDrags == 1, "release after multi-pointer cancellation never dismisses panel");
+            panelDrags = 0; panelFinished = panelClosed = false;
+            scroll.fullScroll(direction < 0 ? View.FOCUS_DOWN : View.FOCUS_UP);
+        }); idle();
+        main(() -> {
+            long at = SystemClock.uptimeMillis();
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 80, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 60)); send(at, at + 100, MotionEvent.ACTION_UP, x, y + direction * Ui.dp(activity, 60));
+            at += 150;
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 80, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 40));
+            require(panelDrags == 0 && !panelFinished, "previous rebound displacement is not counted toward a new boundary threshold");
+            send(at, at + 100, MotionEvent.ACTION_CANCEL, x, y + direction * Ui.dp(activity, 40));
+            scroll.scrollBy(0, direction * Ui.dp(activity, 60));
+            at += 300;
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 60, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 75)); send(at, at + 100, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 150));
+            require(panelDrags == 0 && !scroll.canScrollVertically(-direction), "large reading move reaches boundary without using its distance as threshold");
+            send(at, at + 140, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 185));
+            send(at, at + 180, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 225));
+            require(panelDrags == 0 && ((NotificationScrollView) scroll).ownsPull(), "only post-boundary elastic movement accumulates toward dismissal");
+            send(at, at + 220, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 265));
+            require(panelDrags == 1 && panelProgress < 1, "same reading gesture transfers only after enough extra movement beyond boundary");
+            send(at, at + 240, MotionEvent.ACTION_CANCEL, x, y + direction * Ui.dp(activity, 265));
+            require(panelFinished && !panelClosed, "canceled boundary transfer returns panel rather than closing");
+            panelDrags = 0; panelFinished = panelClosed = false; center.update(true, demo());
+        }); idle();
+    }
+    private void checkLongListScrolling(int edge) {
+        List<StatusBarNotification> content = new ArrayList<>(); for (int i = 0; i < 24; i++) content.add(basic(1500 + i, "reading-" + i, now - i, "尚未读完的通知 " + i));
+        main(() -> { panelDrags = 0; panelProgress = 1; panelFinished = panelClosed = false; center.update(true, List.of()); center.update(true, content); }); idle();
+        int direction = edge == DockGeometry.TOP ? -1 : 1;
+        main(() -> scroll.scrollTo(0, Ui.dp(activity, 600))); idle();
+        float x = surface.getWidth() * .6f, y = top(scroll) - top(surface) + scroll.getHeight() * .5f; long at = SystemClock.uptimeMillis();
+        main(() -> {
+            send(at, at, MotionEvent.ACTION_DOWN, x, y); send(at, at + 100, MotionEvent.ACTION_MOVE, x, y + direction * Ui.dp(activity, 150));
+            require(scroll.canScrollVertically(-direction), "long notification list still has unread scroll range after a large drag");
+            require(panelDrags == 0 && panelProgress == 1 && !panelFinished, "normal list scrolling never accumulates dismissal distance");
+            send(at, at + 180, MotionEvent.ACTION_UP, x, y + direction * Ui.dp(activity, 150));
+            require(panelDrags == 0 && !panelFinished, "releasing a large reading scroll cannot close a list that has not reached its boundary");
+        }); idle();
+    }
+    private void secondPointer(long start, long at, float x, float y) {
+        MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[2]; MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[2];
+        for (int i = 0; i < 2; i++) { properties[i] = new MotionEvent.PointerProperties(); properties[i].id = i; properties[i].toolType = MotionEvent.TOOL_TYPE_FINGER; coords[i] = new MotionEvent.PointerCoords(); coords[i].x = x + i * Ui.dp(activity, 8); coords[i].y = y; coords[i].pressure = 1; coords[i].size = 1; }
+        MotionEvent event = MotionEvent.obtain(start, at, MotionEvent.ACTION_POINTER_DOWN | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, properties, coords, 0, 0, 1, 1, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0); surface.dispatchTouchEvent(event); event.recycle();
     }
     private int top(View view) { int[] position = new int[2]; view.getLocationInWindow(position); return position[1]; }
     private void gesture(float x, float y, float endX, float endY, boolean cancel) {

@@ -52,11 +52,7 @@ final class PanelEntryChecks {
                 prefs.data.edit().putBoolean("gestures_enabled", true).commit();
                 mount(); drag(root, 100, 0, 120, MotionEvent.ACTION_UP); require(begins == 1 && releases == 1, "transparent entry receives upward input through parent dispatch");
                 mount(); drag(root, 500, 0, 0, MotionEvent.ACTION_UP); require(rightClicks == 1 && begins == 0, "area outside entry reaches underlying view");
-                mount(); time = SystemClock.uptimeMillis(); event(entry, time, 0, MotionEvent.ACTION_DOWN, 100, 2); event(entry, time, 40, MotionEvent.ACTION_MOVE, 100, -100);
-                entry.suspended(true); require(releases == 1 && canceled && entry.getVisibility() == View.INVISIBLE && entry.getAlpha() == 0, "Hub suspension cancels old pull and hides entry");
-                drag(root, 100, 0, 120, MotionEvent.ACTION_UP); require(begins == 1 && rightClicks == 1, "suspended entry passes input to underlying Hub area");
-                entry.suspended(false); drag(root, 100, 0, 120, MotionEvent.ACTION_UP); require(begins == 2 && releases == 2, "closing Hub restores transparent upward entry");
-                checkCameraEdges(); checkStatusClearance(); checkWindowFlags(); checkPanelWindowContinuity();
+                checkCameraEdges(); checkStatusClearance(); checkControlStatusTop(); checkWindowFlags(); checkPanelWindowContinuity(); checkHubPanelHandoff();
             });
             test.runOnMainSync(() -> { mount(); require(entry.getAlpha() == 0 && entry.getVisibility() == View.VISIBLE, "idle handles are invisible while input remains enabled"); event(entry, SystemClock.uptimeMillis(), 0, MotionEvent.ACTION_DOWN, 300, 2); });
             SystemClock.sleep(ViewConfiguration.getLongPressTimeout() + 100); test.waitForIdleSync();
@@ -117,12 +113,13 @@ final class PanelEntryChecks {
     }
     private void checkCameraEdges() {
         DockGeometry.Box[] cuts = {new DockGeometry.Box(351, 682, 369, 66), new DockGeometry.Box(0, 351, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(682, 0, 66, 369)};
-        for (int edge = 0; edge < 4; edge++) for (int half = 0; half < 2; half++) {
+        for (int edge = 0; edge < 4; edge++) for (String position : edge == 0 ? new String[]{"top_left", "bottom_right"} : edge == 2 ? new String[]{"top_left"} : new String[]{"top_left", "top_right"}) for (int half = 0; half < 2; half++) {
             mount(); root.removeView(entry);
             int width = edge % 2 == 0 ? 720 : 748, height = edge % 2 == 0 ? 748 : 720; float density = activity.getResources().getDisplayMetrics().density;
             DockGeometry.Placement dock = DockGeometry.resolve(width, height, java.util.List.of(cuts[edge]), density, (edge + 3) % 4, .46f, .088f, true);
-            DockGeometry.Placement placement = DockGeometry.panelEntry(dock, dock, width, height, java.util.List.of(cuts[edge]), density, 24);
-            require(placement.edge() == DockGeometry.BOTTOM && !placement.vertical(), "every rotation uses a bottom horizontal entry");
+            int topInset = DockGeometry.panelEntryTopInset(position, 70, density);
+            DockGeometry.Placement placement = DockGeometry.panelEntry(dock, dock, width, height, java.util.List.of(cuts[edge]), density, 24, position, topInset);
+            require(placement.edge() == (position.equals("bottom_right") ? DockGeometry.BOTTOM : DockGeometry.TOP) && !placement.vertical(), "selected corner is horizontal with the correct inward direction");
             entry = new PanelEntryView(activity, prefs, placement, new DockView.Listener() {
                 public void action(String id) { clicks++; } public void configure() { }
                 public void beginPull(String name, float value, float originY) { begins++; page = name; }
@@ -131,12 +128,16 @@ final class PanelEntryChecks {
             });
             root.addView(entry, new FrameLayout.LayoutParams(placement.touch().width(), placement.touch().height()));
             entry.layout(0, 0, placement.touch().width(), placement.touch().height());
-            float x = entry.getWidth() * (half == 0 ? .25f : .75f), y = entry.getHeight() / 2f;
-            float dx = 0, dy = -120;
+            float fraction = half == 0 ? .25f : .75f;
+            float x = entry.getWidth() * (placement.vertical() ? .5f : fraction), y = topInset > 0 ? 0 : entry.getHeight() * (placement.vertical() ? fraction : .5f);
+            float dx = 0, dy = placement.edge() == DockGeometry.TOP ? 120 : -120;
             long time = SystemClock.uptimeMillis(); event(entry, time, 0, MotionEvent.ACTION_DOWN, x, y); event(entry, time, 60, MotionEvent.ACTION_MOVE, x + dx, y + dy); event(entry, time, 120, MotionEvent.ACTION_UP, x + dx, y + dy);
             require(begins == 1 && releases == 1 && !canceled && distance == 120 && page.equals(half == 0 ? "notifications" : "controls"), "camera-edge pull routes correct half on edge " + edge);
-            event(entry, time, 160, MotionEvent.ACTION_DOWN, x, y); event(entry, time, 200, MotionEvent.ACTION_MOVE, x + 120, y); event(entry, time, 240, MotionEvent.ACTION_UP, x + 120, y);
-            require(begins == 1 && releases == 1, "horizontal swipe never opens a panel on rotation " + edge);
+            float alongX = placement.vertical() ? 0 : 120, alongY = placement.vertical() ? 120 : 0;
+            event(entry, time, 160, MotionEvent.ACTION_DOWN, x, y); event(entry, time, 200, MotionEvent.ACTION_MOVE, x + alongX, y + alongY); event(entry, time, 240, MotionEvent.ACTION_UP, x + alongX, y + alongY);
+            require(begins == 1 && releases == 1, "along-edge swipe never opens a panel on rotation " + edge);
+            event(entry, time, 260, MotionEvent.ACTION_DOWN, x, y); event(entry, time, 300, MotionEvent.ACTION_MOVE, x - dx, y - dy); event(entry, time, 340, MotionEvent.ACTION_UP, x - dx, y - dy);
+            require(begins == 1 && releases == 1, "outward swipe never opens a panel on rotation " + edge);
             Bitmap bitmap = Bitmap.createBitmap(entry.getWidth(), entry.getHeight(), Bitmap.Config.ARGB_8888); entry.draw(new Canvas(bitmap));
             DockGeometry.Chrome chrome = DockGeometry.panelEntryChrome(placement, activity.getResources().getDisplayMetrics().density);
             for (DockGeometry.Box bar : new DockGeometry.Box[]{chrome.firstHandle(), chrome.secondHandle()}) require(android.graphics.Color.alpha(bitmap.getPixel(bar.x() + bar.width() / 2, bar.y() + bar.height() / 2)) > 0, "white handle is drawn on edge " + edge);
@@ -148,7 +149,7 @@ final class PanelEntryChecks {
         for (int edge = 0; edge < 4; edge++) {
             int width = edge % 2 == 0 ? 720 : 748, height = edge % 2 == 0 ? 748 : 720; float density = activity.getResources().getDisplayMetrics().density;
             DockGeometry.Placement dock = DockGeometry.resolve(width, height, java.util.List.of(cuts[edge]), density, (edge + 3) % 4, .46f, .088f, true);
-            DockGeometry.Placement placement = DockGeometry.panelEntry(dock, dock, width, height, java.util.List.of(cuts[edge]), density, 24);
+            DockGeometry.Placement placement = DockGeometry.panelEntry(dock, dock, width, height, java.util.List.of(cuts[edge]), density, 24, edge == 0 ? "bottom_right" : "top_left");
             root.removeAllViews(); StatusBarView status = new StatusBarView(activity, prefs);
             FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(placement.panel().width(), status.heightPixels()); statusParams.leftMargin = placement.panel().x(); statusParams.topMargin = placement.panel().y(); root.addView(status, statusParams);
             root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)); root.layout(0, 0, width, height);
@@ -160,6 +161,38 @@ final class PanelEntryChecks {
             Bitmap beforeStatus = Bitmap.createBitmap(before, status.getLeft(), status.getTop(), status.getWidth(), status.getHeight()), afterStatus = Bitmap.createBitmap(after, status.getLeft(), status.getTop(), status.getWidth(), status.getHeight());
             require(beforeStatus.sameAs(afterStatus), "relocated handles do not cover status pixels on edge " + edge);
             beforeStatus.recycle(); afterStatus.recycle(); before.recycle(); after.recycle();
+        }
+    }
+    private void checkControlStatusTop() {
+        for (int rotation : new int[]{0, 1, 2, 3}) for (String position : rotation == 0 ? new String[]{"top_left", "bottom_right"} : rotation == 2 ? new String[]{"top_left"} : new String[]{"top_left", "top_right"}) for (boolean enabled : new boolean[]{false, true}) for (int scale : new int[]{50, 100, 150}) {
+            mount(); prefs.data.edit().putBoolean("status_enabled", enabled).putInt("status_scale", scale).commit();
+            float density = activity.getResources().getDisplayMetrics().density;
+            DockGeometry.Box cut = switch (rotation) { case 0 -> new DockGeometry.Box(379, 654, 369, 66); case 1 -> new DockGeometry.Box(0, 351, 66, 369); case 2 -> new DockGeometry.Box(0, 0, 369, 66); default -> new DockGeometry.Box(682, 0, 66, 369); };
+            DockGeometry.Placement dock = DockGeometry.resolve(748, 720, java.util.List.of(cut), density, 0, .46f, .088f, true);
+            DockGeometry.Box safe = DockGeometry.panelContent(dock, 748, 720, java.util.List.of(cut));
+            DockGeometry.Placement entryArea = DockGeometry.panelEntry(dock, dock, 748, 720, java.util.List.of(cut), density, 24, position, DockGeometry.panelEntryTopInset(position, scale, density));
+            DockGeometry.Box status = DockGeometry.statusBar(safe, 748, new StatusBarView(activity, prefs, true).heightPixels(), density);
+            CoverService owner = new CoverService(); owner.screenContext = activity; owner.prefs = prefs; owner.placement = new DockGeometry.Placement(dock.visual(), dock.touch(), entryArea.panel(), dock.edge(), true);
+            try {
+                java.lang.reflect.Field field = CoverService.class.getDeclaredField("controlStatusBox"); field.setAccessible(true); field.set(owner, status);
+                int contentTop = Math.max(entryArea.panel().y(), status.bottom() + Ui.dp(activity, 4));
+                InterfaceCard card = owner.buildPanelCard("controls", new DockGeometry.Box(0, 0, 748, 720), contentTop); root.addView(card);
+                android.widget.LinearLayout surface = (android.widget.LinearLayout) card.getChildAt(0);
+                root.measure(View.MeasureSpec.makeMeasureSpec(748, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY)); root.layout(0, 0, 748, 720);
+                StatusBarView row = card.statusBar();
+                require(row.getTop() + card.getTop() == status.y() && row.getLeft() + card.getLeft() == status.x() && row.getWidth() == status.width() && row.getHeight() == status.height(), "control status matches floating safe top on rotation " + rotation);
+                require(row.showsPercentage(), "pinned control status retains battery percentage even without floating status");
+                DockGeometry.Chrome chrome = DockGeometry.panelEntryChrome(entryArea, density);
+                for (DockGeometry.Box bar : new DockGeometry.Box[]{chrome.firstHandle(), chrome.secondHandle()}) require(bar.y() + entryArea.touch().y() >= row.getBottom() + card.getTop(), "white artwork stays below pinned status even when floating row is disabled");
+                require(position.equals("bottom_right") || entryArea.touch().y() == safe.y(), "pinned status retains top entry touch from the first safe pixel");
+                View header = surface.findViewWithTag("panel-header"); android.graphics.Rect headerBounds = new android.graphics.Rect(); header.getDrawingRect(headerBounds); surface.offsetDescendantRectToMyCoords(header, headerBounds);
+                require(headerBounds.top + card.getTop() >= contentTop, "control header remains below reserved top content");
+                owner.editControls(); require(row.getVisibility() == View.GONE && surface.getPaddingTop() + card.getTop() >= contentTop, "editor hides container status and keeps safe content padding");
+                surface.findViewWithTag("control-editor-done").performClick();
+                root.measure(View.MeasureSpec.makeMeasureSpec(748, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY)); root.layout(0, 0, 748, 720);
+                require(row.getVisibility() == View.VISIBLE && row.getTop() + card.getTop() == status.y() && surface.getPaddingTop() + card.getTop() == contentTop + Ui.dp(activity, 6), "leaving editor restores same status without duplicate padding");
+            } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+            finally { root.removeAllViews(); owner.closePanel(); }
         }
     }
     private void checkWindowFlags() {
@@ -177,7 +210,10 @@ final class PanelEntryChecks {
             require(layout.width == 400 && layout.height == 48 && layout.x == 0 && layout.y == 0, "entry input window ends before area outside entry");
             AppHubView hub = new AppHubView(activity, prefs, new AppHubView.Listener() { public void action(String id) { } public void editFavorites() { } public void editPinned() { } public void expand(boolean value) { } public void close() { } });
             java.lang.reflect.Field hubField = CoverService.class.getDeclaredField("hub"); hubField.setAccessible(true); hubField.set(owner, hub);
-            layout = (WindowManager.LayoutParams) method.invoke(owner); require((layout.flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0, "Hub disables the overlapping entry window");
+            for (boolean expanded : new boolean[]{false, true}) {
+                hub.setExpanded(expanded); layout = (WindowManager.LayoutParams) method.invoke(owner);
+                require((layout.flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) == 0, "white entry remains touchable over Dock and expanded launcher");
+            }
             java.lang.reflect.Field frameField = CoverService.class.getDeclaredField("hubFrame"); frameField.setAccessible(true); frameField.set(owner, new DockGeometry.Box(0, 39, 748, 615));
             java.lang.reflect.Field windowsField = CoverService.class.getDeclaredField("windows"); windowsField.setAccessible(true); windowsField.set(owner, activity.getWindowManager());
             java.lang.reflect.Method hubMethod = CoverService.class.getDeclaredMethod("hubParameters", boolean.class); hubMethod.setAccessible(true);
@@ -213,6 +249,86 @@ final class PanelEntryChecks {
             require(replacements[0] == 0 && entry.isAttachedToWindow(), "panel settle keeps entry continuously attached");
         } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
         finally { owner.closePanel(); }
+    }
+    private void checkHubPanelHandoff() {
+        for (int edge : new int[]{DockGeometry.TOP, DockGeometry.BOTTOM}) for (boolean expanded : new boolean[]{false, true}) for (String target : new String[]{"notifications", "controls"}) for (boolean commit : new boolean[]{false, true}) {
+            mount(); prefs.data.edit().putBoolean("panel_blur", false).commit();
+            CoverService owner = new CoverService(); owner.screenContext = activity; owner.prefs = prefs;
+            DockGeometry.Box box = new DockGeometry.Box(0, 500, 400, 48), frame = new DockGeometry.Box(0, 0, 600, 600);
+            owner.placement = new DockGeometry.Placement(box, box, frame, DockGeometry.BOTTOM, false);
+            DockView dock = new DockView(activity, prefs, owner.placement, 0, new DockView.Listener() { public void action(String id) { } public void configure() { } }, true);
+            AppHubView hub = new AppHubView(activity, prefs, new AppHubView.Listener() { public void action(String id) { } public void editFavorites() { } public void editPinned() { } public void expand(boolean value) { } public void close() { } });
+            hub.setExpanded(expanded); FrameLayout hubHost = owner.attachHubContent(hub); root.addView(hubHost, 0, new FrameLayout.LayoutParams(600, 600));
+            FrameLayout panelHost = new FrameLayout(activity); panelHost.setLayoutParams(new WindowManager.LayoutParams(600, 600));
+            int[] hubRemovals = {0}, chromeReplacements = {0};
+            WindowManager.LayoutParams[] outgoingLayout = {null};
+            WindowManager windows = (WindowManager) java.lang.reflect.Proxy.newProxyInstance(WindowManager.class.getClassLoader(), new Class<?>[]{WindowManager.class}, (proxy, method, args) -> {
+                if (method.getName().equals("removeViewImmediate") && args[0] == hubHost) { hubRemovals[0]++; root.removeView(hubHost); return null; }
+                if (method.getName().equals("addView") || method.getName().equals("removeView") || method.getName().equals("removeViewImmediate")) { chromeReplacements[0]++; return null; }
+                if (method.getName().equals("updateViewLayout") && args[0] == panelHost) panelHost.setLayoutParams((android.view.ViewGroup.LayoutParams) args[1]);
+                if (method.getName().equals("updateViewLayout") && args[0] == hubHost) outgoingLayout[0] = (WindowManager.LayoutParams) args[1];
+                if (method.getName().equals("isCrossWindowBlurEnabled")) return false;
+                return null;
+            });
+            try {
+                java.lang.reflect.Method attach = android.content.ContextWrapper.class.getDeclaredMethod("attachBaseContext", android.content.Context.class); attach.setAccessible(true); attach.invoke(owner, activity);
+                java.lang.reflect.Method listenerMethod = CoverService.class.getDeclaredMethod("chromeListener"); listenerMethod.setAccessible(true);
+                DockGeometry.Box entryBox = new DockGeometry.Box(0, edge == DockGeometry.TOP ? 0 : 552, 400, 48);
+                DockGeometry.Placement entryArea = new DockGeometry.Placement(entryBox, entryBox, frame, edge, true);
+                root.removeView(entry); entry = new PanelEntryView(activity, prefs, entryArea, (DockView.Listener) listenerMethod.invoke(owner));
+                FrameLayout.LayoutParams entryParams = new FrameLayout.LayoutParams(400, 48); entryParams.topMargin = entryBox.y(); root.addView(entry, entryParams);
+                String[] names = {"windows", "dock", "dockPlacement", "panelEntry", "panelEntryPlacement", "panelHost", "panelFrame", "hub", "hubFrame"};
+                Object[] values = {windows, dock, owner.placement, entry, entryArea, panelHost, frame, hub, frame};
+                for (int i = 0; i < names.length; i++) { java.lang.reflect.Field field = CoverService.class.getDeclaredField(names[i]); field.setAccessible(true); field.set(owner, values[i]); }
+                java.lang.reflect.Method sync = CoverService.class.getDeclaredMethod("syncHubEntry"); sync.setAccessible(true); sync.invoke(owner);
+                require(entry.getVisibility() == View.VISIBLE, "Dock and launcher keep the transparent white entry mounted");
+                root.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY)); root.layout(0, 0, 600, 600);
+                long time = SystemClock.uptimeMillis(); float x = target.equals("notifications") ? 100 : 300, y = entryBox.y() + 2, direction = edge == DockGeometry.TOP ? 1 : -1;
+                event(root, time, 0, MotionEvent.ACTION_DOWN, x, y); event(root, time, 60, MotionEvent.ACTION_MOVE, x, y + direction * 120);
+                java.lang.reflect.Field hubField = CoverService.class.getDeclaredField("hub"); hubField.setAccessible(true);
+                require(hubField.get(owner) == null && hubRemovals[0] == 0 && hubHost.getParent() == root && hub.closing(), "pull retires launcher input while retaining its outgoing surface for " + target);
+                java.lang.reflect.Field progressField = CoverService.class.getDeclaredField("panelProgress"); progressField.setAccessible(true);
+                View outgoing = (View) hub.getParent(); require(outgoing.getTranslationY() == 0, "old launcher does not teleport when the initial bridge starts");
+                java.lang.reflect.Field initialField = CoverService.class.getDeclaredField("sceneBootstrap"); initialField.setAccessible(true); if (initialField.get(owner) instanceof android.animation.ValueAnimator initial) initial.end();
+                require(outgoing.getTranslationY() * direction >= 120, "initial bridge includes finger travel and the shared edge separation");
+                InterfaceCard incoming = (InterfaceCard) panelHost.getChildAt(0);
+                android.graphics.RectF oldBounds = new android.graphics.RectF(), nextBounds = new android.graphics.RectF(); ((InterfaceCard) outgoing).visibleBounds(oldBounds); incoming.visibleBounds(nextBounds);
+                float gap = edge == DockGeometry.TOP ? outgoing.getTranslationY() + oldBounds.top - incoming.getTranslationY() - nextBounds.bottom : incoming.getTranslationY() + nextBounds.top - outgoing.getTranslationY() - oldBounds.bottom;
+                require(gap >= Ui.dp(activity, 6) - .1f, "real entry gesture separates incoming and outgoing card edges");
+                float sourceY = outgoing.getTranslationY(), incomingY = incoming.getTranslationY(); event(root, time, 90, MotionEvent.ACTION_MOVE, x, y + direction * 140);
+                require(Math.abs(outgoing.getTranslationY() - sourceY - direction * 20) < 1 && Math.abs(incoming.getTranslationY() - incomingY - direction * 20) < 1, "after the bridge both cards follow the next finger delta one to one");
+                require(outgoingLayout[0] != null && (outgoingLayout[0].flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0 && (outgoingLayout[0].flags & (WindowManager.LayoutParams.FLAG_DIM_BEHIND | WindowManager.LayoutParams.FLAG_BLUR_BEHIND)) == 0, "outgoing window cannot steal input or add a second dim or blur");
+                java.lang.reflect.Field pulling = CoverService.class.getDeclaredField("panelPulling"); pulling.setAccessible(true);
+                require(pulling.getBoolean(owner) && entry.isAttachedToWindow() && chromeReplacements[0] == 0, "launcher removal preserves the entry pull and chrome windows");
+                java.lang.reflect.Field animationField = CoverService.class.getDeclaredField("panelAnimation"); animationField.setAccessible(true);
+                if (!commit) {
+                    event(root, time, 120, MotionEvent.ACTION_CANCEL, x, y + direction * 120);
+                    if (animationField.get(owner) instanceof android.animation.ValueAnimator animation) animation.end();
+                    require(hubField.get(owner) == hub && hubRemovals[0] == 0 && !hub.closing(), "cancel before the old surface exits restores the existing launcher");
+                    require(panelHost.getChildCount() == 0 && !pulling.getBoolean(owner), "canceled incoming panel releases its content and gesture");
+                    continue;
+                }
+                event(root, time, 120, MotionEvent.ACTION_MOVE, x, y + direction * 650);
+                require(hubRemovals[0] == 1 && hubHost.getParent() == null, "old launcher is released as soon as it slides offscreen, before UP");
+                event(root, time, 150, MotionEvent.ACTION_MOVE, x, y + direction * 120);
+                require(hubField.get(owner) == null && hubRemovals[0] == 1, "reversing the finger cannot restore an already removed launcher");
+                event(root, time, 300, MotionEvent.ACTION_MOVE, x, y + direction * 350);
+                event(root, time, 360, MotionEvent.ACTION_MOVE, x, y + direction * 650);
+                event(root, time, 420, MotionEvent.ACTION_UP, x, y + direction * 750);
+                if (animationField.get(owner) instanceof android.animation.ValueAnimator animation) animation.end();
+                require(hubRemovals[0] == 1 && hubHost.getParent() == null, "fully offscreen launcher is cleaned exactly once");
+                java.lang.reflect.Field pageField = CoverService.class.getDeclaredField("panelPage"); pageField.setAccessible(true);
+                require(target.equals(pageField.get(owner)) && !pulling.getBoolean(owner) && panelHost.getVisibility() == View.VISIBLE && panelHost.getChildCount() == 1, "original pull settles requested panel: edge=" + edge + ", expanded=" + expanded + ", target=" + target + ", page=" + pageField.get(owner) + ", pulling=" + pulling.getBoolean(owner) + ", visible=" + panelHost.getVisibility() + ", children=" + panelHost.getChildCount());
+                require((((WindowManager.LayoutParams) panelHost.getLayoutParams()).flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) == 0, "settled panel accepts input without a retiring launcher above it");
+                if (target.equals("controls")) {
+                    owner.editControls(); java.lang.reflect.Method parameters = CoverService.class.getDeclaredMethod("panelEntryParameters"); parameters.setAccessible(true);
+                    require((((WindowManager.LayoutParams) parameters.invoke(owner)).flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0, "control editor still protects its draft from entry gestures");
+                }
+                owner.closePanel();
+                require(hubField.get(owner) == null && hubRemovals[0] == 1 && hubHost.getParent() == null, "closing the incoming panel never brings the removed launcher back");
+            } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+            finally { owner.closePanel(); hub.dispose(); root.removeView(hubHost); }
+        }
     }
     private void drag(View target, float x, float dx, float dy, int terminal) {
         long time = SystemClock.uptimeMillis(); event(target, time, 0, MotionEvent.ACTION_DOWN, x, 2); event(target, time, 60, MotionEvent.ACTION_MOVE, x + dx, 2 - dy); event(target, time, 120, terminal, x + dx, 2 - dy);
