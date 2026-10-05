@@ -36,3 +36,6 @@ keystore.properties
 !/dist/**/*.md
 !/dist/**/*.html
 !/dist/device-frames/**
+
+# Selected existing UI images displayed in the repository README
+!/dist/readme-gallery/*.png

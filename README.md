@@ -1,8 +1,28 @@
 # Flip外屏助手
 
+## 功能体验
+
+[在线互动教程](https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html) · [原型页面](https://xiaomaoju.github.io/zflip5screenhelper/)
+
+互动原型使用示例数据展示主要功能，可自动演示或手动体验，不连接手机。软件的外屏窗口、系统操作和第三方小组件兼容性需以三星物理真机表现为准。
+
+## 软件介绍
+
 Flip外屏助手是为三星 Galaxy Z Flip5 打造的外屏增强工具。项目起源于内屏损坏后的使用需求，希望只靠外屏，也能更方便地打开应用、切换任务、查看通知和控制常用功能，减少对展开手机的依赖。
 
 软件无需 Root，部分系统操作需要 Shizuku 授权；通知、小组件和悬浮界面需要用户授予对应权限。主要面向 Galaxy Z Flip5 的 Android 16 / One UI 8.5 环境，实际兼容性取决于手机固件和系统权限。
+
+## 界面展示
+
+以下为已有版本的带框效果图，包含真机截图和模拟器示例，当前界面可能略有变化。
+
+| 应用启动器 · 原生卡片 | 控制中心 |
+| --- | --- |
+| <img src="dist/readme-gallery/launcher.png" alt="三星原生应用启动器卡片" width="300"> | <img src="dist/readme-gallery/controls.png" alt="外屏控制中心" width="300"> |
+
+| 通知中心 | 外屏多任务 |
+| --- | --- |
+| <img src="dist/readme-gallery/notifications.png" alt="通知中心示例" width="300"> | <img src="dist/readme-gallery/tasks.png" alt="外屏任务卡片示例" width="300"> |
 
 ## 主要功能
 
@@ -44,9 +64,3 @@ Flip外屏助手是为三星 Galaxy Z Flip5 打造的外屏增强工具。项目
 ### 手动在线更新
 
 在设置中手动检查新版、下载并校验安装包，再由 Android 系统确认安装。联网仅用于用户发起的更新检查和下载，不上传通知、配置或设备信息，不增加分析追踪，不自动授权或绕过锁屏。
-
-## 功能体验
-
-[在线互动教程](https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html) · [原型页面](https://xiaomaoju.github.io/zflip5screenhelper/)
-
-互动原型使用示例数据展示主要功能，可自动演示或手动体验，不连接手机。软件的外屏窗口、系统操作和第三方小组件兼容性需以三星物理真机表现为准。

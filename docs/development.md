@@ -78,7 +78,7 @@ adb -s <TEST_EMULATOR_SERIAL> shell am instrument -w -e scenario app-update io.g
 | `app-config.json` | 更新、设置默认值、主要外观与动效的常用调节参数 |
 | `gradle/`、`gradlew`、`gradlew.bat` | 可复用的 Gradle 构建入口 |
 | `docs/` | 开发流程、模块契约、功能边界、设计方案与验证文档 |
-| `dist/` | 验证文档、独立 HTML 原型和必要设备外框；安装包与生成的效果图不纳入源码提交 |
+| `dist/` | 验证文档、独立 HTML 原型和必要设备外框；安装包与一般生成效果图不纳入源码提交；`dist/readme-gallery/` 的 README 展示图片例外 |
 | `tools/` | 设备外框、macOS 带框投屏工具和独立通知测试 App 源码 |
 | `.github/workflows/pages.yml` | 原型网站的 GitHub Pages 自动部署 |
 | `.agents/`、`AGENTS.md` | 项目协作与设置界面设计规则 |
