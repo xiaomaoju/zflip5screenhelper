@@ -36,4 +36,4 @@
 
 ## 验收记录
 
-逐项结果、安装包和未验证硬件项目见 [0.18.4交付记录](../dist/six-key-navigation-0.18.4.md)。原始测试素材位于可丢弃目录 `Cache/tests/six-key-navigation/`。复测使用README构建环境，模拟器运行 `UiSmokeInstrumentation` 的 `six-key`、`external-input`、`external-input-capture`、`details` 和 `notification-regression`；这些场景拒绝物理手机，避免改写用户偏好。
+逐项结果、安装包和未验证硬件项目见 [0.18.4交付记录](../dist/开发设计/six-key-navigation-0.18.4.md)。原始测试素材位于可丢弃目录 `Cache/tests/six-key-navigation/`。复测使用README构建环境，模拟器运行 `UiSmokeInstrumentation` 的 `six-key`、`external-input`、`external-input-capture`、`details` 和 `notification-regression`；这些场景拒绝物理手机，避免改写用户偏好。

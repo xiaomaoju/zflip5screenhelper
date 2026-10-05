@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const sharp = require('sharp');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const frames = path.join(root, 'dist/device-frames');
+const site = path.join(root, 'dist/html');
 const svg = await fs.readFile(path.join(frames, 'zflip5-cover-overlay.svg'), 'utf8');
 const [, width, height] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/).map(Number);
 const [sx, sy, sw, sh] = svg.match(/data-screen="([^"]+)"/)[1].split(' ').map(Number);
@@ -39,12 +40,13 @@ async function update(file, transform) {
   if (next !== original) await fs.writeFile(full,next);
 }
 
+await fs.mkdir(site, { recursive: true });
 await sharp(Buffer.from(svg)).png().toFile(path.join(frames,'zflip5-cover-overlay.png'));
 await sharp(Buffer.from(svg),{density:144}).png().toFile(path.join(frames,'zflip5-cover-overlay@2x.png'));
 // Compatibility outputs for already-installed cover launchers; never edit them.
 await fs.writeFile(path.join(frames,'zflip5-cover-calibrated.svg'),svg);
 await fs.copyFile(path.join(frames,'zflip5-cover-overlay.png'),path.join(frames,'zflip5-cover-calibrated.png'));
-await update('dist/flipcover-prototype.html', html => {
+await update('dist/html/flipcover-prototype.html', html => {
   html = clipDefs(html).replace(/(<img class="frame" src=")[^"]+/, `$1data:image/svg+xml;base64,${b64}`);
   html = rule(html,'.stage',body => properties(body,['height'],`height:${bodyH}px;`));
   html = rule(html,'.device',body => properties(body,['height'],`height:${bodyH}px;`));
@@ -55,14 +57,14 @@ await update('dist/flipcover-prototype.html', html => {
   html = html.replace(/const width=isVertical\(\)\?[\d.]+:440,height=isVertical\(\)\?440:[\d.]+,scale=/,`const width=isVertical()?${bodyH}:440,height=isVertical()?440:${bodyH},scale=`);
   return html.replaceAll('720 × 748 · 已选择','748 × 720 · 已选择');
 });
-await fs.copyFile(path.join(root,'dist/flipcover-prototype.html'),path.join(root,'dist/flipcover-tutorial.html'));
-await update('dist/settings-oneui-prototype.html', html => {
+await fs.copyFile(path.join(root,'dist/html/flipcover-prototype.html'),path.join(root,'dist/html/flipcover-tutorial.html'));
+await update('dist/html/settings-oneui-prototype.html', html => {
   html = clipDefs(html);
   html = rule(html,'.device',body => properties(body,['aspect-ratio'],`aspect-ratio:${width}/${height};`));
   html = rule(html,'.screen',body => properties(body,['left','top','width','height','border-radius','clip-path'],`left:${n(sx/width*100)}%;top:${n(sy/height*100)}%;width:${n(sw/width*100)}%;height:${n(sh/height*100)}%;border-radius:0;clip-path:url(#cover-screen-0);`));
   return html.replaceAll('720 × 748 · 非真实设备','748 × 720 · 非真实设备');
 });
-await update('dist/nfc-hotspot-prototype.html', html => {
+await update('dist/html/nfc-hotspot-prototype.html', html => {
   html = clipDefs(html).replace(/<template id="frame-template">[\s\S]*?<\/template>/,`<template id="frame-template">${image}</template>`);
   html = rule(html,'.device-wrap',body=>properties(body,['aspect-ratio'],`aspect-ratio:${width}/${height};`));
   html = rule(html,'.device',body=>properties(body,['height'],`height:${bodyH}px;`));
@@ -71,5 +73,6 @@ await update('dist/nfc-hotspot-prototype.html', html => {
   html = html.replace(/document\.getElementById\('frame-template'\)\.innerHTML(?:\.replaceAll\([^;]*?\))(?=\})/,"document.getElementById('frame-template').innerHTML");
   return html;
 });
-await update('dist/device-frames/preview.html', html => html.replace(/<div class="stage">[\s\S]*?<\/svg>/,`<div class="stage">${svg.trim()}`).replace(/(?:720 × 748|836 × 992) · 背景/,`${width} × ${height} · 背景`).replace('基于项目 HTML 原型的外观示意；真机圆角、缺口和窗口路由需另行验证。','依据真机像素与参考照片绘制；机身外观为示意，窗口安全边距需真机验证。'));
+await update('dist/html/device-frame-preview.html', html => html.replace(/<div class="stage">[\s\S]*?<\/svg>/,`<div class="stage">${svg.trim()}`).replace(/(?:720 × 748|836 × 992) · 背景/,`${width} × ${height} · 背景`).replace('基于项目 HTML 原型的外观示意；真机圆角、缺口和窗口路由需另行验证。','依据真机像素与参考照片绘制；机身外观为示意，窗口安全边距需真机验证。'));
+for (const name of ['zflip5-cover-overlay.svg', 'zflip5-cover-overlay.png', 'zflip5-cover-overlay@2x.png']) await fs.copyFile(path.join(frames, name), path.join(site, name));
 console.log(`Updated canonical ${width}×${height} frame, PNGs, compatibility assets and 5 HTML consumers.`);

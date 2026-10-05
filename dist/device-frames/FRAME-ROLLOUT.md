@@ -6,13 +6,13 @@
 
 | 页面 | 更新内容 |
 | --- | --- |
-| `../flipcover-tutorial.html` | 内嵌标准框、屏幕开孔、四方向坐标、整机缩放 |
-| `../flipcover-prototype.html` | 与教程逐字相同的兼容入口 |
-| `../settings-oneui-prototype.html` | 引用标准 SVG；同步机身比例与屏幕开孔 |
-| `../nfc-hotspot-prototype.html` | 两台设备均使用内嵌标准框；同步开孔与缩放 |
-| `preview.html` | 透明开孔、底色切换和资源下载预览 |
+| `../html/flipcover-tutorial.html` | 内嵌标准框、屏幕开孔、四方向坐标、整机缩放 |
+| `../html/flipcover-prototype.html` | 与教程逐字相同的兼容入口 |
+| `../html/settings-oneui-prototype.html` | 引用标准 SVG；同步机身比例与屏幕开孔 |
+| `../html/nfc-hotspot-prototype.html` | 两台设备均使用内嵌标准框；同步开孔与缩放 |
+| `../html/device-frame-preview.html` | 透明开孔、底色切换和资源下载预览 |
 
-设置原型使用随文件交付的相对路径资源；其他页面内嵌外框。全部可用普通浏览器直接打开，不依赖本机服务。`dist/index.html` 只提供跳转入口，没有独立机型图。
+设置原型使用随文件交付的相对路径资源；其他页面内嵌外框。全部可用普通浏览器直接打开，不依赖本机服务。`dist/html/index.html` 只提供跳转入口，没有独立机型图。
 
 投屏打包脚本也读取标准 PNG；包内兼容资源名不变。已安装投屏框的外观与该标准一致，本次没有重启投屏或改变手机显示设置。
 

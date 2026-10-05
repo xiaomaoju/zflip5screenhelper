@@ -1,6 +1,6 @@
 # 控制中心一级界面：单网格弹簧与预设拉伸
 
-体验入口：[离线 HTML 原型](../dist/control-force-jelly.html)。本版按照“网格先拉到极限，再拉整个界面”的要求替换了此前10节点网络。已按审核方案接入原生 Android 控制中心；原型的一级横滑仍是交互提案，原生沿用 `InterfaceCard` 既有入口、切换和收起路由。原生验证见 [开发验收](../dist/VALIDATION-0.17.3-control-motion.md)。
+体验入口：[离线 HTML 原型](../dist/html/control-force-jelly.html)。本版按照“网格先拉到极限，再拉整个界面”的要求替换了此前10节点网络。已按审核方案接入原生 Android 控制中心；原型的一级横滑仍是交互提案，原生沿用 `InterfaceCard` 既有入口、切换和收起路由。原生验证见 [开发验收](../dist/开发设计/VALIDATION-0.17.3-control-motion.md)。
 
 ## 交互与唯一受力状态
 

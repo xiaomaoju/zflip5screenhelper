@@ -1,6 +1,6 @@
 # 启动器与 Dock 的关联弹性设计
 
-设计体验入口：`dist/launcher-force-jelly.html`。可直接用普通浏览器打开，唯一外框引用 `dist/device-frames/zflip5-cover-overlay.svg`，不依赖网络、外部字体或 Codex。图标、目录与清理结果均为示例；原型拖拽只回原位，不提交布局。Android 浮窗启动器现已通过 `LauncherForce` 接入区域弹性，具体实现和验证边界见下文。
+设计体验入口：`dist/html/launcher-force-jelly.html`。可直接用普通浏览器打开，唯一外框引用 `dist/device-frames/zflip5-cover-overlay.svg`，不依赖网络、外部字体或 Codex。图标、目录与清理结果均为示例；原型拖拽只回原位，不提交布局。Android 浮窗启动器现已通过 `LauncherForce` 接入区域弹性，具体实现和验证边界见下文。
 
 ## 受力关系
 
@@ -85,8 +85,8 @@ Dock 开启先显示三块独立玻璃：只包住应用的紧凑胶囊，以及
 
 原型须在普通浏览器离线直接打开；确认5×3分页、长按与横滑互斥、边界回弹、关闭与重开连续、Dock 切换、取消、多指、减弱动效及静止停帧。唯一标准机身贴图在 UI 最上层叠加一次。
 
-Android 检查 `LauncherForceChecks`、`InterfaceCardChecks`、`HubMotionChecks`、`MotionContinuityChecks`、`AppWorkspaceChecks`、`AppFolderChecks`、`AppDockChecks` 和 `LauncherWidgetChecks` 的对应场景；`LauncherForceTest` 覆盖连续反向、不同帧率、快速冲量限幅、按住边界停帧与释放回零。结果见 `dist/VALIDATION-0.17.3-launcher-force.md`。物理三星外屏触摸延迟、GPU合成耗时、实际安全边界与宿主兼容性仍须真机验收，模拟器结果不能替代。
+Android 检查 `LauncherForceChecks`、`InterfaceCardChecks`、`HubMotionChecks`、`MotionContinuityChecks`、`AppWorkspaceChecks`、`AppFolderChecks`、`AppDockChecks` 和 `LauncherWidgetChecks` 的对应场景；`LauncherForceTest` 覆盖连续反向、不同帧率、快速冲量限幅、按住边界停帧与释放回零。结果见 `dist/开发设计/VALIDATION-0.17.3-launcher-force.md`。物理三星外屏触摸延迟、GPU合成耗时、实际安全边界与宿主兼容性仍须真机验收，模拟器结果不能替代。
 
-本次侧栏实际绘制与 Dock 双端空间／横向入场的增量验证见 `dist/VALIDATION-0.17.3-launcher-edge-slots.md`，前次结果保持历史记录。
+本次侧栏实际绘制与 Dock 双端空间／横向入场的增量验证见 `dist/开发设计/VALIDATION-0.17.3-launcher-edge-slots.md`，前次结果保持历史记录。
 
-Dock 独立圆面吸合验证见 `dist/VALIDATION-0.17.3-dock-liquid-fusion.md`；先前向外弹出的实现保留于历史报告。
+Dock 独立圆面吸合验证见 `dist/开发设计/VALIDATION-0.17.3-dock-liquid-fusion.md`；先前向外弹出的实现保留于历史报告。

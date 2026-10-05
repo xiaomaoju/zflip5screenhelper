@@ -18,11 +18,11 @@ Flip外屏助手是为三星 Galaxy Z Flip5 打造的外屏增强工具。项目
 
 | 应用启动器 · 原生卡片 | 控制中心 |
 | --- | --- |
-| <img src="dist/readme-gallery/launcher.png" alt="三星原生应用启动器卡片" width="300"> | <img src="dist/readme-gallery/controls.png" alt="外屏控制中心" width="300"> |
+| <img src="dist/开发设计/readme-gallery/launcher.png" alt="三星原生应用启动器卡片" width="300"> | <img src="dist/开发设计/readme-gallery/controls.png" alt="外屏控制中心" width="300"> |
 
 | 通知中心 | 外屏多任务 |
 | --- | --- |
-| <img src="dist/readme-gallery/notifications.png" alt="通知中心示例" width="300"> | <img src="dist/readme-gallery/tasks.png" alt="外屏任务卡片示例" width="300"> |
+| <img src="dist/开发设计/readme-gallery/notifications.png" alt="通知中心示例" width="300"> | <img src="dist/开发设计/readme-gallery/tasks.png" alt="外屏任务卡片示例" width="300"> |
 
 ## 主要功能
 

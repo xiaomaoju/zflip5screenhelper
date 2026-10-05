@@ -48,7 +48,7 @@
 - debug 与 Release 共用包名 `io.github.flipcover.controls` 和 `keystore.properties` 指定的正式签名；新版本递增 `versionCode`，不恢复 `.debug` 后缀或默认调试签名。密钥及密码不入库，必须独立安全备份。
 - APK 交付到 `dist/update-release/<versionCode>/flipcover-<versionName>.apk` 或 `dist/update-debug/<versionCode>/flipcover-<versionName>-debug.apk`，同目录附实际元数据、大小及 SHA-256 对应的 `catalog.json`；Release 使用 `:app:prepareUpdateRelease`。测试低版本仅临时覆盖构建版本，不降低正式版本、覆盖已发布目录或自动搬移历史产物。
 - `dist/` 最终 UI 效果图必须在最上层叠加一次 `dist/device-frames/zflip5-cover-overlay.svg` 或对应透明 PNG，按 [贴图说明](dist/device-frames/README.md) 对齐并保留外框、双摄与闪光灯；方向同步旋转，不重复、拉伸或镜像。未合成截图仅作原始验证素材。
-- HTML 原型交付为 `dist/` 下独立 `.html` 文件，资源内嵌或使用随交付的相对路径；明确文件入口，并在普通浏览器验证显示和已有交互，不依赖 Codex 环境或机器私有路径。
+- HTML 原型与所需静态资源统一平铺交付到 `dist/html/`，目录内文件使用同目录相对路径，可整体上传到静态服务器；设备贴图副本由 `tools/device-frames/build.mjs` 从唯一源 `dist/device-frames/` 生成；明确文件入口，并在普通浏览器验证显示和已有交互，不依赖 Codex 环境或机器私有路径。
 - 完成工作必须有成功构建与相关本地检查，分别说明本地、模拟器与物理真机证据及未验证项；原型及模拟器不能替代三星固件窗口路由、原生宿主与锁屏兼容性验收。详细流程见 [开发说明](docs/development.md)。
 - `Cache/build-output.nosync/app/`：Gradle 所有应用产物与报告，由 Gradle 配置管理，可重建、不入库，不能作为最终交付入口。
 - `Cache/build-tools/` 与 `Cache/sdk/`：官方供应商的可丢弃本机构建工具，由本机环境管理，不入库；源码及构建配置不得依赖机器专属内容。其他临时证据按任务存入 Cache，不写入 AGENTS。

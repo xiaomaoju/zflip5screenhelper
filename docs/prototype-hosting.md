@@ -1,32 +1,54 @@
-# 原型网站托管
+# 教程静态网站部署
 
-网站入口：<https://xiaomaoju.github.io/zflip5screenhelper/>
+## 上传入口与文件
 
-直接体验教程：<https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html>
+`dist/html/` 是完整的静态网站交付目录。它包含10份 HTML 与3份设备贴图，所有文件平铺在同一层，没有子目录，也不引用该目录外的文件。样式、脚本、图标及二维码生成代码已内嵌，无需 Node.js、PHP、数据库或前端构建步骤。
 
-## 页面与资源
+将 `dist/html/` 内的全部13个文件上传到服务器的同一公开目录，保留文件名，不上传上级 `dist/`。入口为 `index.html`（页面目录）和 `flipcover-tutorial.html`（互动教程）；即使服务器没有默认首页规则，也可以直接访问完整文件地址。
 
-- `dist/index.html`：原型目录首页。
-- `dist/flipcover-tutorial.html`：最新版外屏上手教程，打开即自动快速演示，包含第2屏三星原生启动器。
-- `dist/flipcover-prototype.html`：与教程同内容的兼容入口，旧分享链接继续有效。
-- `dist/settings-oneui-prototype.html`：One UI 设置交互原型。
-- `dist/nfc-hotspot-prototype.html`：NFC 与移动热点开关、配置及连接设备交互原型。
-- `dist/notification-force-jelly.html`：通知弹性、顺序分裂和合并清除演示。
-- `dist/control-force-jelly.html`：控制中心单弹簧、同步回弹与局部反馈演示。
-- `dist/task-force-jelly.html`：任务页连续滚动、关闭、失败回弹与空态演示。
-- `dist/launcher-force-jelly.html`：启动器八区域受力、侧栏分裂与 Dock 演示。
-- `dist/device-frames/preview.html`：设备外框预览及 PNG / SVG 下载。
+| 文件 | 内容 |
+| --- | --- |
+| `index.html` | 全部页面入口 |
+| `flipcover-tutorial.html` | 互动上手教程，打开自动快速演示 |
+| `flipcover-prototype.html` | 与教程逐字一致的兼容入口 |
+| `settings-oneui-prototype.html` | 独立设置交互原型 |
+| `nfc-hotspot-prototype.html` | NFC、移动热点及二维码练习 |
+| `notification-force-jelly.html` | 通知动效 |
+| `control-force-jelly.html` | 控制中心动效 |
+| `task-force-jelly.html` | 任务页动效 |
+| `launcher-force-jelly.html` | 启动器与 Dock 动效 |
+| `device-frame-preview.html` | 外框预览、底色切换及下载 |
+| `zflip5-cover-overlay.svg` | 标准外框 SVG 副本 |
+| `zflip5-cover-overlay.png` | 标准透明 PNG 副本 |
+| `zflip5-cover-overlay@2x.png` | 二倍透明 PNG 副本 |
 
-教程两个入口各自内嵌完整教程脚本、样式、图标和设备外框。教程顶部“四个界面动效”按需加载上述四份独立 HTML，切换或返回时卸载旧演示，返回恢复此前自动播放状态；四份动画共用这些文件，不再维护教程专用副本。离线复制完整体验时，将这些 HTML 与 `device-frames/` 保持原相对位置。仅复制教程单文件仍可运行原教程，动效入口需要随附四份 HTML。上述页面不依赖 Codex、网络字体或本机绝对资源路径，可供普通浏览器直接打开或部署到 GitHub Pages / NAS。
+设备贴图的唯一维护源仍为 `dist/device-frames/zflip5-cover-overlay.svg`；运行 `node tools/device-frames/build.mjs` 会生成 PNG 并同步 `dist/html/` 的三个发布副本，不单独编辑这些副本。
 
-## 发布与更新
+## TEngineHttp 教程附件
 
-GitHub 仓库 **Settings → Pages → Build and deployment → Source** 使用 **GitHub Actions**。
+按“更新项目类型并规划 HTML 分发”对话中确认的方案，在 APP 更新项目版本的“教程附件”中多选上传上述13个文件。附件独立于 APK 和 catalog，可单独更新；首版不支持子目录，本目录已按此限制整理。
 
-`.github/workflows/pages.yml` 在 `main` 分支收到相关原型文件更新时自动发布，也可以在 **Actions → Deploy prototype previews → Run workflow** 手动运行。工作流仅在 GitHub 的 Ubuntu runner 上执行；直接复制可部署文件，无需 Node.js、PHP 或 Android SDK。
+例如项目为 `ZFlip5`，项目版本为 `v1`：
 
-工作流将明确列出的页面与依赖资源复制到 `Cache/build-output.nosync/pages/`，然后上传为 Pages 网站。它不发布整个 `dist/` 或仓库，不包含 APK、原始验证截图、本机缓存和 Android 源码。该目录是可丢弃的构建输出，不作为原型维护源。
+```text
+https://example.com/appversion/v1/ZFlip5/docs/index.html
+https://example.com/appversion/v1/ZFlip5/docs/flipcover-tutorial.html
+```
 
-更新现有原型：修改对应 HTML 或设备贴图，提交并推送至 `main`，在 Actions 中确认部署成功，再刷新网站。新增原型：将 HTML 及资源放入 `dist/`，在 `dist/index.html` 添加链接，并更新工作流的复制清单及必要的路径触发条件；不要只上传 ZIP。
+实际域名、项目名、项目版本及编码以服务器“复制地址”返回的结果为准。页面间相对链接会自动跟随当前目录，不需要修改 HTML 中的域名，也可部署到任意其他 HTTP/HTTPS 静态目录。
 
-此网站公开可访问。浏览器中的原型交互仅使用示例数据，不能替代 Android 功能或三星外屏真机验证。
+服务器必须返回 HTML 内容类型 `text/html; charset=utf-8`，在浏览器内展示，而非强制附件下载；图片需返回对应的 PNG/SVG 内容类型。服务器策略要允许内嵌脚本和样式、同目录图片、教程中的 iframe、受沙箱约束的新窗口和下载。客户端 HTML 无法取消服务器施加的响应头限制。
+
+教程仅在允许存储时保存学习步骤；TEngineHttp 计划采用不保留同源权限的沙箱，此时自动使用当前页面内存中的进度，刷新重置，按钮、演示、导入导出继续运行。动效页导航通过新标签页打开，避免子 iframe 请求导航顶层页面。教程内“返回教程”关闭并卸载动效 iframe，恢复之前的演示状态。该行为依据 [CSP sandbox 浏览器规则](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/sandbox)。
+
+本轮已在本机 HTTP 深层目录与模拟上述限制的响应头下验证；TEngineHttp 附件服务仍由对应项目实现，实际上传及线上验证待该服务可用后执行。
+
+## GitHub Pages
+
+现有公开入口：[原型目录](https://xiaomaoju.github.io/zflip5screenhelper/) · [互动教程](https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html)。
+
+仓库 Settings → Pages → Build and deployment → Source 选择 GitHub Actions。`.github/workflows/pages.yml` 将 `dist/html/` 文件直接复制到 `Cache/build-output.nosync/pages/` 后发布；无需改写页面路径。工作流在 `main` 的相关文件更新时运行，也可手动触发。为保留旧分享地址，发布目录另外生成 `device-frames/preview.html` 跳转入口和旧贴图地址副本；这些兼容文件不需要上传到 TEngineHttp。
+
+网站不发布 APK、Android 源码或本机验证资料。新增页面放入 `dist/html/` 并在 `index.html` 添加入口；新增外部资源必须同层随交付，并加入发布清单。
+
+所有交互仅使用示例数据，不连接手机；浏览器检查不能替代三星外屏、锁屏和原生宿主的物理真机验证。

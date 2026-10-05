@@ -1,6 +1,6 @@
 # 应用桌面与九宫格文件夹方案
 
-状态：文件夹及 P2/P3 整理入口已接入 Android 源码；0.15.8将Dock容量调整为4个常驻＋最多4个最近，见 [本轮验证记录](../dist/VALIDATION-0.15.8-dock-four.md)。同窗口菜单、Dock拖放及文件夹比例见 [0.15.7记录](../dist/VALIDATION-0.15.7-workspace.md)，初始整合验证见 `dist/VALIDATION-0.15.2-folders.md`。以下保留设计依据；当前实现规则优先见下一节。
+状态：文件夹及 P2/P3 整理入口已接入 Android 源码；0.15.8将Dock容量调整为4个常驻＋最多4个最近，见 [本轮验证记录](../dist/开发设计/VALIDATION-0.15.8-dock-four.md)。同窗口菜单、Dock拖放及文件夹比例见 [0.15.7记录](../dist/开发设计/VALIDATION-0.15.7-workspace.md)，初始整合验证见 `dist/开发设计/VALIDATION-0.15.2-folders.md`。以下保留设计依据；当前实现规则优先见下一节。
 
 ## 当前实现与操作入口
 

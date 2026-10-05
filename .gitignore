@@ -36,6 +36,9 @@ keystore.properties
 !/dist/**/*.md
 !/dist/**/*.html
 !/dist/device-frames/**
+!/dist/html/zflip5-cover-overlay.svg
+!/dist/html/zflip5-cover-overlay.png
+!/dist/html/zflip5-cover-overlay@2x.png
 
 # Selected existing UI images displayed in the repository README
-!/dist/readme-gallery/*.png
+!/dist/开发设计/readme-gallery/*.png

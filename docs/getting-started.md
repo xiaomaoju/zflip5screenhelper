@@ -13,4 +13,4 @@
 
 ## 互动原型
 
-[在线教程](https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html)与[原型目录](../dist/index.html)提供示例交互。下载源码后可用普通浏览器直接打开[本地教程](../dist/flipcover-tutorial.html)，无需开发服务器。原型不连接手机，不能代替 Android 功能或三星外屏真机验证。使用说明见[原型说明](../dist/HTML-PROTOTYPE.md)，托管入口见[GitHub Pages 说明](prototype-hosting.md)。
+[在线教程](https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html)与[原型目录](../dist/html/index.html)提供示例交互。下载源码后可用普通浏览器直接打开[本地教程](../dist/html/flipcover-tutorial.html)，无需开发服务器。原型不连接手机，不能代替 Android 功能或三星外屏真机验证。使用说明见[原型说明](../dist/开发设计/HTML-PROTOTYPE.md)，托管入口见[GitHub Pages 说明](prototype-hosting.md)。

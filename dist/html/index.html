@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="外屏快捷栏互动教程：真机效果、自动演示、三星原生启动器卡片和 One UI 设置。">
+  <title>外屏快捷栏 · 原型预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f5f7; color: #202631; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 960px; margin: auto; padding: 64px 24px 32px; }
+    .eyebrow { color: #526581; font-size: 12px; letter-spacing: .14em; }
+    h1 { margin: 16px 0; font-size: clamp(28px, 5vw, 42px); letter-spacing: -.04em; }
+    .intro { max-width: 600px; color: #586373; line-height: 1.8; margin-bottom: 32px; }
+    .prototypes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .card { display: flex; flex-direction: column; padding: 28px; border-radius: 24px; background: #fff; color: inherit; text-decoration: none; border: 1px solid #dde2e9; }
+    .card:hover { border-color: #416ca8; }
+    a:focus-visible { outline: 3px solid #245dc2; outline-offset: 5px; }
+    .number { color: #5d708d; font-size: 13px; }
+    h2 { margin: 24px 0 12px; font-size: 23px; }
+    .card p { margin: 0 0 24px; color: #586373; line-height: 1.8; }
+    .open { margin-top: auto; color: #2459a5; font-weight: 600; }
+    .resources { margin-top: 28px; padding: 24px 0; border-top: 1px solid #d8dee7; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .resources a, footer a { color: #375c8e; text-underline-offset: 4px; }
+    footer { color: #687483; font-size: 13px; line-height: 1.8; }
+    @media (max-width: 600px) { main { padding: 36px 20px 24px; } .prototypes { grid-template-columns: 1fr; } .card { padding: 24px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">FLIP COVER CONTROLS</div>
+      <h1>外屏快捷栏 · 原型预览</h1>
+      <p class="intro">已同步当前源码 0.17.4（2026-10-02）。打开互动教程，立即看到外屏效果与自动示范。点击屏幕即可接管，底部缩略条可随时跳看；电脑和手机都能体验。</p>
+    </header>
+    <nav class="prototypes" aria-label="交互原型">
+      <a class="card" href="flipcover-tutorial.html">
+        <span class="number">01 · 最新互动教程</span>
+        <h2>外屏上手教程</h2>
+        <p>28段快速演示，同步0.17.4：Home 按钮效果、NFC／热点、紧凑编辑、连续滚动任务页与玻璃示意，以及原生启动器和组合小组件。支持详细讲解、自由体验及四个界面动效。</p>
+        <span class="open">开始体验 →</span>
+      </a>
+      <a class="card" href="settings-oneui-prototype.html">
+        <span class="number">02 · 设置体验</span>
+        <h2>One UI 设置原型</h2>
+        <p>浏览设置首页，选择 Home 按钮效果，调整状态栏、控制中心与应用方向；固定应用最多4个，组合卡片支持多个小组件。</p>
+        <span class="open">打开设置原型 →</span>
+      </a>
+    <a class="card" href="nfc-hotspot-prototype.html"><span class="number">03 · 连接功能</span><h2>NFC 与移动热点</h2><p>体验原位开关、热点名称与密码、频段、重启确认、二维码、连接设备，以及未授权和失败状态。</p><span class="open">打开完整练习 →</span></a><a class="card" href="device-frame-preview.html"><span class="number">04 · 校准外框</span><h2>Flip5 外框与开孔</h2><p>836×992 校准机身，屏幕映射 748×720。检查透明开孔、双摄、闪光灯与不同背景。</p><span class="open">查看外框 →</span></a>
+<a class="card" href="notification-force-jelly.html"><span class="number">05 · 界面动效</span><h2>通知中心</h2><p>通知卡片受力、边界滚动、清除／设置顺序分裂与合并清除。</p><span class="open">体验动效 →</span></a>
+<a class="card" href="control-force-jelly.html"><span class="number">06 · 界面动效</span><h2>控制中心</h2><p>单网格弹簧、到限整页拉伸、同步回弹、按钮与滑条反馈。</p><span class="open">体验动效 →</span></a>
+<a class="card" href="task-force-jelly.html"><span class="number">07 · 界面动效</span><h2>任务页</h2><p>连续滚动、单卡居中、四卡槽复用、连续关闭及失败回弹。</p><span class="open">体验动效 →</span></a>
+<a class="card" href="launcher-force-jelly.html"><span class="number">08 · 界面动效</span><h2>启动器与 Dock</h2><p>固定八区域受力、5×3分页、侧栏设置分裂与 Dock 收起。</p><span class="open">体验动效 →</span></a></nav>
+    <nav class="resources" aria-label="相关资源">
+      <a href="device-frame-preview.html">设备外框预览与下载 →</a>
+      <a href="https://github.com/xiaomaoju/zflip5screenhelper">查看 GitHub 项目 →</a>
+    </nav>
+    <footer>原型使用示例数据，用于演示界面与操作；不连接手机，也不修改设备设置。原型效果不代表三星物理真机验证结果。</footer>
+  </main>
+</body>
+</html>

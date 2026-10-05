@@ -4,7 +4,7 @@
 - `zflip5-cover-overlay@2x.png`：1672 × 1984，二倍分辨率。
 - `zflip5-cover-overlay.svg`：几何与颜色的唯一维护源；PNG 和 HTML 预览由它导出。
 - `zflip5-cover-calibrated.svg/.png`：由上述标准资源生成的同内容兼容副本，供已有投屏入口使用，不单独修改。
-- `preview.html`：独立浏览器预览，双击打开即可；棋盘格用于展示透明开孔，不包含在贴图中。
+- `../html/device-frame-preview.html`：独立浏览器预览，双击打开即可；棋盘格用于展示透明开孔，不包含在贴图中。
 
 贴图仅包含外框、右下双摄和闪光灯。中间异形屏幕与机身外侧的 Alpha 为 0，边缘保留抗锯齿；没有黑色屏幕底图，也没有烘焙棋盘格。
 
@@ -41,6 +41,6 @@ node tools/device-frames/build.mjs
 node tools/device-frames/compose.mjs path/to/raw.png path/to/result-framed.png
 ```
 
-`build.mjs` 从唯一 SVG 源生成 PNG、兼容副本、预览，并同步教程、设置和 NFC／热点原型的机身尺寸与精确开孔。教程两个文件保持相同内容。`compose.mjs` 可输出 PNG 或自包含 SVG，原图等比居中，空余位置填黑，最上层只叠一份标准外框。依赖版本在 `tools/device-frames/package.json` 中声明。
+`build.mjs` 从唯一 SVG 源生成 PNG、兼容副本、预览，并同步教程、设置和 NFC／热点原型的机身尺寸与精确开孔。教程两个文件保持相同内容，三个标准贴图同时复制到 `dist/html/`，用于完整静态部署，发布副本不单独编辑。`compose.mjs` 可输出 PNG 或自包含 SVG，原图等比居中，空余位置填黑，最上层只叠一份标准外框。依赖版本在 `tools/device-frames/package.json` 中声明。
 
 本次替换范围和验证见 [FRAME-ROLLOUT.md](FRAME-ROLLOUT.md)。
