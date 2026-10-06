@@ -2,25 +2,15 @@
 /.gradle/
 /.kotlin/
 /**/build/
-/local.properties
+local.properties
 node_modules/
 __pycache__/
 *.py[cod]
-*.jks
-*.keystore
-.DS_Store
 
 # Local IDE settings and credentials
 /.idea/
 /.vscode/
 *.iml
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-key.properties
-keystore.properties
 
 # Reference APKs, installable builds, and personal recordings
 *.apk
@@ -33,12 +23,35 @@ keystore.properties
 # Keep delivery documentation, portable prototypes, and required device frames
 /dist/**
 !/dist/**/
-!/dist/**/*.md
-!/dist/**/*.html
-!/dist/device-frames/**
-!/dist/html/zflip5-cover-overlay.svg
-!/dist/html/zflip5-cover-overlay.png
-!/dist/html/zflip5-cover-overlay@2x.png
+!/dist/开发设计/**/*.md
+!/dist/device-frames/*.md
+!/dist/device-frames/*.svg
+!/dist/device-frames/*.png
+!/dist/html/*.html
+!/dist/html/*.css
+!/dist/html/*.js
+!/dist/html/*.svg
+!/dist/html/*.png
+!/dist/html/*.webp
+!/dist/update-release/*/catalog.json
+!/dist/update-release/*/release-manifest.json
+!/dist/update-release/*/RELEASE.md
+!/dist/update-debug/*/catalog.json
+!/dist/update-debug/*/release-manifest.json
+!/dist/update-debug/*/RELEASE.md
 
 # Selected existing UI images displayed in the repository README
 !/dist/开发设计/readme-gallery/*.png
+
+# Secrets and local files remain excluded inside every delivery directory.
+*.jks
+*.keystore
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+key.properties
+keystore.properties
+.DS_Store
+._*

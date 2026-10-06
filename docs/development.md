@@ -2,6 +2,10 @@
 
 本文件是当前构建、签名、迁移与本地验证的入口。项目根目录执行文中的命令；版本和依赖以 Gradle 配置为准，历史验收文档中的旧环境、旧包名和旧签名说明仅供追溯。
 
+单人维护的提交、推送、CI 和正式发布入口见 [工程流程](engineering-workflow.md)，可移植检查命令见 [工程工具](../tools/project/README.md)。
+
+本轮工程改造的实测范围和未验证项见 [工程验收](engineering-validation.md)；这份记录不替代后续提交和设备验收。
+
 ## 文档职责
 
 | 文件或目录 | 应写内容 | 不应承担的内容 |
@@ -22,7 +26,13 @@
 
 在项目根目录执行：
 
-先配置根目录 `keystore.properties`。debug 和 Release 统一使用包名 `io.github.flipcover.controls` 及同一签名；缺少签名配置时构建明确失败，不回退到默认 debug 签名。以下值须替换为自己的真实密钥配置：
+编译、单元测试和 Lint 不需要私钥；干净克隆和公共 CI 可执行以下检查，不生成安装包（Windows 使用 `gradlew.bat`）：
+
+```sh
+./gradlew :app:compileDebugJavaWithJavac :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:testReleaseUnitTest :app:lintRelease
+```
+
+生成 APK/AAB 前配置根目录 `keystore.properties`。debug 和 Release 统一使用包名 `io.github.flipcover.controls` 及同一签名；缺少签名配置时打包明确失败，不回退到默认 debug 签名。以下值须替换为自己的真实密钥配置：
 
 ```properties
 storeFile=signing/flip-assistant-release.keystore
@@ -78,8 +88,9 @@ adb -s <TEST_EMULATOR_SERIAL> shell am instrument -w -e scenario app-update io.g
 | `app-config.json` | 更新、设置默认值、主要外观与动效的常用调节参数 |
 | `gradle/`、`gradlew`、`gradlew.bat` | 可复用的 Gradle 构建入口 |
 | `docs/` | 开发流程、模块契约、功能边界、设计方案与验证文档 |
-| `dist/` | 验证文档、独立 HTML 原型和必要设备外框；安装包与一般生成效果图不纳入源码提交；`dist/readme-gallery/` 的 README 展示图片例外 |
+| `dist/` | `html/` 静态网站、`开发设计/` 历史资料、标准设备框及版本交付；公开 catalog/清单/说明入库，APK 独立分发；`开发设计/readme-gallery/` 的展示图片入库 |
 | `tools/` | 设备外框、macOS 带框投屏工具和独立通知测试 App 源码 |
-| `.github/workflows/pages.yml` | 原型网站的 GitHub Pages 自动部署 |
+| `tools/project/` | 跨平台工程检查、网页组装、真实 APK 验证及正式版本准备 |
+| `.github/workflows/ci.yml` | main 自动检查及检查通过后的 Pages 部署 |
 | `.agents/`、`AGENTS.md` | 项目协作与设置界面设计规则 |
 | `Cache/` | 被 Git 忽略的本机工具、构建产物及临时验证资料 |

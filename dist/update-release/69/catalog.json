@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 69,
+  "versionName": "0.18.11-update-test",
+  "minSdk": 30,
+  "changelog": "在线更新测试基线（构建69），用于验证应用内更新至构建70。",
+  "apkPath": "releases/69/flipcover-0.18.11-update-test.apk",
+  "apkSize": 20426165,
+  "sha256": "7b2c6a2dcb5c3e5d5a978ce3a1bb036a2afe94f27db5cdcd911ce82e5950af29"
+}

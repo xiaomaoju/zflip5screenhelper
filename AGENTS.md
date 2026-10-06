@@ -5,6 +5,7 @@
 - Android 源码、资源和测试位于 `app/`，Gradle 配置位于根目录；`docs/` 保存开发流程与模块契约，`dist/` 保存最终交付、发布说明和独立 HTML 原型，`tools/` 保存独立辅助工具。
 - `README.md` 只介绍软件定位、用途和功能，权限与兼容性边界按用户视角说明。`AGENTS.md` 只维护稳定结构、责任边界、硬约束及完成标准；实现参数、操作流程、验收记录和历史问题写入对应文档。
 - 当前构建、签名、旧版迁移与验证入口为 [开发说明](docs/development.md)，使用及授权入口为 [使用说明](docs/getting-started.md)。历史记录不能替代当前构建配置。
+- 单人维护直接提交 `main`，不要求 PR；main 禁止强推和删除，允许正常推送；工程检查、暂存审查、推送及独立发布边界见 [工程流程](docs/engineering-workflow.md)。`tools/project/` 统一仓库、静态网站与 APK 交付检查，CI 使用同一入口。
 - 修改模块前读取 [模块契约](docs/module-contracts.md) 的相关章节及其专题文档；具体功能约束已迁入该文档，整理 AGENTS 不表示解除原有约束。行为变更同步更新其对应契约，避免重复或冲突的规则。
 
 ## 配置与数据唯一来源
@@ -45,10 +46,11 @@
 
 ## 签名、交付与完成标准
 
-- debug 与 Release 共用包名 `io.github.flipcover.controls` 和 `keystore.properties` 指定的正式签名；新版本递增 `versionCode`，不恢复 `.debug` 后缀或默认调试签名。密钥及密码不入库，必须独立安全备份。
+- debug 与 Release 共用包名 `io.github.flipcover.controls` 和 `keystore.properties` 指定的正式签名；无密钥允许编译、单元测试和 Lint，所有 APK/AAB 打包必须有正式签名；新版本递增 `versionCode`，不恢复 `.debug` 后缀或默认调试签名。密钥及密码不入库，必须独立安全备份。
 - APK 交付到 `dist/update-release/<versionCode>/flipcover-<versionName>.apk` 或 `dist/update-debug/<versionCode>/flipcover-<versionName>-debug.apk`，同目录附实际元数据、大小及 SHA-256 对应的 `catalog.json`；Release 使用 `:app:prepareUpdateRelease`。测试低版本仅临时覆盖构建版本，不降低正式版本、覆盖已发布目录或自动搬移历史产物。
 - `dist/` 最终 UI 效果图必须在最上层叠加一次 `dist/device-frames/zflip5-cover-overlay.svg` 或对应透明 PNG，按 [贴图说明](dist/device-frames/README.md) 对齐并保留外框、双摄与闪光灯；方向同步旋转，不重复、拉伸或镜像。未合成截图仅作原始验证素材。
 - HTML 原型与所需静态资源统一平铺交付到 `dist/html/`，目录内文件使用同目录相对路径，可整体上传到静态服务器；设备贴图副本由 `tools/device-frames/build.mjs` 从唯一源 `dist/device-frames/` 生成；明确文件入口，并在普通浏览器验证显示和已有交互，不依赖 Codex 环境或机器私有路径。
 - 完成工作必须有成功构建与相关本地检查，分别说明本地、模拟器与物理真机证据及未验证项；原型及模拟器不能替代三星固件窗口路由、原生宿主与锁屏兼容性验收。详细流程见 [开发说明](docs/development.md)。
 - `Cache/build-output.nosync/app/`：Gradle 所有应用产物与报告，由 Gradle 配置管理，可重建、不入库，不能作为最终交付入口。
+- `Cache/build-output.nosync/project/`：工程工具的网站组装、测试夹具及发布准备临时文件，由 `tools/project/` 管理，可重建、不入库。
 - `Cache/build-tools/` 与 `Cache/sdk/`：官方供应商的可丢弃本机构建工具，由本机环境管理，不入库；源码及构建配置不得依赖机器专属内容。其他临时证据按任务存入 Cache，不写入 AGENTS。

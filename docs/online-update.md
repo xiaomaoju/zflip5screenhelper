@@ -53,7 +53,17 @@ catalog 保持服务端协议的原字段名称：
 ./gradlew :app:prepareUpdateRelease
 ```
 
-任务先构建正式 APK，再根据 APK 构建产物的 `output-metadata.json`、本次最低 SDK 和对应版本更新日志生成目录，流式计算实际 APK 的大小和 SHA-256。输出位于 `dist/update-release/<versionCode>/`，包含版本化命名的 APK 和 `catalog.json`。
+准备任务需要 Node.js 24、正式签名和干净工作区；先执行 Release 构建、单元测试与 Lint，再由 `tools/project/release.mjs` 使用官方 aapt/apksigner 读取真实 APK 身份、验证签名并与既有正式证书对照。版本和最低 SDK 来自 APK，更新说明匹配实际版本，大小和 SHA-256 流式读取最终文件。
+
+完整交付先在 `Cache/build-output.nosync/project/` 准备，校验后移入 `dist/update-release/<versionCode>/`，包含 APK、catalog、release-manifest.json 和 RELEASE.md。已有版本目录一律拒绝覆盖；源码变化、校验失败或进程错误不发布不完整目录。锁和临时文件按会话释放，中断后的单个遗留锁须确认没有准备进程后清理。
+
+已有版本复核（设置 ANDROID_HOME 和 JDK，Windows 同命令）：
+
+```sh
+node tools/project/release.mjs verify dist/update-release/72
+```
+
+catalog、公开版本清单与说明入 Git；APK 和私钥不入库。版本清单记录准备时源码提交和设备检查状态，设备验收完成前不宣称正式发布已通过。完整流程及标签位置见 [工程流程](engineering-workflow.md)。
 
 debug 使用 `:app:assembleDebug` 构建后，按上表命名整理到 `dist/update-debug/<versionCode>/` 并生成实际对应的 catalog；不要以 Release 产物替代 debug 包或只复制旧 catalog。测试基线采用临时版本名称时，catalog 的更新说明须明确标记测试用途。
 

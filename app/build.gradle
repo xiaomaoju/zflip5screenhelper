@@ -2,10 +2,18 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.plugin.compose'
 
 def releaseSigning = new Properties()
 def releaseSigningFile = rootProject.file('keystore.properties')
-if (!releaseSigningFile.exists()) throw new GradleException('Missing keystore.properties; configure the shared debug/release signing key as described in docs/development.md.')
-releaseSigningFile.withInputStream { releaseSigning.load(it) }
-['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { name ->
-    if (!releaseSigning.getProperty(name)) throw new GradleException("Missing signing property: ${name}")
+if (releaseSigningFile.exists()) releaseSigningFile.withInputStream { releaseSigning.load(it) }
+def signingFields = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+def hasSigningConfiguration = signingFields.every { releaseSigning.getProperty(it) }
+def verifyProjectSigning = tasks.register('verifyProjectSigning') {
+    doLast {
+        if (!hasSigningConfiguration) throw new GradleException('Packaging requires the official keystore.properties; compilation, unit tests and lint do not. See docs/development.md.')
+        if (!rootProject.file(releaseSigning.getProperty('storeFile')).isFile()) throw new GradleException('The configured official signing keystore does not exist.')
+    }
+}
+// Every installable artifact requires the official key, including test APKs.
+tasks.configureEach {
+    if (name.startsWith('validateSigning') || name ==~ /(?:package|bundle|sign)(?:Debug|Release)(?:AndroidTest|Bundle)?/) dependsOn verifyProjectSigning
 }
 
 // Keep generated resources/classes out of cloud-sync conflict copies. The suffix is
@@ -31,10 +39,12 @@ android {
     }
     signingConfigs {
         release {
-            storeFile rootProject.file(releaseSigning.getProperty('storeFile'))
-            storePassword releaseSigning.getProperty('storePassword')
-            keyAlias releaseSigning.getProperty('keyAlias')
-            keyPassword releaseSigning.getProperty('keyPassword')
+            if (hasSigningConfiguration) {
+                storeFile rootProject.file(releaseSigning.getProperty('storeFile'))
+                storePassword releaseSigning.getProperty('storePassword')
+                keyAlias releaseSigning.getProperty('keyAlias')
+                keyPassword releaseSigning.getProperty('keyPassword')
+            }
         }
     }
     buildTypes {
@@ -116,31 +126,14 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
     variant.sources.res.addGeneratedSourceDirectory(prepareAppConfig) { it.resourcesDirectory }
 }
 
-tasks.register('prepareUpdateRelease') {
-    dependsOn 'assembleRelease'
-    inputs.file(appConfigFile)
-    inputs.file('src/main/assets/changelog.txt')
-    outputs.upToDateWhen { false }
-    doLast {
-        def output = layout.buildDirectory.dir('outputs/apk/release').get().asFile
-        def metadata = new groovy.json.JsonSlurper().parse(new File(output, 'output-metadata.json'), 'UTF-8')
-        if (metadata.elements.size() != 1) throw new GradleException('Online update requires one complete APK')
-        def artifact = metadata.elements[0]
-        def apk = new File(output, artifact.outputFile)
-        def version = artifact.versionName
-        if (!(version ==~ /[A-Za-z0-9._-]+/)) throw new GradleException('Unsafe APK version name')
-        def lines = file('src/main/assets/changelog.txt').readLines('UTF-8')
-        def noteStart = lines.findIndexOf { it.startsWith(version + ' · ') }
-        if (noteStart < 0) throw new GradleException('Changelog does not match the release APK')
-        def notes = lines.drop(noteStart + 1).takeWhile { !it.trim().isEmpty() }.join('\n')
-        def digest = java.security.MessageDigest.getInstance('SHA-256')
-        apk.withInputStream { stream -> byte[] buffer = new byte[65536]; int count; while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count) }
-        def name = "flipcover-${version}.apk"
-        def destination = rootProject.file("dist/update-release/${artifact.versionCode}")
-        destination.mkdirs()
-        copy { from apk; into destination; rename { name } }
-        def catalog = [schemaVersion: 1, packageName: metadata.applicationId, versionCode: artifact.versionCode, versionName: version, minSdk: metadata.minSdkVersionForDexing, changelog: notes, apkPath: "releases/${artifact.versionCode}/${name}", apkSize: apk.length(), sha256: digest.digest().encodeHex().toString()]
-        new File(destination, 'catalog.json').setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(catalog)) + '\n', 'UTF-8')
-        logger.lifecycle("Update release prepared: dist/update-release/${artifact.versionCode}/")
-    }
+tasks.register('prepareUpdateRelease', Exec) {
+    dependsOn 'assembleRelease', 'testReleaseUnitTest', 'lintRelease'
+    workingDir rootProject.projectDir
+    environment 'ANDROID_HOME', androidComponents.sdkComponents.sdkDirectory.get().asFile.absolutePath
+    environment 'JAVA_HOME', System.getProperty('java.home')
+    environment 'PROJECT_RELEASE_CHECKED', '1'
+    environment 'PROJECT_RELEASE_GRADLE', gradle.gradleVersion
+    environment 'PROJECT_RELEASE_JAVA', System.getProperty('java.version')
+    environment 'PROJECT_RELEASE_AGP', androidComponents.pluginVersion.toString()
+    commandLine 'node', 'tools/project/release.mjs', 'prepare'
 }

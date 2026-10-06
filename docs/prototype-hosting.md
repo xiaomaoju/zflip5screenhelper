@@ -47,7 +47,7 @@ https://example.com/appversion/v1/ZFlip5/docs/flipcover-tutorial.html
 
 现有公开入口：[原型目录](https://xiaomaoju.github.io/zflip5screenhelper/) · [互动教程](https://xiaomaoju.github.io/zflip5screenhelper/flipcover-tutorial.html)。
 
-仓库 Settings → Pages → Build and deployment → Source 选择 GitHub Actions。`.github/workflows/pages.yml` 将 `dist/html/` 文件直接复制到 `Cache/build-output.nosync/pages/` 后发布；无需改写页面路径。工作流在 `main` 的相关文件更新时运行，也可手动触发。为保留旧分享地址，发布目录另外生成 `device-frames/preview.html` 跳转入口和旧贴图地址副本；这些兼容文件不需要上传到 TEngineHttp。
+仓库 Settings → Pages → Build and deployment → Source 选择 GitHub Actions。[工程 CI](../.github/workflows/ci.yml) 在 main 推送时检查仓库、网站及 Android 编译/测试/Lint；全部成功后才部署本次上传的同一网站 artifact，也可手动运行。`tools/project/site.mjs` 将验证后的 `dist/html/` 文件组装到全新的 Cache 输出目录，不维护另一份资源复制清单。为保留旧分享地址，发布目录另生成 `device-frames/preview.html` 跳转入口和旧贴图地址副本；这些兼容文件不需要上传到 TEngineHttp。
 
 网站不发布 APK、Android 源码或本机验证资料。新增页面放入 `dist/html/` 并在 `index.html` 添加入口；新增外部资源必须同层随交付，并加入发布清单。
 

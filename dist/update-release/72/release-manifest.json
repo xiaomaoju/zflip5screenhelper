@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 72,
+  "versionName": "0.18.14",
+  "minSdk": 30,
+  "apkSize": 20423641,
+  "sha256": "540f0a2e5817459dc0c6a64bb478e0c5716a6feb64b85c57a4068af18a59587f",
+  "certificateSha256": "d97b13019c1e7bab2883055c5e150eb43e24228e63181dcd94e7dc71bdacdb22",
+  "sourceCommit": "7bb5dc80c753fd763cca8db1556daae95b36c429",
+  "sourceTag": "v0.18.14",
+  "provenance": "historical-reference-unattested",
+  "recordedOn": "2026-10-05",
+  "validation": {
+    "apkSignature": "passed",
+    "catalog": "passed",
+    "emulator": "not-run-during-baseline-recording",
+    "physicalDevice": "user-reported-stable; not-retested-during-baseline-recording"
+  },
+  "limitations": "The tag is the existing source reference. No historical build receipt proves that this APK was produced from that exact commit. Original build time and tool versions are not recorded."
+}

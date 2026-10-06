@@ -1,0 +1,18 @@
+* text=auto
+*.sh text eol=lf
+*.command text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.md text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.java text eol=lf
+*.kt text eol=lf
+*.gradle text eol=lf
+*.mjs text eol=lf
+*.html text eol=lf
+*.svg text eol=lf
+*.png binary
+*.jpg binary
+*.jar binary
+*.apk binary

@@ -1,0 +1,11 @@
+{
+    "schemaVersion": 1,
+    "packageName": "io.github.flipcover.controls",
+    "versionCode": 72,
+    "versionName": "0.18.14",
+    "minSdk": 30,
+    "changelog": "\u2022 \u8c03\u6574\u9996\u9875\u987a\u5e8f\u4e0e\u9875\u811a\uff0c\u65b0\u589e\u5feb\u6377\u66f4\u65b0\u68c0\u67e5\uff0c\u66f4\u65b0\u64cd\u4f5c\u6539\u4e3a\u4e24\u4e2a\u52a8\u6001\u6309\u94ae\u3002",
+    "apkPath": "releases/72/flipcover-0.18.14.apk",
+    "apkSize": 20423641,
+    "sha256": "540f0a2e5817459dc0c6a64bb478e0c5716a6feb64b85c57a4068af18a59587f"
+}
