@@ -61,6 +61,27 @@ final class AppLaunchChecks {
             test.runOnMainSync(() -> launcher.launch(context, prefs, "app:" + component.flattenToString(), target, () -> true, message -> { throw new AssertionError(message); }, accepted -> require(accepted, "detail task launch accepted")));
             Intent resumed = result(received); require(resumed.getBooleanExtra("detail", false) && resumed.getIntExtra("task", -1) == task && detail.getStringExtra("instance").equals(resumed.getStringExtra("instance")), "launcher resumes the intact detail page");
             test.runOnMainSync(() -> launcher.launch(context, prefs, "app:" + component.flattenToString(), 0, () -> true, message -> { }, accepted -> require(!accepted, "primary display is rejected")));
+            test.runOnMainSync(() -> {
+                launcher.launch(context, prefs, null, target, () -> true, message -> require(message.contains("应用入口"), "missing click payload is reported as an invalid app instead of crashing or blaming unlock"), accepted -> require(!accepted, "missing component rejected"));
+                launcher.launch(context, prefs, "app:" + component.flattenToString(), target, () -> false, message -> { throw new AssertionError("cancelled request should not show a late Toast"); }, accepted -> require(!accepted, "cancelled owner rejected"));
+                String report = launcher.diagnostics.report();
+                require(report.contains("result=invalid_target") && report.contains("result=invalid_component") && report.contains("result=owner_inactive"), "diagnostics distinguish failure causes");
+                require(report.contains("start_activity accepted") && !report.contains(component.flattenToString()) && !report.contains(component.getPackageName()), "accepted system calls are logged without app identity");
+            });
+            Activity diagnosticPage = test.startActivitySync(new Intent(context, MainActivity.class).putExtra("section", "diagnostics").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK), ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle());
+            try {
+                test.runOnMainSync(() -> {
+                    AppLaunchDiagnostics log = CoverApp.launcher(context).diagnostics;
+                    long request = log.begin("diagnostic_check"); log.event(request, "after_page_open");
+                    android.view.View copy = find(diagnosticPage.getWindow().getDecorView(), "复制检测结果");
+                    require(copy != null, "existing copy diagnostics action is present");
+                    while (!copy.isClickable() && copy.getParent() instanceof android.view.View parent) copy = parent;
+                    require(copy.performClick(), "copy diagnostics action executes");
+                    android.content.ClipData clip = diagnosticPage.getSystemService(android.content.ClipboardManager.class).getPrimaryClip();
+                    String text = clip == null ? "" : clip.getItemAt(0).getText().toString();
+                    require(text.contains("after_page_open") && text.contains(BuildConfig.VERSION_NAME) && text.contains("系统版本："), "copy includes fresh in-memory events and build context without a Shizuku probe");
+                });
+            } finally { test.runOnMainSync(diagnosticPage::finish); }
             return "app-launch-reuse: " + assertions + " assertions; cold launch, repeated task/instance reuse, detail-page preservation and primary-display rejection PASS";
         } finally {
             if (host != null) { Activity opened = host; test.runOnMainSync(opened::finish); }
@@ -68,5 +89,10 @@ final class AppLaunchChecks {
             if (hadDisplay) prefs.data.edit().putInt("display", previousDisplay).commit(); else prefs.data.edit().remove("display").commit();
             if (display != null) display.release(); surface.release(); texture.release(); test.getUiAutomation().dropShellPermissionIdentity();
         }
+    }
+    private android.view.View find(android.view.View view, String text) {
+        if (view instanceof android.widget.TextView label && text.contentEquals(label.getText())) return view;
+        if (view instanceof android.view.ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) { android.view.View found = find(group.getChildAt(i), text); if (found != null) return found; }
+        return null;
     }
 }

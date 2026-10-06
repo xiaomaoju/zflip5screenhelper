@@ -199,6 +199,47 @@ final class LauncherWidgetChecks {
             until(() -> received.get() != null, "cancelled task request completes"); require(!received.get().ok, "late opened result cannot be accepted after owner cancellation");
         } finally { release.countDown(); field.set(bridge, original); }
     }
+    private void sharedServiceLaunch(Context context, Prefs prefs, int widget, int target, String app, java.util.concurrent.atomic.AtomicInteger launchedDisplay) throws Exception {
+        CoverService previous = CoverService.instance; CoverService[] service = {null};
+        main(() -> { service[0] = new CoverService(); service[0].prefs = prefs; service[0].screenContext = context; });
+        java.lang.reflect.Method attach = android.content.ContextWrapper.class.getDeclaredMethod("attachBaseContext", Context.class); attach.setAccessible(true); attach.invoke(service[0], context);
+        try {
+            // Deliberately keep the transport on primary and its display extra stale.
+            // Only the final app must be launched on the freshly selected secondary.
+            main(() -> {
+                CoverService.instance = service[0]; launchedDisplay.set(-1);
+                Intent click = new Intent(context, LauncherWidgetActivity.class).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widget).putExtra("display", 0).putExtra("operation", "launch").putExtra("item", app).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try { android.app.PendingIntent.getActivity(context, 75, click, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle()).send(); }
+                catch (android.app.PendingIntent.CanceledException error) { throw new AssertionError(error); }
+            });
+            until(() -> launchedDisplay.get() == target, "native click uses the real floating service launch method and selected secondary despite a primary transport and stale display extra");
+            require(CoverApp.launcher(context).diagnostics.report().contains("dispatch via=floating_service"), "native click delegates to the same service entry as the floating launcher");
+            for (String close : List.of("dismissHub", "dismissForHome")) cancelledFloatingLaunch(context, prefs, service[0], target, app, launchedDisplay, close);
+        } finally {
+            main(() -> { CoverService.instance = previous; service[0].main.removeCallbacksAndMessages(null); });
+            java.lang.reflect.Field files = CoverService.class.getDeclaredField("files"); files.setAccessible(true); ((java.util.concurrent.ExecutorService) files.get(service[0])).shutdownNow();
+        }
+    }
+    private void cancelledFloatingLaunch(Context context, Prefs prefs, CoverService owner, int target, String app, java.util.concurrent.atomic.AtomicInteger launchedDisplay, String close) throws Exception {
+        ShizukuBridge bridge = CoverApp.bridge(context); java.lang.reflect.Field remote = ShizukuBridge.class.getDeclaredField("remote"); remote.setAccessible(true); Object previous = remote.get(bridge);
+        String packageName = ActionCatalog.component(app).getPackageName(); int rotation = prefs.appRotation(packageName);
+        java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1), release = new java.util.concurrent.CountDownLatch(1);
+        IShellService controlled = new IShellService.Stub() {
+            @Override public void watchConnectivity(IConnectivityListener listener) { }
+            public String execute(String operation, int display, int value, String item) { entered.countDown(); try { release.await(5, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException error) { Thread.currentThread().interrupt(); } return "{\"ok\":true}"; }
+            public Bundle taskSnapshot(int display, String item) { return null; }
+            public void destroy() { }
+        };
+        try {
+            prefs.saveAppRotation(packageName, 0); remote.set(bridge, controlled); launchedDisplay.set(-1);
+            main(() -> { owner.display = context.getSystemService(DisplayManager.class).getDisplay(target); owner.launchApp(app); });
+            require(entered.await(3, java.util.concurrent.TimeUnit.SECONDS), "floating launch waits for its controlled direction rule");
+            java.lang.reflect.Method dismiss = CoverService.class.getDeclaredMethod(close); dismiss.setAccessible(true);
+            main(() -> { try { dismiss.invoke(owner); } catch (Exception error) { throw new AssertionError(error); } }); release.countDown();
+            until(() -> { String log = CoverApp.launcher(context).diagnostics.report(); return log.lastIndexOf("cancelled reason=owner_inactive") > log.lastIndexOf("rotation requested="); }, close + " cancels its late direction callback");
+            require(launchedDisplay.get() == -1, "cancelled direction callback never starts the app");
+        } finally { release.countDown(); remote.set(bridge, previous); prefs.saveAppRotation(packageName, rotation); }
+    }
     private void frame(String name) throws Exception {
         SystemClock.sleep(160); android.graphics.Bitmap image = test.getUiAutomation().takeScreenshot(); java.io.File dir = new java.io.File(activity.getFilesDir(), "launcher-widget-raw"); dir.mkdirs();
         try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(dir, name + ".png"))) { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out); } finally { image.recycle(); }
@@ -392,6 +433,10 @@ final class LauncherWidgetChecks {
                     android.view.ViewGroup grid = card.findViewById(R.id.launcher_grid); View member = described(grid, "修改后别名"); android.graphics.Rect hit = new android.graphics.Rect(); member.getDrawingRect(hit); grid.offsetDescendantRectToMyCoords(member, hit); long down = SystemClock.uptimeMillis();
                     for (int action : new int[]{android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP}) { android.view.MotionEvent event = android.view.MotionEvent.obtain(down, down + (action == android.view.MotionEvent.ACTION_UP ? 50 : 0), action, hit.centerX(), hit.centerY(), 0); grid.dispatchTouchEvent(event); event.recycle(); }
                 }); until(() -> launchedDisplay.get() == target, "member touch through the folder grid launches the app instead of dismissing the folder");
+                String launchReport = CoverApp.launcher(context).diagnostics.report();
+                require(launchReport.contains("source=native_card") && launchReport.contains("preflight") && launchReport.contains("start_activity accepted"), "native PendingIntent diagnostics cover lifecycle, checks and accepted launch");
+                require(!launchReport.contains(all.get(0)), "native launch diagnostics exclude application identity");
+                sharedServiceLaunch(context, prefs, ids[0], target, all.get(0), launchedDisplay);
             }
             finally { context.unregisterReceiver(launched); }
             main(() -> prefs.saveActions("favorites", List.of("app_dock", all.get(0))));

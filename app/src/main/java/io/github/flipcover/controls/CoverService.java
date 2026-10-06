@@ -106,6 +106,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
     private float panelPullStartProgress, panelPullStartDistance, panelPullSourceStartProgress;
     private ValueAnimator panelAnimation;
     private boolean homeClosing;
+    private long appLaunchGeneration;
     private ValueAnimator sceneBootstrap;
     private InterfaceCard bootstrapCard;
     private float bootstrapProgress, panelBridgeOffset, panelUserProgress, panelSourceUserProgress, panelSourceProgress = 1;
@@ -189,6 +190,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
     }
     private final Runnable updatePreferences = () -> reconcile(true);
     private final SharedPreferences.OnSharedPreferenceChangeListener preferenceListener = (preferences, key) -> {
+        if (key == null || key.equals("enabled") || key.equals("display")) appLaunchGeneration++;
         if ("system_controls_disabled".equals(key) || "launcher_page".equals(key) || "launcher_page_boot".equals(key)) return;
         if ("status_hidden_apps".equals(key) || "dock_compact_apps".equals(key) || "dock_auto_hide".equals(key) || "avoid_keyboard".equals(key)) { main.post(this::updateApplicationRules); return; }
         if ("status_enabled".equals(key) || key == null) main.post(this::updateApplicationRules);
@@ -206,6 +208,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
             lastScreenEvent = android.os.SystemClock.elapsedRealtime() / 1000 + "s · " + action;
             if (systemControlGuard != null && (Intent.ACTION_SCREEN_ON.equals(intent.getAction()) || Intent.ACTION_USER_PRESENT.equals(intent.getAction()))) systemControlGuard.changed();
             if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                appLaunchGeneration++;
                 resetStatusApplication();
                 stopAutomaticRotation();
                 main.removeCallbacks(restoreFromLauncherCard); pendingLauncherDisplay = -1;
@@ -307,6 +310,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
         dismissForHome();
     }
     private void dismissForHome() {
+        appLaunchGeneration++;
         if (homeClosing || panel == null && hub == null && panelPush == null && hubPush == null) return;
         homeClosing = true;
         cancelPanelAnimation(); cancelSceneBootstrap();
@@ -420,6 +424,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
             Display selected = Displays.selected(this, prefs);
             boolean locked = getSystemService(KeyguardManager.class).isKeyguardLocked();
             if (!prefs.enabled() || selected == null || locked || selected.getState() != Display.STATE_ON) {
+                appLaunchGeneration++;
                 resetStatusApplication();
                 removeWindows(); signature = "";
                 setStatus(!prefs.enabled() ? "快捷栏已暂停" : selected == null ? "未检测到外屏，请手动选择" : locked ? "系统报告锁屏，快捷栏已隐藏" : "外屏未亮起，快捷栏已隐藏（状态 " + selected.getState() + "）");
@@ -1146,6 +1151,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
         if (card.ready()) { startSceneBootstrap(card); content.revealSidebar(); }
     }
     private void dismissHub() {
+        appLaunchGeneration++;
         if (homeClosing) return;
         if (hub == null) return; AppHubView target = hub;
         if (hubCard != null && target.expanded()) {
@@ -1640,7 +1646,11 @@ public final class CoverService extends AccessibilityService implements DisplayM
     void openSettings(String section) { launch(new Intent(this, MainActivity.class).putExtra("section", section)); }
     void launchApp(String id) {
         int target = display == null ? -1 : display.getDisplayId();
-        CoverApp.launcher(this).launch(this, prefs, id, target, () -> instance == this && prefs.enabled() && display != null && display.getDisplayId() == target, this::message, accepted -> { if (accepted) launcherAccepted(); });
+        long generation = appLaunchGeneration;
+        launchApp(id, target, CoverApp.launcher(this).diagnostics.begin("floating"), () -> generation == appLaunchGeneration, accepted -> { });
+    }
+    void launchApp(String id, int target, long request, java.util.function.BooleanSupplier sourceReady, java.util.function.Consumer<Boolean> completed) {
+        CoverApp.launcher(this).launch(this, prefs, id, target, request, () -> instance == this && sourceReady.getAsBoolean(), this::message, accepted -> { if (accepted) launcherAccepted(); completed.accept(accepted); });
     }
     void launcherAccepted() { if (homeClosing) return; dismissHub(); closePanel(); }
     boolean launcherAction(String id, int target) {
