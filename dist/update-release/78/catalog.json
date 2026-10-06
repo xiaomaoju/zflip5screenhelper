@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 78,
+  "versionName": "0.18.20",
+  "minSdk": 30,
+  "changelog": "• 服务运行时，原生卡片通过用户点击广播共用快捷栏的应用启动入口，减少中转步骤。\n• 启动诊断区分系统调用返回与应用实际显示，保留有界内存记录。\n• 设置新增“兼容性说明”，汇总阿田手势后台、原生卡片编辑与多任务的已知限制及处理方式。",
+  "apkPath": "releases/78/flipcover-0.18.20.apk",
+  "apkSize": 20440677,
+  "sha256": "3e312c3c115de376d612308a4c6840b6d67a6f31df2521976737f45adb52e467"
+}
