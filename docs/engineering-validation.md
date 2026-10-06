@@ -19,6 +19,22 @@
 
 日志位于 `Cache/build-output.nosync/project/`；无密钥和真实准备副本位于 `Cache/tests/engineering-*`。测试副本拥有独立临时 Git 历史，用于验证 sourceCommit 和干净工作区要求，没有在主工程提交或推送。测试签名配置已删除，正式私钥未复制。
 
-尚未执行：新工作流的远端 CI、Windows/Linux 运行、模拟器 UI、三星物理真机、新 APK 上传/安装/正式发布。当前应用稳定性沿用用户反馈，本轮不据此宣称新的设备验收通过。仓库根目录未自动选择软件许可证；许可及第三方声明应在明确授权范围后独立整理。
+截至上述本地验收，尚未执行：新工作流的远端 CI、Windows/Linux 运行、模拟器 UI、三星物理真机、新 APK 上传/安装/正式发布。当前应用稳定性沿用用户反馈，本轮不据此宣称新的设备验收通过。仓库根目录未自动选择软件许可证；许可及第三方声明应在明确授权范围后独立整理。
 
-后续推送后检查对应提交的全部 CI 作业，再确认 Pages 部署结果。流程入口见 [工程流程](engineering-workflow.md)，正式包记录见 [稳定基线](../dist/update-release/72/RELEASE.md)。
+流程入口见 [工程流程](engineering-workflow.md)，正式包记录见 [稳定基线](../dist/update-release/72/RELEASE.md)。
+
+## 远端验收 · 2026-10-06
+
+工程改造及后续 SDK 安装修复已正常提交并推送 main。源码提交 `3248df4601dfb2963d9c18f9ae83732a04cfb214` 的 [Actions 运行 37461448048](https://github.com/xiaomaoju/zflip5screenhelper/actions/runs/37461448048) 全部成功：
+
+| 范围 | 实际结果 |
+| --- | --- |
+| Windows、macOS、Ubuntu | 三个平台分别完成仓库/网页检查和 10 项工程工具测试 |
+| Linux Android | 无正式密钥的干净 runner 完成 SDK 安装、编译、debug/release 单元测试及 Lint；测试与 Lint 报告随运行保留 |
+| Pages | 部署同次检查上传的网站 artifact；部署作业成功 |
+| 线上文件 | [公开网站](https://xiaomaoju.github.io/zflip5screenhelper/) 的 13 个平铺文件均返回成功，响应内容逐字节匹配本地交付；4 个旧设备框地址可达 |
+| 稳定包 | 72 的 APK SHA-256 仍为 `540f0a2e5817459dc0c6a64bb478e0c5716a6feb64b85c57a4068af18a59587f`，未替换或重新发布 |
+
+首次远端执行暴露了旧 Android Action 默认安装已移除的 `tools`，以及旧 SDK 目录格式无法识别 `platforms;android-37.0`。修复独立提交，保留失败记录：明确只安装 platform-tools，固定新版 Action 与支持 schema 4 的官方 command-line tools；专用 SDK CLI 从 Google 官方目录解析 Gradle 声明版本的实际包名。两项解析回归测试覆盖整数/major.0 命名与缺包/预览包拒绝，应用 compileSdk 37、targetSdk 36 未修改。
+
+远端证据补齐了工程工具跨平台执行和 Linux Android 构建检查；不代表 Windows/macOS Android 构建或设备功能验收。模拟器 UI、三星物理真机、新 APK 上传/安装/正式发布仍未执行。
