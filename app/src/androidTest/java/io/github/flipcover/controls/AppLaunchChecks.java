@@ -69,7 +69,7 @@ final class AppLaunchChecks {
                 launcher.launch(context, prefs, "app:" + component.flattenToString(), target, () -> false, message -> { throw new AssertionError("cancelled request should not show a late Toast"); }, accepted -> require(!accepted, "cancelled owner rejected"));
                 String report = launcher.diagnostics.report();
                 require(report.contains("result=invalid_target") && report.contains("result=invalid_component") && report.contains("result=owner_inactive"), "diagnostics distinguish failure causes");
-                require(report.contains("start_activity accepted") && !report.contains(component.flattenToString()) && !report.contains(component.getPackageName()), "accepted system calls are logged without app identity");
+                require(report.contains("start_activity returned visibility=unconfirmed") && !report.contains(component.flattenToString()) && !report.contains(component.getPackageName()), "accepted system calls are logged without app identity");
             });
             Activity diagnosticPage = test.startActivitySync(new Intent(context, MainActivity.class).putExtra("section", "diagnostics").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK), ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle());
             try {

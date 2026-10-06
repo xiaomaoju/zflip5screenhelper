@@ -8,9 +8,9 @@ public class AppLaunchDiagnosticsTest {
         AppLaunchDiagnostics log = new AppLaunchDiagnostics(() -> 1234);
         long first = log.begin("native_card"), second = log.begin("floating");
         log.event(first, "rejected reason=display_changed");
-        log.event(second, "start_activity accepted");
+        log.event(second, "start_activity returned visibility=unconfirmed");
         assertTrue(log.report().contains("1234ms #1 rejected reason=display_changed"));
-        assertTrue(log.report().contains("1234ms #2 start_activity accepted"));
+        assertTrue(log.report().contains("1234ms #2 start_activity returned visibility=unconfirmed"));
         for (int i = 0; i < 2000; i++) log.event(second, "event=" + i);
         String report = log.report();
         assertFalse(report.contains("source=native_card"));

@@ -63,7 +63,7 @@ final class AppLauncher {
             // Ordinary explicit app starts use Android's lockscreen policy. Keyguard
             // visibility and display power are diagnostic observations, not extra vetoes.
             if (!current.launchable() || !active) { diagnostics.event(request, "cancelled reason=" + (!current.launchable() ? current.launchReason() : "owner_inactive")); completed.accept(false); return; }
-            try { context.startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle()); diagnostics.event(request, "start_activity accepted"); completed.accept(true); }
+            try { context.startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle()); diagnostics.event(request, "start_activity returned visibility=unconfirmed"); completed.accept(true); }
             catch (RuntimeException error) {
                 diagnostics.event(request, "start_activity exception=" + error.getClass().getSimpleName());
                 message.accept(error instanceof android.content.ActivityNotFoundException ? "应用已卸载或暂不可用" : error instanceof SecurityException ? "系统未允许在外屏打开此应用" : "暂时无法打开此应用"); completed.accept(false);

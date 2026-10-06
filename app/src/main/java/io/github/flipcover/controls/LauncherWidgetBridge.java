@@ -22,6 +22,7 @@ import java.util.Set;
 final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
     static final class State {
         int page, pages = 1, workspacePage, pendingPage = -1; String folder;
+        long launchGeneration;
         void openFolder(String id) { if (folder == null) workspacePage = page; folder = id; page = 0; }
         boolean closeFolder() { if (folder == null) return false; folder = null; page = workspacePage; return true; }
     }
@@ -34,6 +35,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
     private final Map<Integer, State> states = new HashMap<>();
     private final Set<Integer> visibleCards = new HashSet<>();
     private long inputEpoch;
+    private long launchGeneration;
     long inputEpoch() { return inputEpoch; }
     String inputFolder(int id) { State state = states.get(id); return state == null || state.folder == null ? "desktop" : state.folder; }
     private android.widget.RemoteViews inputViews;
@@ -83,6 +85,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
         // visibility from the host package, a card click, or cached options on restart.
         if (options.containsKey("visible")) {
             boolean visible = options.getBoolean("visible", false) && selected != null && selected.getDisplayId() == displayId && selected.getState() == Display.STATE_ON;
+            State state = states.get(id); if (!visible && state != null) state.launchGeneration++;
             if (visible ? visibleCards.add(id) : visibleCards.remove(id)) {
                 notifyVisibility();
                 if (visible && CoverService.instance != null) CoverService.instance.launcherCardVisible(selected.getDisplayId());
@@ -101,7 +104,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
             if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(screen, filter, Context.RECEIVER_NOT_EXPORTED); else context.registerReceiver(screen, filter);
         } else { displays.unregisterDisplayListener(this); prefs.data.unregisterOnSharedPreferenceChangeListener(preferences); context.unregisterReceiver(screen); CoverApp.bridge(context).removeObserver(connection); }
     }
-    private void stop() { cancelToast(); main.removeCallbacks(update); if (listening) { listening = false; catalog.unobserve(apps); } shownIcons.clear(); requestedIcons.clear(); visibleIcons.clear(); }
+    private void stop() { launchGeneration++; cancelToast(); main.removeCallbacks(update); if (listening) { listening = false; catalog.unobserve(apps); } shownIcons.clear(); requestedIcons.clear(); visibleIcons.clear(); }
     void refresh() {
         main.removeCallbacks(update); int[] cards = cards(); observe(cards.length > 0);
         Set<Integer> retained = new HashSet<>(); for (int id : cards) retained.add(id); states.keySet().retainAll(retained);
@@ -128,6 +131,11 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
     void remove(int id) { cancelToast(); states.remove(id); if (visibleCards.remove(id)) notifyVisibility(); if (pendingWidget == id) { recentGeneration++; pendingWidget = -1; recentBusy = false; } schedule(); }
     boolean inputBack(int id, int target) { State current = states.get(id); if (current == null || current.folder == null) return false; action(id, target, "back", null); return true; }
     void action(int id, int target, String operation, String item) {
+        if (!owns(id) || operation == null) return;
+        if (operation.equals("launch") || operation.equals("side") && item != null && item.startsWith("app:")) {
+            if (operation.equals("side") && !prefs.actions("favorites").contains(item)) return;
+            launch(id, item); return;
+        }
         Display selected = Displays.selected(context, prefs);
         if (!owns(id) || selected == null || selected.getDisplayId() != target || selected.getState() != Display.STATE_ON || operation == null) return;
         State state = state(id);
@@ -164,6 +172,22 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
         if (state.folder == null && state.pendingPage < 0 && (operation.equals("next") || operation.equals("previous"))) prefs.launcherPage(state.page);
         requestedIcons.clear();
         schedule();
+    }
+    private void launch(int widget, String item) {
+        AppLauncher launcher = CoverApp.launcher(context); long request = launcher.diagnostics.begin("native_card_direct");
+        State owner = state(widget); long generation = launchGeneration, cardGeneration = owner.launchGeneration;
+        java.util.function.BooleanSupplier active = () -> generation == launchGeneration && cardGeneration == owner.launchGeneration && states.get(widget) == owner && owns(widget);
+        CoverService service = CoverService.instance;
+        if (service != null) {
+            launcher.diagnostics.event(request, "dispatch via=floating_service transport=broadcast");
+            service.launchApp(item, request, active, accepted -> { });
+        } else {
+            // A stale broadcast may arrive while the host is receiving the no-service views.
+            // Preserve the actual click; Android still decides whether this start is allowed.
+            launcher.diagnostics.event(request, "dispatch via=standalone transport=broadcast");
+            Display selected = Displays.selected(context, prefs); int target = selected == null ? -1 : selected.getDisplayId();
+            launcher.launch(context, prefs, item, target, request, active, message -> { if (selected != null && active.getAsBoolean()) notice(selected, message); }, accepted -> { });
+        }
     }
     private void notice(Display display, String message) { cancelToast(); editToast = android.widget.Toast.makeText(context.createDisplayContext(display), message, android.widget.Toast.LENGTH_SHORT); editToast.show(); }
     private void requestTasks(int widget, int target, List<RecentTasks.Task> clearing) {

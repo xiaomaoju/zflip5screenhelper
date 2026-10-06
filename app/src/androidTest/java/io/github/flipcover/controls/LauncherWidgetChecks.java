@@ -214,13 +214,25 @@ final class LauncherWidgetChecks {
             });
             until(() -> launchedDisplay.get() == target, "native click uses the real floating service launch method and selected secondary despite a primary transport and stale display extra");
             require(CoverApp.launcher(context).diagnostics.report().contains("dispatch via=floating_service"), "native click delegates to the same service entry as the floating launcher");
-            for (String close : List.of("dismissHub", "dismissForHome")) cancelledFloatingLaunch(context, prefs, service[0], target, app, launchedDisplay, close);
+            LauncherWidgetBridge widgets = CoverApp.launcherWidgets(context);
+            main(widgets::refresh); SystemClock.sleep(250); test.waitForIdleSync();
+            Instrumentation.ActivityMonitor monitor = test.addMonitor(LauncherWidgetActivity.class.getName(), null, false);
+            try {
+                launchedDisplay.set(-1); clickRail(card.findViewById(R.id.launcher_rail), 0);
+                until(() -> launchedDisplay.get() == target, "service-backed sidebar Broadcast PendingIntent opens the app on the selected display");
+                launchedDisplay.set(-1);
+                main(() -> { View member = described(card.findViewById(R.id.launcher_grid), "修改后别名"); require(member != null && member.performClick(), "folder member dispatches its RemoteViews click"); });
+                until(() -> launchedDisplay.get() == target, "service-backed folder Broadcast PendingIntent opens the app on the selected display");
+                require(monitor.getHits() == 0, "ordinary native app clicks never create a Samsung Activity trampoline when the service exists");
+                require(CoverApp.launcher(context).diagnostics.report().contains("transport=broadcast"), "diagnostics distinguish the direct broadcast path");
+            } finally { test.removeMonitor(monitor); }
+            for (String close : List.of("dismissHub", "dismissForHome", "native-hidden")) cancelledFloatingLaunch(context, prefs, service[0], target, app, launchedDisplay, close, widget);
         } finally {
-            main(() -> { CoverService.instance = previous; service[0].main.removeCallbacksAndMessages(null); });
+            main(() -> { CoverService.instance = previous; service[0].main.removeCallbacksAndMessages(null); CoverApp.launcherWidgets(context).refresh(); });
             java.lang.reflect.Field files = CoverService.class.getDeclaredField("files"); files.setAccessible(true); ((java.util.concurrent.ExecutorService) files.get(service[0])).shutdownNow();
         }
     }
-    private void cancelledFloatingLaunch(Context context, Prefs prefs, CoverService owner, int target, String app, java.util.concurrent.atomic.AtomicInteger launchedDisplay, String close) throws Exception {
+    private void cancelledFloatingLaunch(Context context, Prefs prefs, CoverService owner, int target, String app, java.util.concurrent.atomic.AtomicInteger launchedDisplay, String close, int widget) throws Exception {
         ShizukuBridge bridge = CoverApp.bridge(context); java.lang.reflect.Field remote = ShizukuBridge.class.getDeclaredField("remote"); remote.setAccessible(true); Object previous = remote.get(bridge);
         String packageName = ActionCatalog.component(app).getPackageName(); int rotation = prefs.appRotation(packageName);
         java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1), release = new java.util.concurrent.CountDownLatch(1);
@@ -232,10 +244,16 @@ final class LauncherWidgetChecks {
         };
         try {
             prefs.saveAppRotation(packageName, 0); remote.set(bridge, controlled); launchedDisplay.set(-1);
-            main(() -> { owner.display = context.getSystemService(DisplayManager.class).getDisplay(target); owner.launchApp(app); });
+            boolean nativeHidden = close.equals("native-hidden"); LauncherWidgetBridge widgets = CoverApp.launcherWidgets(context); Bundle hidden = new Bundle(); hidden.putBoolean("visible", false);
+            if (nativeHidden) main(() -> widgets.optionsChanged(widget, hidden));
+            main(() -> { owner.display = context.getSystemService(DisplayManager.class).getDisplay(target); if (nativeHidden) widgets.action(widget, target, "launch", app); else owner.launchApp(app); });
             require(entered.await(3, java.util.concurrent.TimeUnit.SECONDS), "floating launch waits for its controlled direction rule");
-            java.lang.reflect.Method dismiss = CoverService.class.getDeclaredMethod(close); dismiss.setAccessible(true);
-            main(() -> { try { dismiss.invoke(owner); } catch (Exception error) { throw new AssertionError(error); } }); release.countDown();
+            if (nativeHidden) main(() -> widgets.optionsChanged(widget, hidden));
+            else {
+                java.lang.reflect.Method dismiss = CoverService.class.getDeclaredMethod(close); dismiss.setAccessible(true);
+                main(() -> { try { dismiss.invoke(owner); } catch (Exception error) { throw new AssertionError(error); } });
+            }
+            release.countDown();
             until(() -> { String log = CoverApp.launcher(context).diagnostics.report(); return log.lastIndexOf("cancelled reason=owner_inactive") > log.lastIndexOf("rotation requested="); }, close + " cancels its late direction callback");
             require(launchedDisplay.get() == -1, "cancelled direction callback never starts the app");
         } finally { release.countDown(); remote.set(bridge, previous); prefs.saveAppRotation(packageName, rotation); }
@@ -434,7 +452,7 @@ final class LauncherWidgetChecks {
                     for (int action : new int[]{android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP}) { android.view.MotionEvent event = android.view.MotionEvent.obtain(down, down + (action == android.view.MotionEvent.ACTION_UP ? 50 : 0), action, hit.centerX(), hit.centerY(), 0); grid.dispatchTouchEvent(event); event.recycle(); }
                 }); until(() -> launchedDisplay.get() == target, "member touch through the folder grid launches the app instead of dismissing the folder");
                 String launchReport = CoverApp.launcher(context).diagnostics.report();
-                require(launchReport.contains("source=native_card") && launchReport.contains("preflight") && launchReport.contains("start_activity accepted"), "native PendingIntent diagnostics cover lifecycle, checks and accepted launch");
+                require(launchReport.contains("source=native_card") && launchReport.contains("preflight") && launchReport.contains("start_activity returned visibility=unconfirmed"), "native PendingIntent diagnostics cover lifecycle, checks and accepted launch");
                 require(!launchReport.contains(all.get(0)), "native launch diagnostics exclude application identity");
                 sharedServiceLaunch(context, prefs, ids[0], target, all.get(0), launchedDisplay);
             }

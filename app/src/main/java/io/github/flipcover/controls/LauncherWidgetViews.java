@@ -29,6 +29,7 @@ final class LauncherWidgetViews {
     private final Prefs prefs;
     private final AppCatalogCache cache;
     private final Display display;
+    private final boolean directApps;
     private final int widget;
     private final LauncherWidgetBridge.State state;
     private final LauncherWidgetBridge.Recents recents;
@@ -40,6 +41,7 @@ final class LauncherWidgetViews {
     LauncherWidgetViews(Context context, Prefs prefs, Display display, int widget, LauncherWidgetBridge.State state, LauncherWidgetBridge.Recents recents, Set<String> shownIcons, Set<String> requestedIcons, Map<String, Bitmap> bitmaps) {
         this.context = AppLauncherStyle.fixedFontContext(context.createDisplayContext(display)); this.prefs = prefs; this.display = display; this.widget = widget; this.state = state; this.recents = recents; this.shownIcons = shownIcons; this.requestedIcons = requestedIcons;
         this.bitmaps = bitmaps;
+        directApps = CoverService.instance != null;
         cache = CoverApp.catalog(context); aliases = prefs.workspaceAliases(); badges = AppLauncherModel.badges(prefs.workspaceBadges(), CoverNotifications.ready(), CoverNotifications.snapshot());
     }
     static RemoteViews message(Context context, String text) {
@@ -210,9 +212,12 @@ final class LauncherWidgetViews {
             row.setOnClickFillInIntent(R.id.launcher_cell, new Intent().putExtra("item", id));
             items.addItem(AppLauncherModel.itemId(id), row);
         }
-        // One explicit Activity template keeps collection app launches eligible as direct user clicks.
-        Intent click = intent("side", null).setClass(context, LauncherWidgetActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
-        view.setPendingIntentTemplate(R.id.launcher_rail, PendingIntent.getActivity(context, 0, click, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE, ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle()));
+        // A service-backed click reaches the shared launcher without an Activity trampoline.
+        Intent click = intent("side", null);
+        PendingIntent template = directApps
+                ? PendingIntent.getBroadcast(context, 0, click.setClass(context, LauncherWidgetProvider.class).setAction(LauncherWidgetProvider.ACTION), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE)
+                : PendingIntent.getActivity(context, 0, click.setClass(context, LauncherWidgetActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE, ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle());
+        view.setPendingIntentTemplate(R.id.launcher_rail, template);
         view.setRemoteAdapter(R.id.launcher_rail, items.build());
     }
     @androidx.annotation.RequiresApi(31)
@@ -318,6 +323,7 @@ final class LauncherWidgetViews {
         return PendingIntent.getBroadcast(context, 0, intent(operation, item).setClass(context, LauncherWidgetProvider.class).setAction(LauncherWidgetProvider.ACTION), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
     private PendingIntent activity(String operation, String item) {
+        if (directApps && operation.equals("launch")) return action(operation, item);
         return PendingIntent.getActivity(context, 0, intent(operation, item).setClass(context, LauncherWidgetActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE, ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId()).toBundle());
     }
     @androidx.annotation.RequiresApi(31)

@@ -255,7 +255,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
             }
             cameras.registerTorchCallback(torchCallback, main);
         } catch (Exception ignored) { }
-        CoverApp.inputs(this).observe(updateNativeInput); CoverApp.bridge(this).addObserver(bridgeChanged); CoverApp.bridge(this).connect(); reconcile(true); scheduleDisplay();
+        CoverApp.inputs(this).observe(updateNativeInput); CoverApp.bridge(this).addObserver(bridgeChanged); CoverApp.bridge(this).connect(); reconcile(true); scheduleDisplay(); CoverApp.launcherWidgets(this).refresh();
     }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         // Read window IDs/types and event package only; never request a node tree or its text.
@@ -1809,6 +1809,6 @@ public final class CoverService extends AccessibilityService implements DisplayM
         try { unregisterReceiver(screenReceiver); } catch (RuntimeException ignored) { }
         try { unregisterReceiver(systemDialogsReceiver); } catch (RuntimeException ignored) { }
         if (cameras != null) cameras.unregisterTorchCallback(torchCallback);
-        files.shutdown(); super.onDestroy();
+        files.shutdown(); CoverApp.launcherWidgets(this).refresh(); super.onDestroy();
     }
 }
