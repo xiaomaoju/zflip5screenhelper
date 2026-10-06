@@ -23,7 +23,6 @@ public final class LauncherWidgetActivity extends Activity {
         diagnostics = CoverApp.launcher(this).diagnostics; request = diagnostics.begin("native_card"); event("create restored=" + (saved != null));
         application = "launch".equals(getIntent().getStringExtra("operation")) || item != null && item.startsWith("app:") && "side".equals(getIntent().getStringExtra("operation"));
         if (saved != null) { reject("restored_entry"); return; }
-        if (application) { android.view.Display selected = Displays.selected(this, new Prefs(this)); target = selected == null ? -1 : selected.getDisplayId(); }
         if (!CoverApp.launcherWidgets(this).owns(widget)) { reject("widget_removed"); return; }
         registerReceiver(screenOff, new android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_OFF)); observing = true;
         // A widget click already authorizes the action. The running floating service
@@ -61,9 +60,10 @@ public final class LauncherWidgetActivity extends Activity {
         if (application) {
             if (service != null) {
                 diagnostics.event(request, "dispatch via=floating_service");
-                service.launchApp(item, target, request, this::ownerReady, accepted -> finish());
+                service.launchApp(item, request, this::ownerReady, accepted -> finish());
             } else {
                 diagnostics.event(request, "dispatch via=standalone");
+                android.view.Display selected = Displays.selected(getApplicationContext(), prefs); target = selected == null ? -1 : selected.getDisplayId();
                 CoverApp.launcher(this).launch(this, prefs, item, target, request, this::ownerReady, this::toast, accepted -> finish());
             }
             return;

@@ -1645,11 +1645,11 @@ public final class CoverService extends AccessibilityService implements DisplayM
     private void global(int action) { if (action == GLOBAL_ACTION_LOCK_SCREEN) removeHubImmediately(); else dismissHub(); closePanel(); main.postDelayed(() -> { if (!performGlobalAction(action)) message("系统未接受此操作"); }, 80); }
     void openSettings(String section) { launch(new Intent(this, MainActivity.class).putExtra("section", section)); }
     void launchApp(String id) {
-        int target = display == null ? -1 : display.getDisplayId();
         long generation = appLaunchGeneration;
-        launchApp(id, target, CoverApp.launcher(this).diagnostics.begin("floating"), () -> generation == appLaunchGeneration, accepted -> { });
+        launchApp(id, CoverApp.launcher(this).diagnostics.begin("floating"), () -> generation == appLaunchGeneration, accepted -> { });
     }
-    void launchApp(String id, int target, long request, java.util.function.BooleanSupplier sourceReady, java.util.function.Consumer<Boolean> completed) {
+    void launchApp(String id, long request, java.util.function.BooleanSupplier sourceReady, java.util.function.Consumer<Boolean> completed) {
+        Display selected = Displays.selected(this, prefs); int target = selected == null ? -1 : selected.getDisplayId();
         CoverApp.launcher(this).launch(this, prefs, id, target, request, () -> instance == this && sourceReady.getAsBoolean(), this::message, accepted -> { if (accepted) launcherAccepted(); completed.accept(accepted); });
     }
     void launcherAccepted() { if (homeClosing) return; dismissHub(); closePanel(); }
@@ -1794,6 +1794,7 @@ public final class CoverService extends AccessibilityService implements DisplayM
         writer.println("Launcher geometry: rotation=" + (display == null ? -1 : display.getRotation()) + ", frame=" + hubFrame);
         writer.println("External input: " + CoverApp.inputs(this).status + ", keyboard=" + CoverApp.inputs(this).keyboardAvailable() + ", devices=" + CoverApp.inputs(this).connected().size() + ", nativeHost=" + nativeHostVisible + ", nativeCard=" + CoverApp.launcherWidgets(this).inputCard());
         if (nativeInput != null) writer.println("Native input: " + nativeInput.diagnostics());
+        writer.println(CoverApp.launcher(this).diagnostics.report());
     }
     @Override public void onDestroy() {
         CoverApp.inputs(this).unobserve(updateNativeInput);

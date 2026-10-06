@@ -31,15 +31,21 @@ public final class Displays {
         int bestScore = 0;
         for (Display display : all(context)) {
             if (display.getDisplayId() == 0 || !display.isValid() || (display.getFlags() & Display.FLAG_PRIVATE) != 0) continue;
-            Point size = size(display);
-            float ratio = size.x / (float) Math.max(1, size.y);
-            if (ratio < .7 || ratio > 1.4 || (long) size.x * size.y > 1_500_000) continue;
+            // Samsung may double getRealSize() inside a compatibility-scaled Activity.
+            // Identify hardware by its physical mode, never by an app's adjusted geometry.
+            Display.Mode mode = display.getMode();
+            if (!coverSize(mode.getPhysicalWidth(), mode.getPhysicalHeight())) continue;
             String name = display.getName().toLowerCase(java.util.Locale.ROOT);
             int score = display.getCutout() != null ? 2 : 0;
             if (name.contains("built-in") || name.contains("内置") || name.contains("cover")) score++;
             if (score > bestScore) { best = display; bestScore = score; }
         }
         return best;
+    }
+    static boolean coverSize(int width, int height) {
+        if (width <= 0 || height <= 0) return false;
+        float ratio = width / (float) height;
+        return ratio >= .7 && ratio <= 1.4 && (long) width * height <= 1_500_000;
     }
     public static Point size(Display display) { Point size = new Point(); display.getRealSize(size); return size; }
     public static String describe(Display display) {

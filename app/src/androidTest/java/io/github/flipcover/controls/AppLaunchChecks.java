@@ -29,20 +29,23 @@ final class AppLaunchChecks {
         boolean hadDisplay = prefs.data.contains("display"); int previousDisplay = prefs.displayId();
         test.getUiAutomation().adoptShellPermissionIdentity("android.permission.ADD_TRUSTED_DISPLAY");
         SurfaceTexture texture = new SurfaceTexture(false); texture.setDefaultBufferSize(720, 748); Surface surface = new Surface(texture);
-        VirtualDisplay display = context.getSystemService(DisplayManager.class).createVirtualDisplay("Application reuse checks", 720, 748, 320, surface, DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY | (1 << 10));
+        VirtualDisplay display = context.getSystemService(DisplayManager.class).createVirtualDisplay("Cover application reuse checks", 720, 748, 320, surface, DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY | (1 << 10));
         AtomicReference<Intent> received = new AtomicReference<>();
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() { public void onReceive(Context c, Intent intent) { received.set(intent); } };
         context.registerReceiver(receiver, new android.content.IntentFilter("fixture.APP_REUSE_RESULT"), Context.RECEIVER_EXPORTED);
         Activity host = null;
         try {
             require(display != null && display.getDisplay().getDisplayId() > 0, "secondary display exists");
-            int target = display.getDisplay().getDisplayId(); prefs.data.edit().putInt("display", target).commit();
+            int target = display.getDisplay().getDisplayId(); prefs.data.edit().remove("display").commit();
+            require(Displays.selected(context, prefs) != null && Displays.selected(context, prefs).getDisplayId() == target, "automatic physical-mode detection selects the cover without a saved display id");
             ComponentName component = new ComponentName(test.getContext(), AppLaunchFixtureActivity.class);
             Intent intent = AppLauncher.applicationIntent(component);
             require(intent.getComponent().equals(component) && intent.hasCategory(Intent.CATEGORY_LAUNCHER), "standard explicit launcher entry");
             require((intent.getFlags() & (Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)) == (Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED), "launcher requests task reuse from Activity and non-Activity contexts");
             require((intent.getFlags() & (Intent.FLAG_ACTIVITY_MULTIPLE_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)) == 0, "launch neither duplicates nor clears tasks");
             host = test.startActivitySync(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), ActivityOptions.makeBasic().setLaunchDisplayId(target).toBundle());
+            require(Displays.selected(host, prefs) != null && Displays.selected(host, prefs).getDisplayId() == target, "Activity and non-Activity contexts select the same physical cover");
+            prefs.data.edit().putInt("display", target).commit();
             AppLauncher launcher = new AppLauncher();
             test.runOnMainSync(() -> launcher.launch(context, prefs, "app:" + component.flattenToString(), target, () -> true, message -> { throw new AssertionError(message); }, accepted -> require(accepted, "launch accepted")));
             Intent root = result(received); require(root.getIntExtra("display", -1) == target && !root.getBooleanExtra("detail", false), "cold launch reaches the secondary root");
