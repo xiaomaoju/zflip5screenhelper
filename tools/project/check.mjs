@@ -14,6 +14,8 @@ try {
     const tracked = git(['ls-files', '-z']).split('\0').filter(Boolean);
     const files = new Set([...tracked, ...git(['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean)]);
     const errors = [];
+    const unnormalized = git(['ls-files', '--eol']).split('\n').filter(line => /^i\/(?:crlf|mixed)\s/.test(line) && /attr\/text/.test(line));
+    if (unnormalized.length) errors.push(`Text index conflicts with newline attributes; normalize only the listed files with git add --renormalize:\n${unnormalized.join('\n')}`);
     const ignored = git(['ls-files', '-ci', '--exclude-standard']).trim();
     if (ignored) errors.push(`Tracked files conflict with .gitignore:\n${ignored}`);
     for (const file of files) {
