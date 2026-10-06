@@ -119,6 +119,7 @@ public final class MainActivity extends Activity {
             case "orientations" -> applicationList(true);
             case "app_orientation" -> { if (orientationPackage == null) applicationList(true); else appOrientation(); }
             case "hub" -> hubSettings();
+            case "launch_compatibility" -> launchCompatibility();
             case "input_devices" -> { begin("鼠标与触控板", "input_devices"); body.addView(new InputDevicePanel(this, false, null)); }
             case "hub_pin" -> orderEditor("hub_pin");
             case "order" -> orderEditor(editing);
@@ -191,6 +192,7 @@ public final class MainActivity extends Activity {
             new Setting("状态栏与外观", "background", R.drawable.ic_ms_view_carousel, "面板背景", "模糊 毛玻璃 应用中心", () -> prefs.panelBlur() ? "背景模糊已开启" : "纯黑背景"),
             new Setting("控制中心", "panel", R.drawable.ic_ms_tune, "控制中心", "列数 密度 名称 字号 亮度 音量 媒体 预设 工具 按钮 撤销", () -> prefs.panelColumns() + " 列 · " + new String[]{"紧凑", "标准", "宽松"}[prefs.panelDensity()]),
             new Setting("应用与小组件", "hub", R.drawable.ic_ms_apps, "应用 Dock 与中心", "固定应用 底部 清理 九宫格", () -> "固定应用 " + prefs.hubPins().size() + "/" + AppDockPlacement.LIMIT),
+            new Setting("应用 Dock 与中心", "launch_compatibility", R.drawable.ic_ms_info, "兼容性说明", "阿田 阿田自用 阿田辅助 手势后台 快捷手势 打开手机以继续 内屏 外屏 应用启动失败 原生卡片编辑 文件夹 系统最近任务 外屏多任务 预览", () -> "应用启动、原生卡片与多任务"),
             new Setting("应用与小组件", "favorites", R.drawable.ic_ms_edit, "侧栏常用项", "收藏 工具 排序", () -> prefs.actions("favorites").size() + " 个常用项"),
             new Setting("应用与小组件", "orientations", R.drawable.ic_ms_screen_rotation, "应用方向", "旋转 横屏 竖屏 记忆", () -> prefs.rotationRules().length() + " 个应用规则"),
             new Setting("设备与权限", "display", R.drawable.ic_ms_phone_android, "目标外屏", "显示器 选择 屏幕", this::displaySummary),
@@ -427,7 +429,14 @@ public final class MainActivity extends Activity {
     private void hubSettings() {
         begin("应用 Dock 与中心", "hub"); LinearLayout group = group("hub-options"); group.addView(SettingsUi.valueRow(this, "底部固定应用", prefs.hubPins().size() + "/" + AppDockPlacement.LIMIT + " 个", () -> orderEditor("hub_pin"))); link(group, 0, "侧栏常用项", prefs.actions("favorites").size() + " 个 · 与固定应用独立", "favorites"); group.addView(SettingsUi.settingRow(this, 0, "固定键使用应用中心", ActionCatalog.label(this, prefs.pinnedAction()), () -> { prefs.pin("app_hub"); hubSettings(); }));
         if (!prefs.hubPins().isEmpty()) group.addView(SettingsUi.settingRow(this, 0, "移除全部固定应用", "不会移除侧栏常用项", () -> confirm("移除全部固定应用？", "只清空底部固定列表，不卸载应用。", "移除", () -> { prefs.saveHubPins(List.of()); hubSettings(); })));
-        note("应用 Dock 临时呼出底栏，九宫格原位展开全部应用。打开应用或确认恢复任务后关闭；失败保留界面。清理保留可见、固定与锁定任务。"); related("应用方向", "orientations");
+        note("应用 Dock 临时呼出底栏，九宫格原位展开全部应用。打开应用或确认恢复任务后关闭；失败保留界面。清理保留可见、固定与锁定任务。"); link(group("hub-help"), R.drawable.ic_ms_info, "兼容性说明", "应用启动、原生卡片与多任务", "launch_compatibility"); related("应用方向", "orientations");
+    }
+    private void launchCompatibility() {
+        begin("兼容性说明", "launch_compatibility"); LinearLayout info = group("launch-compatibility-info");
+        info.addView(SettingsUi.settingRow(this, 0, "阿田手势后台", "开启后，阿田自用或阿田辅助可能提示“打开手机以继续”；请在内屏打开阿田自用。", null));
+        info.addView(SettingsUi.settingRow(this, 0, "原生卡片编辑", "请从快捷栏打开应用中心，编辑应用和文件夹。", null));
+        info.addView(SettingsUi.settingRow(this, 0, "系统最近任务", "可能显示在内屏；查看外屏任务请使用“外屏多任务”。", null));
+        info.addView(SettingsUi.settingRow(this, 0, "任务预览", "受保护页面可能没有预览，点应用卡片打开。", null));
     }
     private void library(String kind, boolean launchOnly) {
         category = kind; begin(launchOnly ? "打开应用" : editing.equals("pinned") ? "选择固定按钮" : "添加快捷项", launchOnly ? "apps" : "library");
@@ -531,7 +540,7 @@ public final class MainActivity extends Activity {
         diagnosticText = report.toString(); TextView details = SettingsUi.text(this, diagnosticText + CoverApp.launcher(this).diagnostics.report(), 14, SettingsUi.MUTED); details.setTextIsSelectable(true); details.setVisibility(View.GONE);
         LinearLayout actions = group("diagnostic-actions"); actions.addView(SettingsUi.settingRow(this, 0, "显示原始详情", "显示器、窗口与兼容信息", () -> details.setVisibility(details.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE)));
         View probe = SettingsUi.settingRow(this, 0, "通过 Shizuku 检测", "只读检测，不改变设备设置", null); probe.setOnClickListener(v -> { v.setEnabled(false); CoverApp.bridge(this).run("diagnostics", selected == null ? -1 : selected.getDisplayId(), 0, "", result -> { if (isDestroyed() || !v.isAttachedToWindow()) return; v.setEnabled(true); diagnosticText = report + "\n" + result.message + "\n" + result.output; details.setText(diagnosticText + CoverApp.launcher(this).diagnostics.report()); details.setVisibility(View.VISIBLE); }); }); actions.addView(probe);
-        actions.addView(SettingsUi.settingRow(this, 0, "复制检测结果", "含本次运行的启动诊断，不含通知正文", () -> { getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("外屏检测", diagnosticText + CoverApp.launcher(this).diagnostics.report())); toast("已复制"); })); SettingsUi.add(body, details);
+        actions.addView(SettingsUi.settingRow(this, 0, "复制检测结果", "含本次运行的启动诊断，不含通知正文", () -> { getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("外屏检测", diagnosticText + CoverApp.launcher(this).diagnostics.report())); toast("已复制"); })); SettingsUi.add(body, details); related("兼容性说明", "launch_compatibility");
     }
     private void exportConfiguration() { open(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, "flip-cover-config.json"), 201); }
     private void importConfiguration() { open(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE), 202); }
