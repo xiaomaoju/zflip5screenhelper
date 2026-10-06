@@ -5,6 +5,8 @@ import path from 'node:path';
 import { projectRoot, sdkPackages } from './project.mjs';
 import { checkSite, assembleSite, siteDirectory } from './site.mjs';
 import { sha256, validateCatalog, publishDirectory } from './release.mjs';
+import { createSigning, removeSigning, propertyValue } from './signing.mjs';
+import { validateReleaseTag, validateCloudManifest } from './cloud-release.mjs';
 
 const cache = path.join(projectRoot, 'Cache/build-output.nosync/project/tests');
 await fs.mkdir(cache, { recursive: true });
@@ -90,4 +92,38 @@ test('streaming checksum matches the known SHA-256 vector', () => fixture(async 
   const file = path.join(directory, 'bytes');
   await fs.writeFile(file, 'abc');
   assert.equal(await sha256(file), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+}));
+
+test('cloud publication rejects stale numbers and tags that differ from Gradle', () => {
+  const identity = { versionCode: 73, versionName: '0.18.15' };
+  assert.doesNotThrow(() => validateReleaseTag('v0.18.15', identity, [69, 72]));
+  for (const tag of ['v0.18.14', 'main', 'v0.18.15/extra']) assert.throws(() => validateReleaseTag(tag, identity, [72]), /tag/);
+  assert.throws(() => validateReleaseTag('v0.18.15', identity, [73]), /versionCode/);
+});
+
+test('cloud artifact must belong to the exact tagged source and run', () => {
+  const identity = { packageName: 'fixture', versionName: '1.0.0', versionCode: 1, minSdk: 30 };
+  const manifest = { ...identity, sourceCommit: 'abc', sourceDirty: false, provenance: 'github-actions', build: { repository: 'owner/repo', runId: '123' } };
+  assert.doesNotThrow(() => validateCloudManifest(manifest, identity, 'abc', 'owner/repo', '123'));
+  for (const patch of [{ sourceCommit: 'old' }, { sourceDirty: true }, { versionCode: 2 }, { provenance: 'local-build' }, { build: { repository: 'other/repo', runId: '123' } }, { build: { repository: 'owner/repo', runId: '124' } }]) assert.throws(() => validateCloudManifest({ ...manifest, ...patch }, identity, 'abc', 'owner/repo', '123'), /Artifact/);
+});
+
+test('Java signing properties escape whitespace, line breaks and Unicode', () => {
+  assert.equal(propertyValue(' a:b=c\\d\n中'), '\\ a\\:b\\=c\\\\d\\n\\u4e2d');
+});
+
+test('cloud signing requires complete secrets and retains existing local credentials', () => fixture(async directory => {
+  const environment = { SIGNING_KEYSTORE_BASE64: Buffer.from('fixture').toString('base64'), SIGNING_STORE_PASSWORD: ' secret\n中', SIGNING_KEY_ALIAS: 'alias', SIGNING_KEY_PASSWORD: 'secret' };
+  await assert.rejects(createSigning(directory, {}), /four signing secrets/);
+  await assert.rejects(createSigning(directory, { ...environment, SIGNING_KEYSTORE_BASE64: 'bad base64' }), /base64/);
+  await createSigning(directory, environment);
+  assert.equal(await fs.readFile(path.join(directory, 'Cache/build-output.nosync/project/cloud-signing/release.keystore'), 'utf8'), 'fixture');
+  assert.match(await fs.readFile(path.join(directory, 'keystore.properties'), 'utf8'), /storePassword=\\ secret\\n\\u4e2d/);
+  await assert.rejects(createSigning(directory, environment), /replace/);
+  await removeSigning(directory);
+  await assert.rejects(fs.access(path.join(directory, 'keystore.properties')));
+  await fs.writeFile(path.join(directory, 'keystore.properties'), 'storeFile=local.keystore\n');
+  await assert.rejects(createSigning(directory, environment), /replace/);
+  await removeSigning(directory);
+  assert.equal(await fs.readFile(path.join(directory, 'keystore.properties'), 'utf8'), 'storeFile=local.keystore\n');
 }));

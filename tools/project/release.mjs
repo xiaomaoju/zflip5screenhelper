@@ -109,13 +109,15 @@ export async function prepareRelease() {
     if (await sha256(path.join(stage, name)) !== catalog.sha256) throw new Error('APK changed during preparation');
     const stagedIdentity = inspectApk(path.join(stage, name));
     for (const field of Object.keys(identity)) if (stagedIdentity[field] !== identity[field]) throw new Error('Staged APK identity or signature changed');
-    const manifest = { schemaVersion: 1, ...identity, apkSize: catalog.apkSize, sha256: catalog.sha256, sourceCommit: git(['rev-parse', 'HEAD']), sourceDirty: false, provenance: 'local-build', preparedAt: new Date().toISOString(), tools: { node: process.versions.node, java: process.env.PROJECT_RELEASE_JAVA, gradle: process.env.PROJECT_RELEASE_GRADLE, androidGradlePlugin: process.env.PROJECT_RELEASE_AGP, compileSdk: configured.compileSdk, buildTools: configured.buildTools }, validation: { apkSignature: 'passed', catalog: 'passed', emulator: 'not-recorded', physicalDevice: 'not-recorded' } };
+    const manifest = { schemaVersion: 1, ...identity, apkSize: catalog.apkSize, sha256: catalog.sha256, sourceCommit: git(['rev-parse', 'HEAD']), sourceDirty: false, provenance: process.env.GITHUB_ACTIONS === 'true' ? 'github-actions' : 'local-build', preparedAt: new Date().toISOString(), tools: { node: process.versions.node, java: process.env.PROJECT_RELEASE_JAVA, gradle: process.env.PROJECT_RELEASE_GRADLE, androidGradlePlugin: process.env.PROJECT_RELEASE_AGP, compileSdk: configured.compileSdk, buildTools: configured.buildTools }, validation: { apkSignature: 'passed', catalog: 'passed', emulator: 'not-recorded', physicalDevice: 'not-recorded' } };
+    if (manifest.provenance === 'github-actions') manifest.build = { repository: process.env.GITHUB_REPOSITORY, runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, sourceTag: process.env.GITHUB_REF_NAME };
     await fsp.writeFile(path.join(stage, 'catalog.json'), JSON.stringify(catalog, null, 2) + '\n');
     await fsp.writeFile(path.join(stage, 'release-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-    await fsp.writeFile(path.join(stage, 'RELEASE.md'), `# ${identity.versionName}\n\n${catalog.changelog}\n\nSource: \`${manifest.sourceCommit}\`\n\nAPK signature, identity, size and SHA-256 verified. Device acceptance must be recorded before publication.\n`);
+    const acceptance = manifest.provenance === 'github-actions' ? 'Cloud build intended for prerelease distribution. Emulator and Samsung physical-device acceptance have not been performed. The existing in-app update server has not been changed.' : 'Device acceptance must be recorded before stable publication.';
+    await fsp.writeFile(path.join(stage, 'RELEASE.md'), `# ${identity.versionName}\n\n${catalog.changelog}\n\nSource: \`${manifest.sourceCommit}\`\n\nAPK signature, identity, size and SHA-256 verified. ${acceptance}\n`);
     if (git(['status', '--porcelain']) || git(['rev-parse', 'HEAD']) !== manifest.sourceCommit) throw new Error('Source changed during release preparation');
     await publishDirectory(stage, destination);
-    console.log(`Prepared dist/update-release/${identity.versionCode}/; upload and publication remain manual`);
+    console.log(`Prepared dist/update-release/${identity.versionCode}/; publication is a separate step`);
   } finally {
     if (stage && fs.existsSync(stage)) await fsp.rm(stage, { recursive: true });
     await fsp.rmdir(lock);

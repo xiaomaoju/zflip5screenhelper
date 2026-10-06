@@ -14,13 +14,13 @@
 
 ## 自动检查与 Pages
 
-[CI 工作流](../.github/workflows/ci.yml) 在 main 推送和手动运行时执行：
+[CI 工作流](../.github/workflows/ci.yml) 在 main/版本标签推送和手动运行时执行：
 
 - Windows、macOS、Linux：仓库规则、当前文档链接、网页自包含资源、脚本语法和工程工具测试。
 - Linux：按 Gradle 配置安装 SDK；无签名密钥执行 debug/release 单元测试、Lint 和相关编译，不产生安装包。
 - 全部检查通过且分支为 main：部署本次检查上传的同一网站 artifact。部署权限只授予 Pages 作业，普通检查只有读取权限。
 
-自动化使用固定 Action commit SHA、超时和有限报告保留期限；工具升级单独审查。工作流不上传 APK、签名密钥或本机配置。当前不把正式私钥放到公共 CI，安装包继续在可信本机签名。
+自动化使用固定 Action commit SHA、超时和有限报告保留期限；工具升级单独审查。普通 main 检查不使用私钥，不上传 APK。版本标签的专用作业从 `android-release` 环境 Secrets 取正式签名，发布经过检查的 APK；密钥、本机配置和签名缓存不上传。
 
 main 使用禁止强推和删除的保护（对管理员也生效），同时允许正常推送；不要求 PR，不配置依赖推送前状态的合并门槛。本地未提交的 workflow 不能运行远端验收；首次推送后需要确认各平台执行成功。
 
@@ -31,9 +31,26 @@ main 使用禁止强推和删除的保护（对管理员也生效），同时允
 3. 新版本完整文件在 Cache 中准备，校验后移入最终目录；已有版本目录一律拒绝替换。`verify` 只复核已有版本，不重写它。
 4. 在专用测试环境验收安装与升级；三星窗口路由、锁屏、原生卡片及权限/服务恢复单独确认。将通过/失败/未执行项目写进该版本 RELEASE.md，绑定 APK 哈希，不把用户使用反馈改写为自动测试通过。
 5. 提交可公开的 catalog、版本清单和发布说明。APK 和私钥不进入 Git；版本清单的 sourceCommit 保留实际准备时的源码提交。
-6. 创建指向 sourceCommit 的不可移动发布标签，准备完整资产，再手动发布。GitHub Release 可作为资产副本；现有更新服务器继续按其协议上传并切换 catalog。源代码标签和版本记录提交可以不同，安装包来源以清单记录为准。
+6. 本机生成的包可按现有更新服务器协议上传并切换 catalog。全云端 GitHub 分发按下节执行，标签先指向完成检查的源码，APK 清单绑定该提交。源代码标签和版本记录提交可以不同，安装包来源以清单记录为准。
 
-发布入口不自动上传、创建标签、变更服务器或安装到手机。发布前必须确认实际验收结果、下载文件的大小与 SHA-256、签名证书和更新说明。旧版 APK 持续保留；修复已安装版本时使用更高 versionCode，不重复旧编号。网站故障可以部署已验证的旧提交。
+本机 prepare 入口不自动上传、创建标签、变更服务器或安装到手机；云端标签工作流自动发布 GitHub 预发布包。稳定发布前必须确认实际设备验收结果、下载文件的大小与 SHA-256、签名证书和更新说明。旧版 APK 持续保留；修复已安装版本时使用更高 versionCode，不重复旧编号。网站故障可以部署已验证的旧提交。
+
+## 全云端 GitHub APK
+
+首次配置仓库 Environment `android-release`，部署策略仅允许 `v*` 类型的 tag，保存四个 Environment Secrets：`SIGNING_KEYSTORE_BASE64`（现有正式 keystore 的 base64）、`SIGNING_STORE_PASSWORD`、`SIGNING_KEY_ALIAS`、`SIGNING_KEY_PASSWORD`。保留本机原密钥和独立备份，不新建或替换签名。凭据不写入命令参数、文档、Git 或资产；可通过 GitHub 环境 Secrets 界面或 `gh secret set --env android-release` 的标准输入配置。
+
+日常直接推送 main。需要新的下载包时：
+
+1. 递增 Gradle 的 versionName/versionCode，更新应用内 changelog，提交并推送 main。
+2. 在该提交创建与 versionName 完全相同的标签（例如版本 0.18.15 使用 `v0.18.15`），正常推送标签；不得移动、删除后复用标签或已发布编号。
+3. 标签流水线首先完成三平台工程工具检查和无密钥 Android 编译/单元测试/Lint，然后验证标签版本、编号与 main 祖先关系。
+4. 专用签名作业短暂还原忽略目录下的 keystore 和 keystore.properties，调用同一 `:app:prepareUpdateRelease`；签名作业仅有源码读取权限，并在成功或失败后清理签名文件。
+5. 仅 APK、原样 catalog、release-manifest.json 和 RELEASE.md 组成同次运行 artifact。独立发布作业不使用私钥，重新验证 APK 与官方证书、源码提交、运行 ID 及 Gradle 版本。
+6. 发布作业先创建 GitHub 草稿，上传后重新下载四个文件核对哈希，全部匹配才公开为预发布；不设置为最新稳定版。模拟器/三星真机验收未执行的事实保留在说明和清单中，完成设备验收后才决定稳定发布。
+
+GitHub Releases 提供独立 APK 下载，schema 1 catalog 原样作为核验/自托管附件，其 `apkPath` 仍是现有服务器协议，不是 GitHub 资产地址。本流程不修改应用更新 URL，不上传现有更新服务器，也不触发手机安装。
+
+上传失败时保留草稿和 artifact，使用 Actions 的“重新运行失败作业”重试发布作业；已有草稿资产必须逐字节一致，缺失资产才补传，不允许 clobber。不要重跑签名作业来替换草稿；已公开的版本拒绝重建与覆盖，源码/产物变化使用新编号。完成后从同次 artifact 保存完整目录到 `dist/update-release/<versionCode>/`，提交其中三份公开元数据，APK 留本地或 GitHub。环境 Secrets 轮换只改变后续运行，不改变已发布资产。
 
 ## Git 与资料边界
 

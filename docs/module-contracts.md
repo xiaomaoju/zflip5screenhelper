@@ -4,7 +4,7 @@
 
 ## 配置与在线更新
 
-- 工程检查不依赖正式签名密钥；所有可安装 APK/AAB 仍使用唯一正式签名并在缺失配置时拒绝打包。Gradle 管理版本与依赖，`tools/project/` 校验仓库、网站和真实 APK，版本目录禁止覆盖；单人 main 提交和发布边界见 `docs/engineering-workflow.md`。CI 不使用正式私钥，不发布安装包。
+- 工程检查不依赖正式签名密钥；所有可安装 APK/AAB 仍使用唯一正式签名并在缺失配置时拒绝打包。Gradle 管理版本与依赖，`tools/project/` 校验仓库、网站和真实 APK，版本目录禁止覆盖；单人 main 提交和发布边界见 `docs/engineering-workflow.md`。普通 CI 不使用正式私钥；版本标签通过独立环境执行正式签名，校验同次产物后发布 GitHub 预发布包，签名作业无仓库写权限。
 
 - 根目录 `app-config.json` 仅集中常用可调参数，按 `update`、`defaults`、`appearance`、`motion` 分组，修改后重新构建生效；字段校验与常量生成由 `gradle/app-config.gradle` 管理。新增常用调节项优先接入此文件，不要求所有配置集中：包名/版本/SDK/依赖留在 Gradle，固定网格与安全约束、内部缓存上限和算法细节留在所属模块，签名密钥独立保存。用户已保存的偏好优先于 `defaults`；共享样式类继续负责计算及双宿主适配，生成常量/资源不作为第二份配置源。使用说明见 `docs/app-configuration.md`。
 

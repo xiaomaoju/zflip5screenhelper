@@ -10,6 +10,10 @@
 | `node tools/project/site.mjs assemble Cache/build-output.nosync/project/pages` | 在全新目录组装网站，保留旧外框链接 |
 | `node tools/project/check.mjs sdk-packages` | 从 Gradle 读取 SDK 版本，联网读取 Google 官方 schema 4 目录解析实际包名（含 major.0 格式）；缺包或目录失败明确报错 |
 | `node tools/project/release.mjs verify dist/update-release/72` | 通过官方 SDK 检查真实 APK、catalog 和版本清单 |
+| `node tools/project/cloud-release.mjs preflight` | 仅标签 CI：检查版本递增、标签与 Gradle 一致、main 祖先及发布状态 |
+| `node tools/project/cloud-release.mjs publish` | 仅标签 CI：核验同次运行四份公开文件、草稿上传及下载哈希，公开 GitHub 预发布 |
+
+`signing.mjs create/remove` 是标签签名作业的内部入口，从四个 Environment Secrets 还原受限权限的临时签名文件，拒绝替换既有本机配置；失败及结束时清理。普通仓库检查和发布作业均不读取签名 Secrets。全云端操作及故障恢复见 [工程流程](../../docs/engineering-workflow.md#全云端-github-apk)。
 
 APK 核验要求 `ANDROID_HOME`（或 `ANDROID_SDK_ROOT`）、JDK 17 和 Gradle 声明的 Build Tools。Node 脚本通过参数数组调用 `aapt` 与 `java -jar apksigner.jar`，不调用任意 shell，不打印私钥或密码。
 

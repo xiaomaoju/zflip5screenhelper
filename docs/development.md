@@ -91,6 +91,6 @@ adb -s <TEST_EMULATOR_SERIAL> shell am instrument -w -e scenario app-update io.g
 | `dist/` | `html/` 静态网站、`开发设计/` 历史资料、标准设备框及版本交付；公开 catalog/清单/说明入库，APK 独立分发；`开发设计/readme-gallery/` 的展示图片入库 |
 | `tools/` | 设备外框、macOS 带框投屏工具和独立通知测试 App 源码 |
 | `tools/project/` | 跨平台工程检查、网页组装、真实 APK 验证及正式版本准备 |
-| `.github/workflows/ci.yml` | main 自动检查及检查通过后的 Pages 部署 |
+| `.github/workflows/ci.yml` | main 自动检查/Pages 部署；版本标签检查、正式签名打包及 GitHub 预发布 |
 | `.agents/`、`AGENTS.md` | 项目协作与设置界面设计规则 |
 | `Cache/` | 被 Git 忽略的本机工具、构建产物及临时验证资料 |
