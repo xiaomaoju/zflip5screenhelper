@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 76,
+  "versionName": "0.18.18",
+  "minSdk": 30,
+  "certificateSha256": "d97b13019c1e7bab2883055c5e150eb43e24228e63181dcd94e7dc71bdacdb22",
+  "apkSize": 20440509,
+  "sha256": "ad78eb92b8fa332b84e4a4cb68f01a8d479b8265f7a992d0578a415fe644fbc5",
+  "sourceCommit": "14cb59902e9fc4a3e339a043e780723a91aef428",
+  "sourceDirty": false,
+  "provenance": "local-build",
+  "preparedAt": "2026-10-06T14:30:34.545Z",
+  "tools": {
+    "node": "25.8.1",
+    "java": "17.0.20.1",
+    "gradle": "9.3.1",
+    "androidGradlePlugin": "Android Gradle Plugin version 9.1.1",
+    "compileSdk": 37,
+    "buildTools": "36.0.0"
+  },
+  "validation": {
+    "apkSignature": "passed",
+    "catalog": "passed",
+    "emulator": "passed: final signed release; app-launch-reuse 32 assertions; launcher-widget 846 assertions",
+    "physicalDevice": "partial: SM-F731U1 Android 16 upgrade installed; three native-card requests resolved target=selected=1 and system accepted launch; final visible-app confirmation pending"
+  }
+}

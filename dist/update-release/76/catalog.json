@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 76,
+  "versionName": "0.18.18",
+  "minSdk": 30,
+  "changelog": "• 修复三星应用兼容缩放使外屏被误判为大屏，导致卡片提示“未找到可用外屏”的问题。\n• 原生卡片和快捷栏由同一个服务入口确定启动目标；问题诊断同时显示应用尺寸与物理模式尺寸。",
+  "apkPath": "releases/76/flipcover-0.18.18.apk",
+  "apkSize": 20440509,
+  "sha256": "ad78eb92b8fa332b84e4a4cb68f01a8d479b8265f7a992d0578a415fe644fbc5"
+}
