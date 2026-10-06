@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 75,
+  "versionName": "0.18.17",
+  "minSdk": 30,
+  "changelog": "• 原生卡片点击应用直接复用快捷栏启动入口，不再主动请求解锁或以中转窗口状态拦截；应用始终指定所选外屏。\n• 应用入口、外屏状态和系统拒绝分别提示实际错误，不再统一提示“请解锁”。\n• 问题诊断可复制本次运行的最近启动记录，记录仅限本机内存、不上传、不保存应用名称。",
+  "apkPath": "releases/75/flipcover-0.18.17.apk",
+  "apkSize": 20440377,
+  "sha256": "e03280e0f32a04c8fc4aeed5b5b7c180a7679b5b414374de2404eca8ecc7ac11"
+}
