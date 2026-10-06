@@ -6,7 +6,7 @@ import { projectRoot, sdkPackages } from './project.mjs';
 import { checkSite, assembleSite, siteDirectory } from './site.mjs';
 import { sha256, validateCatalog, publishDirectory } from './release.mjs';
 import { createSigning, removeSigning, propertyValue } from './signing.mjs';
-import { validateReleaseTag, validateCloudManifest } from './cloud-release.mjs';
+import { validateReleaseTag, validateCloudManifest, releaseByTag } from './cloud-release.mjs';
 
 const cache = path.join(projectRoot, 'Cache/build-output.nosync/project/tests');
 await fs.mkdir(cache, { recursive: true });
@@ -106,6 +106,19 @@ test('cloud artifact must belong to the exact tagged source and run', () => {
   const manifest = { ...identity, sourceCommit: 'abc', sourceDirty: false, provenance: 'github-actions', build: { repository: 'owner/repo', runId: '123' } };
   assert.doesNotThrow(() => validateCloudManifest(manifest, identity, 'abc', 'owner/repo', '123'));
   for (const patch of [{ sourceCommit: 'old' }, { sourceDirty: true }, { versionCode: 2 }, { provenance: 'local-build' }, { build: { repository: 'other/repo', runId: '123' } }, { build: { repository: 'owner/repo', runId: '124' } }]) assert.throws(() => validateCloudManifest({ ...manifest, ...patch }, identity, 'abc', 'owner/repo', '123'), /Artifact/);
+});
+
+test('release lookup finds pending drafts and fails closed on API errors', () => {
+  const draft = { id: 123, draft: true, assets: [] };
+  const command = args => {
+    if (args[1] === 'graphql') return JSON.stringify({ data: { repository: { release: { databaseId: 123 } } } });
+    if (args[1] === 'repos/owner/repo/releases/123') return JSON.stringify(draft);
+    throw new Error('A tag-only REST route cannot find this pending draft');
+  };
+  assert.deepEqual(releaseByTag('owner/repo', 'v1.0.0', command), draft);
+  assert.equal(releaseByTag('owner/repo', 'v1.0.0', () => JSON.stringify({ data: { repository: { release: null } } })), null);
+  assert.throws(() => releaseByTag('owner/repo', 'v1.0.0', () => JSON.stringify({ errors: [{ message: 'denied' }] })), /could not query/);
+  assert.throws(() => releaseByTag('owner/repo', 'v1.0.0', () => { throw new Error('Network unavailable'); }), /Network unavailable/);
 });
 
 test('Java signing properties escape whitespace, line breaks and Unicode', () => {

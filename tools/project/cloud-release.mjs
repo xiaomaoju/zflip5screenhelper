@@ -18,9 +18,15 @@ export function validateCloudManifest(manifest, identity, commit, repository, ru
   for (const field of ['packageName', 'versionName', 'versionCode', 'minSdk']) if (manifest[field] !== identity[field]) throw new Error('Artifact does not match the tagged Gradle identity');
 }
 
-function releaseByTag(repository, tag) {
-  try { return JSON.parse(gh(['api', `repos/${repository}/releases/tags/${tag}`])); }
-  catch (error) { if (String(error.stderr).includes('(HTTP 404)')) return null; throw error; }
+export function releaseByTag(repository, tag, command = gh) {
+  const [owner, name] = repository.split('/');
+  // REST releases/tags cannot find a pending draft. Match the GitHub CLI's
+  // GraphQL lookup, then read the full release and asset list by database ID.
+  const query = 'query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { databaseId } } }';
+  const response = JSON.parse(command(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `tag=${tag}`]));
+  if (response.errors || !response.data?.repository) throw new Error('GitHub could not query the release repository');
+  const release = response.data.repository.release;
+  return release ? JSON.parse(command(['api', `repos/${repository}/releases/${release.databaseId}`])) : null;
 }
 
 async function preflight() {
