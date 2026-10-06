@@ -8,7 +8,7 @@
 | `node --test tools/project/project.test.mjs` | 资源遗漏、脚本错误、目录越界、校验值和版本防覆盖的负向检查 |
 | `node tools/project/site.mjs check` | 独立静态网站检查 |
 | `node tools/project/site.mjs assemble Cache/build-output.nosync/project/pages` | 在全新目录组装网站，保留旧外框链接 |
-| `node tools/project/check.mjs sdk-packages` | 从 Gradle 的唯一配置读取 CI 所需 SDK 包，不维护第二份版本 |
+| `node tools/project/check.mjs sdk-packages` | 从 Gradle 读取 SDK 版本，联网读取 Google 官方 schema 4 目录解析实际包名（含 major.0 格式）；缺包或目录失败明确报错 |
 | `node tools/project/release.mjs verify dist/update-release/72` | 通过官方 SDK 检查真实 APK、catalog 和版本清单 |
 
 APK 核验要求 `ANDROID_HOME`（或 `ANDROID_SDK_ROOT`）、JDK 17 和 Gradle 声明的 Build Tools。Node 脚本通过参数数组调用 `aapt` 与 `java -jar apksigner.jar`，不调用任意 shell，不打印私钥或密码。

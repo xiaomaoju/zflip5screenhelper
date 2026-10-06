@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { projectRoot, androidIdentity } from './project.mjs';
+import { projectRoot, androidIdentity, sdkPackages, sdkRepositoryUrl } from './project.mjs';
 import { checkSite } from './site.mjs';
 
 try {
   if (process.argv[2] === 'sdk-packages') {
-    const identity = androidIdentity();
-    console.log(`platforms;android-${identity.compileSdk}\nbuild-tools;${identity.buildTools}`);
+    const response = await fetch(sdkRepositoryUrl, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw new Error(`Official SDK repository returned HTTP ${response.status}`);
+    console.log(sdkPackages(await response.text()).join('\n'));
   } else {
     const git = args => execFileSync('git', args, { cwd: projectRoot, encoding: 'utf8' });
     const tracked = git(['ls-files', '-z']).split('\0').filter(Boolean);

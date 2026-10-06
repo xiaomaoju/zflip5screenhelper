@@ -2,12 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { projectRoot } from './project.mjs';
+import { projectRoot, sdkPackages } from './project.mjs';
 import { checkSite, assembleSite, siteDirectory } from './site.mjs';
 import { sha256, validateCatalog, publishDirectory } from './release.mjs';
 
 const cache = path.join(projectRoot, 'Cache/build-output.nosync/project/tests');
 await fs.mkdir(cache, { recursive: true });
+
+test('SDK packages resolve both legacy and major/minor repository names', () => {
+  const repository = '<remotePackage path="platforms;android-36"><remotePackage path="platforms;android-37.0"><remotePackage path="platforms;android-37.2"><remotePackage path="build-tools;36.0.0">';
+  assert.deepEqual(sdkPackages(repository, { compileSdk: 36, buildTools: '36.0.0' }), ['platforms;android-36', 'build-tools;36.0.0']);
+  assert.deepEqual(sdkPackages(repository, { compileSdk: 37, buildTools: '36.0.0' }), ['platforms;android-37.0', 'build-tools;36.0.0']);
+});
+
+test('SDK resolution refuses absent releases and preview-only packages', () => {
+  for (const repository of ['<remotePackage path="platforms;android-37.0">', '<remotePackage path="platforms;android-37.2-beta1"><remotePackage path="build-tools;36.0.0">']) assert.throws(() => sdkPackages(repository, { compileSdk: 37, buildTools: '36.0.0' }), /does not contain/);
+});
 
 async function fixture(run) {
   const directory = await fs.mkdtemp(path.join(cache, 'case-'));

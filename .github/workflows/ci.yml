@@ -52,14 +52,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
+          cmdline-tools-version: '15859902' # 22.0, supports SDK repository schema 4
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - name: Install SDK versions declared by Gradle
         shell: bash
         run: |
-          mapfile -t packages < <(node tools/project/check.mjs sdk-packages)
+          mkdir -p Cache/build-output.nosync/project
+          node tools/project/check.mjs sdk-packages > Cache/build-output.nosync/project/sdk-packages.txt
+          mapfile -t packages < Cache/build-output.nosync/project/sdk-packages.txt
           sdkmanager "${packages[@]}"
       - name: Check Android without signing credentials
         run: ./gradlew --no-daemon :app:compileDebugJavaWithJavac :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:testReleaseUnitTest :app:lintRelease
