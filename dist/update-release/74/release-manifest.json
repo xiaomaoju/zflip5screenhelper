@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 74,
+  "versionName": "0.18.16",
+  "minSdk": 30,
+  "certificateSha256": "d97b13019c1e7bab2883055c5e150eb43e24228e63181dcd94e7dc71bdacdb22",
+  "apkSize": 20423777,
+  "sha256": "05995d5c8f9c0a6da5d038119c4f103d46e34d6aeab6ae599b85f0786aebb69a",
+  "sourceCommit": "09dd3887b72cea1ca00f73f100a8a0d9e0d69723",
+  "sourceDirty": false,
+  "provenance": "github-actions",
+  "preparedAt": "2026-10-06T12:52:38.301Z",
+  "tools": {
+    "node": "24.21.0",
+    "java": "17.0.20.1",
+    "gradle": "9.3.1",
+    "androidGradlePlugin": "Android Gradle Plugin version 9.1.1",
+    "compileSdk": 37,
+    "buildTools": "36.0.0"
+  },
+  "validation": {
+    "apkSignature": "passed",
+    "catalog": "passed",
+    "emulator": "not-recorded",
+    "physicalDevice": "not-recorded"
+  },
+  "build": {
+    "repository": "xiaomaoju/zflip5screenhelper",
+    "runId": "37465863540",
+    "runAttempt": "1",
+    "sourceTag": "v0.18.16"
+  }
+}

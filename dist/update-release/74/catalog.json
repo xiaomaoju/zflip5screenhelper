@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "packageName": "io.github.flipcover.controls",
+  "versionCode": 74,
+  "versionName": "0.18.16",
+  "minSdk": 30,
+  "changelog": "• 正式签名、构建检查与 APK 校验接入云端发布流程，保留现有功能和配置。\n• GitHub 提供独立下载；应用内更新继续使用原更新服务器。",
+  "apkPath": "releases/74/flipcover-0.18.16.apk",
+  "apkSize": 20423777,
+  "sha256": "05995d5c8f9c0a6da5d038119c4f103d46e34d6aeab6ae599b85f0786aebb69a"
+}

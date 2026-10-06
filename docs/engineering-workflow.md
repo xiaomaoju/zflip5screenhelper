@@ -42,7 +42,7 @@ main 使用禁止强推和删除的保护（对管理员也生效），同时允
 日常直接推送 main。需要新的下载包时：
 
 1. 递增 Gradle 的 versionName/versionCode，更新应用内 changelog，提交并推送 main。
-2. 在该提交创建与 versionName 完全相同的标签（例如版本 0.18.15 使用 `v0.18.15`），正常推送标签；不得移动、删除后复用标签或已发布编号。
+2. 在该提交创建与 versionName 完全相同的标签（例如下一版本 0.18.17 使用 `v0.18.17`），正常推送标签；不得移动、删除后复用标签或已发布编号。
 3. 标签流水线首先完成三平台工程工具检查和无密钥 Android 编译/单元测试/Lint，然后验证标签版本、编号与 main 祖先关系。
 4. 专用签名作业短暂还原忽略目录下的 keystore 和 keystore.properties，调用同一 `:app:prepareUpdateRelease`；签名作业仅有源码读取权限，并在成功或失败后清理签名文件。
 5. 仅 APK、原样 catalog、release-manifest.json 和 RELEASE.md 组成同次运行 artifact。独立发布作业不使用私钥，重新验证 APK 与官方证书、源码提交、运行 ID 及 Gradle 版本。

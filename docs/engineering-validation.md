@@ -38,3 +38,23 @@
 首次远端执行暴露了旧 Android Action 默认安装已移除的 `tools`，以及旧 SDK 目录格式无法识别 `platforms;android-37.0`。修复独立提交，保留失败记录：明确只安装 platform-tools，固定新版 Action 与支持 schema 4 的官方 command-line tools；专用 SDK CLI 从 Google 官方目录解析 Gradle 声明版本的实际包名。两项解析回归测试覆盖整数/major.0 命名与缺包/预览包拒绝，应用 compileSdk 37、targetSdk 36 未修改。
 
 远端证据补齐了工程工具跨平台执行和 Linux Android 构建检查；不代表 Windows/macOS Android 构建或设备功能验收。模拟器 UI、三星物理真机、新 APK 上传/安装/正式发布仍未执行。
+
+## 全云端 APK 验收 · 2026-10-06
+
+用户后续选择全云端生成及 GitHub 分发。原稳定基线 0.18.14 / 72 保留；新的 [0.18.16 / 74 预发布](https://github.com/xiaomaoju/zflip5screenhelper/releases/tag/v0.18.16) 已由云端生成、签名并公开下载，应用运行功能与现有更新地址未修改。版本身份及应用内更新说明随包递增。
+
+源码标签 `v0.18.16` 指向 `09dd3887b72cea1ca00f73f100a8a0d9e0d69723`；[标签运行 37465863540](https://github.com/xiaomaoju/zflip5screenhelper/actions/runs/37465863540) 的六个必需作业全部成功，Pages 作业按标签规则跳过。该源码的 [main 运行 37465704007](https://github.com/xiaomaoju/zflip5screenhelper/actions/runs/37465704007) 检查与 Pages 部署也成功。
+
+| 范围 | 实际结果 |
+| --- | --- |
+| 工程检查 | Windows、macOS、Ubuntu 仓库检查及 15 项工具测试通过 |
+| Android | Linux 干净 runner 无密钥编译、debug/release 单元测试、Lint 通过；签名作业另完成 Release 构建、单元测试和 Lint |
+| 签名 | 现有正式密钥通过 android-release Environment Secrets 使用；同一正式证书 `d97b13019c1e7bab2883055c5e150eb43e24228e63181dcd94e7dc71bdacdb22` 核验通过，签名文件清理步骤成功 |
+| 发布边界 | 签名作业只有读取权限；无私钥的独立发布作业核验同次 artifact 的 APK、catalog、清单和说明，四份文件上传并下载复核后公开预发布 |
+| 公开产物 | APK 大小 20,423,777 字节，SHA-256 `05995d5c8f9c0a6da5d038119c4f103d46e34d6aeab6ae599b85f0786aebb69a`；包名与最低 SDK 保持不变 |
+| 本地保存 | 同次云端 artifact 原样保存到 dist/update-release/74，本地官方 aapt/apksigner 再次核验通过；公开元数据沿用产物原字节 |
+| 版本保护 | v* 标签禁止更新/删除且无 bypass；环境只允许 tag 使用签名 Secrets，已公开资产拒绝覆盖 |
+
+云端验收前独立复核发现草稿查询缺陷：REST tags 路由不能找到待发布草稿，修复改用官方 GitHub CLI 同款 GraphQL 查询及 REST ID 读取，加入缺失/草稿/API错误回归。首次标签 `v0.18.15` 的 [运行 37464872394](https://github.com/xiaomaoju/zflip5screenhelper/actions/runs/37464872394) 随后在签名前被干净工作区保护拦截：旧 gradlew.bat 的 CRLF index 不符合 text/eol 规则。该标签保留，未生成或发布 APK；仅规范化 Wrapper index，工作区仍按 Windows CRLF 检出，代码内容逐字相同，并增加日常检查。独立全新克隆及真实 v0.18.16 云端运行均确认修复。
+
+本次完成 GitHub 预发布，未进行三星真机/模拟器安装与功能验收，未切换原自托管更新服务器。设备检查不由自动编译代替，因此没有将新包设为最新稳定版。后续安装与稳定发布仍须绑定这一个 APK 的哈希记录实际设备结果。
