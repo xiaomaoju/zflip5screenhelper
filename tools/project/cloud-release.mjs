@@ -15,11 +15,13 @@ export function validateReleaseTag(tag, identity, previousCodes) {
 
 export function previousVersionCodes(currentTag, command = git) {
   const tags = command(['tag', '--list', 'v*']).split('\n').filter(tag => /^v\d+\.\d+\.\d+$/.test(tag) && tag !== currentTag);
-  return ['HEAD^', ...tags].map(ref => {
+  const history = command(['log', '--all', '--format=', '--name-only', '--', 'dist/update-release']);
+  const recorded = [...history.matchAll(/^dist\/update-release\/(\d+)\/catalog\.json$/gm)].map(match => Number(match[1]));
+  return [...recorded, ...tags.map(ref => {
     const match = command(['show', `${ref}:app/build.gradle`]).match(/versionCode\s+(\d+)/);
     if (!match) throw new Error(`Cannot read versionCode from ${ref}`);
     return Number(match[1]);
-  });
+  })];
 }
 
 export function validateCloudManifest(manifest, identity, commit, repository, runId) {

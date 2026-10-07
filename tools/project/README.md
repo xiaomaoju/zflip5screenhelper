@@ -17,7 +17,7 @@
 
 APK 核验要求 `ANDROID_HOME`（或 `ANDROID_SDK_ROOT`）、JDK 17 和 Gradle 声明的 Build Tools。Node 脚本通过参数数组调用 `aapt` 与 `java -jar apksigner.jar`，不调用任意 shell，不打印私钥或密码。
 
-正式证书的公开 SHA-256 指纹由 `release-certificate.sha256` 保存，APK 校验不依赖本地历史交付目录；这不是私钥。云端版本递增检查读取 Git 的上一提交和版本标签，不扫描被忽略的产物目录。
+正式证书的公开 SHA-256 指纹由 `release-certificate.sha256` 保存，APK 校验不依赖本地历史交付目录；这不是私钥。云端版本递增检查读取 Git 历史中的旧交付编号和版本标签，不扫描被忽略的产物目录，也不把同一版本的源码或文档提交视为已发布版本。
 
 正式打包只使用 `./gradlew :app:prepareUpdateRelease`（Windows 为 `gradlew.bat`）。Gradle 先构建 Release、执行单元测试和 Lint，再调用 `release.mjs prepare`；不绕过 Gradle 单独调用 prepare 来分发旧构建缓存。已有版本目录拒绝覆盖，复核使用 verify。
 
