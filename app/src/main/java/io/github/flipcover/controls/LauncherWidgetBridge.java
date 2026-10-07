@@ -117,6 +117,7 @@ final class LauncherWidgetBridge implements DisplayManager.DisplayListener {
         if (displayId != selected.getDisplayId()) { reset(); displayId = selected.getDisplayId(); }
         if (selected.getState() != Display.STATE_ON) { stop(); reset(); return; }
         if (!listening) { listening = true; catalog.observe(apps); }
+        if (CoverService.instance != null && CoverService.instance.deferNativeCardUpdate(selected)) return;
         shownIcons.clear();
         for (int id : cards) {
             State state = state(id);

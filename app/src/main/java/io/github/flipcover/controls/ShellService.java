@@ -33,6 +33,7 @@ public final class ShellService extends IShellService.Stub {
                 case "brightness", "brightness_read" -> brightness(displayId, value, operation.equals("brightness"));
                 case "states" -> states();
                 case "system_controls" -> systemControls(value);
+                case "location" -> location(displayId, value);
                 case "wifi_details" -> wifiDetails(value);
                 case "connectivity_states", "nfc_details", "hotspot_details", "nfc", "hotspot", "nfc_secure", "hotspot_config" -> connectivity().execute(operation, displayId, value, component);
                 case "wifi", "bluetooth", "data", "airplane", "dnd" -> switchSetting(operation, value);
@@ -153,6 +154,21 @@ public final class ShellService extends IShellService.Stub {
         Output status = run("cmd", "wifi", "status"), saved = run("cmd", "wifi", "list-networks"), nearby = run("cmd", "wifi", "list-scan-results");
         JSONObject data = new JSONObject().put("status", status.ok() ? status.text : "").put("saved", saved.ok() ? saved.text : "").put("nearby", nearby.ok() ? nearby.text : "").put("scanMessage", scanMessage);
         return reply(status.ok() || saved.ok() || nearby.ok(), "Wi-Fi 读取完成", data.toString());
+    }
+    private String location(int display, int value) throws Exception {
+        String user = String.valueOf(ownerUid / 100000);
+        SystemLocation.Result result = SystemLocation.change(value, new SystemLocation.Access() {
+            @Override public int read() throws Exception {
+                activeSecondaryDisplay(display);
+                Output output = run("cmd", "location", "is-location-enabled", "--user", user);
+                return SystemLocation.state(output.ok(), output.text);
+            }
+            @Override public boolean write(boolean enabled) throws Exception {
+                activeSecondaryDisplay(display);
+                return run("cmd", "location", "set-location-enabled", String.valueOf(enabled), "--user", user).ok();
+            }
+        });
+        return reply(result.ok(), result.message(), String.valueOf(result.state()));
     }
     private String switchSetting(String operation, int value) throws Exception {
         if (value != 0 && value != 1) throw new IllegalArgumentException("Expected 0 or 1");

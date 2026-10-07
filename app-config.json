@@ -34,7 +34,7 @@
       "chromeStyle": "contrast"
     },
     "controlCenter": {
-      "actions": ["wifi", "bluetooth", "data", "torch", "dnd", "airplane", "rotation", "screenshot", "lock", "media", "apps", "system_controls"],
+      "actions": ["wifi", "bluetooth", "data", "location", "torch", "dnd", "airplane", "rotation", "screenshot", "lock", "media", "apps", "system_controls"],
       "columns": 4,
       "density": 1,
       "labels": true,

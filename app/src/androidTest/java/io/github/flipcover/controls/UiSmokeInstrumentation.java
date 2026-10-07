@@ -39,6 +39,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
             if (!android.os.Build.HARDWARE.equals("ranchu") && !android.os.Build.HARDWARE.equals("goldfish")) throw new IllegalStateException("Run only on a disposable Android emulator");
             if (scenario.equals("app-launch-reuse")) { result.putString("result", new AppLaunchChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("lock-wake")) { result.putString("result", new LockWakeChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("clock-dock")) { result.putString("result", new ClockDockChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("shortcut-apps")) { if (expectedRotation >= 0) { require(getUiAutomation().setRotation(expectedRotation), "shortcut application settings rotation accepted"); SystemClock.sleep(500); waitForIdleSync(); } result.putString("result", new SettingsVisibilityChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("status-apps")) { if (expectedRotation >= 0) require(getUiAutomation().setRotation(expectedRotation), "status application settings rotation accepted"); result.putString("result", new StatusAppChecks(this).run()); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("six-key")) { result.putString("result", new SixKeyChecks(this, expectedRotation).run()); finish(Activity.RESULT_OK, result); return; }
@@ -122,6 +123,7 @@ public final class UiSmokeInstrumentation extends Instrumentation {
             if (scenario.equals("status-safe-area")) { result.putString("result", StatusSafeAreaChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-settings")) { result.putString("result", "PASS: panel settings; " + PanelSettingsChecks.run(getTargetContext()) + " assertions"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-layout")) { result.putString("result", PanelLayoutChecks.run(this)); finish(Activity.RESULT_OK, result); return; }
+            if (scenario.equals("location")) { checkLocation(); result.putString("result", "PASS: location catalog, configuration, observer and rendered controls; " + assertions + " assertions; no privileged toggle"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("panel-features")) { checkPanelFeatures(); result.putString("result", "PASS: panel feature UI and configuration; " + assertions + " assertions"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("system-controls")) { checkSystemControls(); result.putString("result", "PASS: system control center UI and migration; " + assertions + " assertions"); finish(Activity.RESULT_OK, result); return; }
             if (scenario.equals("system-controls-toast")) { checkSystemControlToast(); result.putString("result", "PASS: native system control Toast; " + assertions + " assertions"); finish(Activity.RESULT_OK, result); return; }
@@ -188,6 +190,41 @@ public final class UiSmokeInstrumentation extends Instrumentation {
         waitForIdleSync();
     }
     private void chooseSetting(String tag, String value) { clickPanelSetting(tag); clickPanelSetting("settings-choice-" + value); }
+    private void checkLocation() throws Exception {
+        // Let Application.onCreate finish its one-time migrations before resetting the fixture.
+        open("main"); new Prefs(getTargetContext()).data.edit().clear().commit();
+        Prefs prefs = new Prefs(getTargetContext()); prefs.migrateInputTile();
+        require(prefs.actions("panel").contains("location"), "fresh control center includes location");
+        for (String kind : new String[]{"dock", "panel", "favorites"}) {
+            prefs.saveActions(kind, List.of("back"));
+            require(new Prefs(getTargetContext()).actions(kind).equals(List.of("back")), kind + " saved order is not automatically changed");
+            prefs.saveActions(kind, List.of("location", "back"));
+            require(new Prefs(getTargetContext()).actions(kind).equals(List.of("location", "back")), kind + " accepts shared location action");
+        }
+        require(SystemLocation.enabled(getTargetContext()) != null, "master switch readable without location permission");
+        org.json.JSONObject exported = ((MainActivity) activity).exportConfigurationData();
+        for (String kind : new String[]{"dock", "panel", "favorites"}) prefs.saveActions(kind, List.of("back"));
+        ((MainActivity) activity).applyConfigurationData(exported);
+        for (String kind : new String[]{"dock", "panel", "favorites"}) require(prefs.actions(kind).equals(List.of("location", "back")), kind + " survives configuration round trip");
+        renderPanel("controls", prefs);
+        runOnMainSync(() -> {
+            View tile = activity.findViewById(android.R.id.content).findViewWithTag("control-location");
+            require(tile != null && tile.getWidth() > 0 && tile.getHeight() > 0, "location tile is laid out");
+            require(tile.getContentDescription().toString().startsWith("定位"), "location tile accessible name");
+            previewOwner.showDetails("location", tile);
+        });
+        waitForIdleSync(); SystemClock.sleep(300);
+        runOnMainSync(() -> {
+            DetailSheet sheet = activity.findViewById(android.R.id.content).findViewWithTag("detail-sheet");
+            require(sheet.findViewWithTag("detail-switch-location") != null, "location details contain a switch");
+            require(findText(sheet, "影响整台手机") != null && findText(sheet, "系统定位设置") != null, "scope and system settings entry are visible");
+            View card = sheet.findViewWithTag("detail-card");
+            require(card.getX() >= 0 && card.getY() >= 0 && card.getRight() <= sheet.getWidth() && card.getBottom() <= sheet.getHeight(), "location details fit the safe frame");
+            int[] calls = {0}; SystemLocation observation = new SystemLocation(getTargetContext(), () -> calls[0]++);
+            require(calls[0] == 1, "subscription reads initial state"); observation.close(); observation.close();
+        });
+        screenshot("location-detail"); runOnMainSync(previewOwner::dismissDetails); screenshot("location-grid");
+    }
     private void checkPanelFeatures() throws Exception {
         Prefs prefs = new Prefs(getTargetContext()); prefs.data.edit().clear().commit(); open("panel");
         require(activity.findViewById(android.R.id.content).findViewWithTag("panel-settings-preview") == null, "preview initially collapsed");

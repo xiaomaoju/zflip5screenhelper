@@ -212,8 +212,10 @@ public final class MainActivity extends Activity {
         EditText search = search("搜索设置", "settings-query"); SettingsUi.add(body, search); search.setVisibility(pageState.getBoolean("settings-query-visible", false) || search.length() > 0 ? View.VISIBLE : View.GONE);
         LinearLayout results = SettingsUi.column(this); results.setTag("settings-results"); body.addView(results);
         LinearLayout footer = SettingsUi.column(this); footer.setTag("settings-footer"); footer.setGravity(Gravity.CENTER_HORIZONTAL); footer.setPadding(Ui.dp(this, 14), Ui.dp(this, 12), Ui.dp(this, 14), 0); body.addView(footer);
-        Button quickUpdate = SettingsUi.button(this, getString(R.string.update_check), () -> { about(); updateSettings.check(); }); quickUpdate.setTag("settings-check-update"); quickUpdate.setTextSize(14); quickUpdate.setBackground(Ui.ripple(this, 0, 12)); footer.addView(quickUpdate, new LinearLayout.LayoutParams(-2, -2));
-        TextView support = SettingsUi.text(this, getString(R.string.settings_support), 14, SettingsUi.MUTED); support.setTag("settings-support"); support.setTextSize(12); support.setGravity(Gravity.CENTER); support.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 8)); footer.addView(support, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout footerActions = SettingsUi.row(this); footerActions.setGravity(Gravity.CENTER); footer.addView(footerActions, new LinearLayout.LayoutParams(-1, -2));
+        Button quickUpdate = SettingsUi.button(this, getString(R.string.update_check), () -> { about(); updateSettings.check(); }); quickUpdate.setTag("settings-check-update"); quickUpdate.setTextSize(14); quickUpdate.setBackground(Ui.ripple(this, 0, 12)); footerActions.addView(quickUpdate, new LinearLayout.LayoutParams(0, -2, 1));
+        Button compatibility = SettingsUi.button(this, getString(R.string.settings_compatibility), () -> showRoute("launch_compatibility")); compatibility.setTag("settings-compatibility"); compatibility.setTextSize(14); compatibility.setBackground(Ui.ripple(this, 0, 12)); footerActions.addView(compatibility, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView support = SettingsUi.text(this, "版本 " + BuildConfig.VERSION_NAME + " · " + getString(R.string.settings_support), 14, SettingsUi.MUTED); support.setTag("settings-support"); support.setTextSize(12); support.setGravity(Gravity.CENTER); support.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 8)); footer.addView(support, new LinearLayout.LayoutParams(-1, -2));
         Runnable filter = () -> {
             results.removeAllViews(); String query = search.getText().toString().trim().toLowerCase(java.util.Locale.ROOT); footer.setVisibility(query.isEmpty() ? View.VISIBLE : View.GONE);
             if (query.isEmpty()) {
@@ -433,6 +435,7 @@ public final class MainActivity extends Activity {
     }
     private void launchCompatibility() {
         begin("兼容性说明", "launch_compatibility"); LinearLayout info = group("launch-compatibility-info");
+        info.addView(SettingsUi.settingRow(this, 0, getString(R.string.settings_tested_devices), getString(R.string.settings_tested_devices_description), null));
         info.addView(SettingsUi.settingRow(this, 0, "阿田手势后台", "开启后，阿田自用或阿田辅助可能提示“打开手机以继续”；请在内屏打开阿田自用。", null));
         info.addView(SettingsUi.settingRow(this, 0, "原生卡片编辑", "请从快捷栏打开应用中心，编辑应用和文件夹。", null));
         info.addView(SettingsUi.settingRow(this, 0, "系统最近任务", "可能显示在内屏；查看外屏任务请使用“外屏多任务”。", null));

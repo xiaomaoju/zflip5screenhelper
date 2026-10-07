@@ -48,7 +48,7 @@ final class AppLauncherStyle {
     static int dockIconSize(float cellWidth) { return Math.min(DOCK_ICON, Math.max(DOCK_MIN_ICON, Math.round(cellWidth) - 2 * APP_PADDING)); }
     static int folderMemberIconSize(float cellWidth) { return Math.max(APP_MIN_ICON, Math.min(FOLDER_MEMBER_ICON, (int) cellWidth - 2 * APP_PADDING)); }
     static int dockHeight() { return DOCK_ROW + DOCK_TOP; }
-    record HubGeometry(int bodyHeight, int catalogLeft, int catalogWidth, int railLeft, int railWidth, int headerHeight, int summaryHeight, int pagerHeight, int gridWidth, int gridHeight, int railListHeight, int dockHeight) { }
+    record HubGeometry(int bodyHeight, int catalogLeft, int catalogWidth, int railLeft, int railWidth, int headerHeight, int summaryHeight, int pagerHeight, int gridWidth, int gridHeight, int railListHeight, int dockHeight, int bodyTop) { }
     static int railOffset(float density, boolean right) { int inset = Math.round(RAIL_GAP * density) / 2; return right ? -inset : inset; }
     static android.graphics.Rect searchBounds(int width, float density) {
         int reserve = Math.round((HUB_SORT_WIDTH + RAIL_GAP) * density);
@@ -56,11 +56,15 @@ final class AppLauncherStyle {
         return new android.graphics.Rect(left, 0, left + field, Math.round(HUB_HEADER_HEIGHT * density));
     }
     static HubGeometry hubGeometry(int width, int height, float density, boolean rightRail, boolean buttonPaging) {
+        return hubGeometry(width, height, density, rightRail, buttonPaging, 0);
+    }
+    static HubGeometry hubGeometry(int width, int height, float density, boolean rightRail, boolean buttonPaging, int topSpace) {
         int inset = Math.round(SURFACE_INSET * density); width = Math.max(1, width - 2 * inset); height = Math.max(1, height - 2 * inset);
         int rail = Math.round(RAIL_WIDTH * density), gap = Math.round(RAIL_GAP * density), paddingX = Math.round(PANEL_PADDING_X * density), paddingY = Math.round(PANEL_PADDING_Y * density);
-        int dock = Math.round(DOCK_ROW * density) + Math.round(DOCK_TOP * density), body = Math.max(0, height - dock), catalog = Math.max(0, width - rail - gap);
+        int dock = Math.round(DOCK_ROW * density) + Math.round(DOCK_TOP * density); topSpace = Math.max(0, Math.min(topSpace, height - dock));
+        int body = Math.max(0, height - dock - topSpace), catalog = Math.max(0, width - rail - gap);
         int header = Math.round(HUB_HEADER_HEIGHT * density), summary = Math.round(HUB_SUMMARY_HEIGHT * density), pager = Math.round((buttonPaging ? BUTTON_PAGER_HEIGHT : WORKSPACE_PAGER_HEIGHT) * density);
-        return new HubGeometry(body, inset + (rightRail ? 0 : rail + gap), catalog, inset + (rightRail ? width - rail : 0) + railOffset(density, rightRail), rail, header, summary, pager, Math.max(0, catalog - 2 * paddingX), Math.max(0, body - 2 * paddingY - header - summary - pager), Math.max(0, body - Math.round((RAIL_TOOLS_HEIGHT + RAIL_GAP + 2 * RAIL_FRAME_PADDING) * density)), dock);
+        return new HubGeometry(body, inset + (rightRail ? 0 : rail + gap), catalog, inset + (rightRail ? width - rail : 0) + railOffset(density, rightRail), rail, header, summary, pager, Math.max(0, catalog - 2 * paddingX), Math.max(0, body - 2 * paddingY - header - summary - pager), Math.max(0, body - Math.round((RAIL_TOOLS_HEIGHT + RAIL_GAP + 2 * RAIL_FRAME_PADDING) * density)), dock, inset + topSpace / 2);
     }
     static int folderSide(android.content.Context context, int width, int height) { return Math.max(1, Math.min(width, height) - 2 * Ui.dp(context, FOLDER_TILE_INSET)); }
     static int cellWidth(int width, int columns) { return Math.max(1, width / columns); }

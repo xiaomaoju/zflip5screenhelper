@@ -83,7 +83,12 @@ final class LauncherWidgetViews {
         boolean hubLayout = display.getRotation() != android.view.Surface.ROTATION_0;
         WidgetSafeArea.Frame frame = hubLayout ? CoverApp.widgets(context).launcherFrame(widget) : CoverApp.widgets(context).frame(widget);
         float density = context.getResources().getDisplayMetrics().density; boolean right = prefs.handSide().equals("right");
-        AppLauncherStyle.HubGeometry hubGeometry = AppLauncherStyle.hubGeometry(Ui.dp(context, frame.width()), Ui.dp(context, frame.height()), density, right, true);
+        int topSpace = 0;
+        if (display.getRotation() == android.view.Surface.ROTATION_180) {
+            WidgetSafeArea.Frame available = CoverApp.widgets(context).launcherFrame(widget, true);
+            topSpace = Math.max(0, Ui.dp(context, frame.top()) - Ui.dp(context, available.top())); frame = available;
+        }
+        AppLauncherStyle.HubGeometry hubGeometry = AppLauncherStyle.hubGeometry(Ui.dp(context, frame.width()), Ui.dp(context, frame.height()), density, right, true, topSpace);
         List<String> pins = prefs.hubPins();
         float headerHeight = hubLayout ? AppLauncherStyle.HUB_HEADER_HEIGHT : dimension(R.dimen.launcher_header_height), pageHeight = dimension(R.dimen.launcher_page_height);
         float dockWidth = frame.width() - (hubLayout ? 2 * AppLauncherStyle.SURFACE_INSET : 2 * AppLauncherStyle.PANEL_PADDING_X), width = frame.width() - 2 * AppLauncherStyle.PANEL_PADDING_X - AppLauncherStyle.RAIL_WIDTH - AppLauncherStyle.RAIL_GAP, height = frame.height() - 2 * AppLauncherStyle.PANEL_PADDING_Y - headerHeight - pageHeight - AppLauncherStyle.dockHeight() - (hubLayout ? AppLauncherStyle.HUB_SUMMARY_HEIGHT : 0);
@@ -115,8 +120,8 @@ final class LauncherWidgetViews {
         geometry(view, R.id.launcher_grid, contentLeft, 0, width, gridHeight);
         geometry(view, R.id.launcher_empty, contentLeft, 0, width, height);
         if (hubLayout) {
-            geometry(view, R.id.launcher_catalog, hubGeometry.catalogLeft() / density, AppLauncherStyle.SURFACE_INSET, hubGeometry.catalogWidth() / density, hubGeometry.bodyHeight() / density);
-            geometry(view, R.id.launcher_rail_panel, hubGeometry.railLeft() / density, AppLauncherStyle.SURFACE_INSET, hubGeometry.railWidth() / density, hubGeometry.bodyHeight() / density);
+            geometry(view, R.id.launcher_catalog, hubGeometry.catalogLeft() / density, hubGeometry.bodyTop() / density, hubGeometry.catalogWidth() / density, hubGeometry.bodyHeight() / density);
+            geometry(view, R.id.launcher_rail_panel, hubGeometry.railLeft() / density, hubGeometry.bodyTop() / density, hubGeometry.railWidth() / density, hubGeometry.bodyHeight() / density);
             view.setViewLayoutHeight(R.id.launcher_summary, AppLauncherStyle.HUB_SUMMARY_HEIGHT, TypedValue.COMPLEX_UNIT_DIP);
             view.setViewVisibility(R.id.launcher_summary, opened == null ? View.VISIBLE : View.GONE);
             view.setViewVisibility(R.id.launcher_search_field, opened == null ? View.VISIBLE : View.GONE);

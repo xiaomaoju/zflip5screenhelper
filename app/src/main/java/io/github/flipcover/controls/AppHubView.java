@@ -578,6 +578,8 @@ final class AppHubView extends PanelSurface {
     void restoreWorkspaceState(WorkspaceState state) { if (state != null) { search.setText(state.query()); grid.restore(state.position()); if (state.folder() != null) post(() -> { if (!disposed && isAttachedToWindow() && expanded) workspaceTools.folder(state.folder()); }); } }
     void workspacePreferencesChanged() { grid.preferencesChanged(); }
     boolean expanded() { return expanded; }
+    private int centeringSpace;
+    void centeringSpace(int pixels) { centeringSpace = Math.max(0, pixels); requestLayout(); }
     void widgetEntry(String operation) {
         if (operation.equals("sort")) showSort();
         else if (operation.equals("search")) { search.requestFocus(); getContext().getSystemService(android.view.inputmethod.InputMethodManager.class).showSoftInput(search, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT); }
@@ -586,8 +588,9 @@ final class AppHubView extends PanelSurface {
         int inset = taskPage == null ? dp(AppLauncherStyle.SURFACE_INSET) : 0;
         if (getPaddingLeft() != inset || getPaddingTop() != inset || getPaddingRight() != inset || getPaddingBottom() != inset) setPadding(inset, inset, inset, inset);
         if (expanded && taskPage == null && MeasureSpec.getMode(widthSpec) == MeasureSpec.EXACTLY && MeasureSpec.getMode(heightSpec) == MeasureSpec.EXACTLY) {
-            AppLauncherStyle.HubGeometry geometry = AppLauncherStyle.hubGeometry(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec), getResources().getDisplayMetrics().density, rightRail, false);
+            AppLauncherStyle.HubGeometry geometry = AppLauncherStyle.hubGeometry(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec), getResources().getDisplayMetrics().density, rightRail, false, centeringSpace);
             LayoutParams body = (LayoutParams) appContent.getLayoutParams(); body.height = geometry.bodyHeight(); body.weight = 0;
+            body.topMargin = geometry.bodyTop() - inset; body.bottomMargin = Math.max(0, MeasureSpec.getSize(heightSpec) - 2 * inset - geometry.dockHeight() - geometry.bodyHeight() - body.topMargin);
             LayoutParams workspace = (LayoutParams) grid.getLayoutParams(); workspace.height = geometry.gridHeight() + geometry.pagerHeight(); workspace.weight = 0;
         }
         super.onMeasure(widthSpec, heightSpec);

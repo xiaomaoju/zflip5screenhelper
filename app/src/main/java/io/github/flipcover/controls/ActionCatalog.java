@@ -28,6 +28,7 @@ public final class ActionCatalog {
         new Action("bluetooth", "蓝牙", R.drawable.ic_ms_bluetooth),
         new Action("external_devices", "外接设备", R.drawable.ic_input_devices),
         new Action("data", "移动数据", R.drawable.ic_ms_swap_vert),
+        new Action("location", "定位", R.drawable.ic_location),
         new Action("nfc", "NFC", R.drawable.ic_nfc),
         new Action("hotspot", "移动热点", R.drawable.ic_hotspot),
         new Action("torch", "手电筒", R.drawable.ic_ms_flashlight_on),

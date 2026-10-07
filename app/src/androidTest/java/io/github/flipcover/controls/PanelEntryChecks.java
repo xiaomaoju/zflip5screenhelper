@@ -119,6 +119,7 @@ final class PanelEntryChecks {
             DockGeometry.Placement dock = DockGeometry.resolve(width, height, java.util.List.of(cuts[edge]), density, (edge + 3) % 4, .46f, .088f, true);
             int topInset = DockGeometry.panelEntryTopInset(position, 70, density);
             DockGeometry.Placement placement = DockGeometry.panelEntry(dock, dock, width, height, java.util.List.of(cuts[edge]), density, 24, position, topInset);
+            if (edge == 2) placement = DockGeometry.compactTopEntry(placement, density);
             require(placement.edge() == (position.equals("bottom_right") ? DockGeometry.BOTTOM : DockGeometry.TOP) && !placement.vertical(), "selected corner is horizontal with the correct inward direction");
             entry = new PanelEntryView(activity, prefs, placement, new DockView.Listener() {
                 public void action(String id) { clicks++; } public void configure() { }
@@ -195,8 +196,14 @@ final class PanelEntryChecks {
             finally { root.removeAllViews(); owner.closePanel(); }
         }
     }
-    private void checkWindowFlags() {
+    private CoverService service() {
         CoverService owner = new CoverService(); owner.screenContext = activity; owner.prefs = prefs;
+        try { java.lang.reflect.Method attach = android.content.ContextWrapper.class.getDeclaredMethod("attachBaseContext", android.content.Context.class); attach.setAccessible(true); attach.invoke(owner, activity); }
+        catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+        return owner;
+    }
+    private void checkWindowFlags() {
+        CoverService owner = service();
         DockGeometry.Box box = new DockGeometry.Box(0, 500, 300, 48); DockGeometry.Placement placement = new DockGeometry.Placement(box, box, box, DockGeometry.BOTTOM, false);
         DockView compact = new DockView(activity, prefs, placement, 0, new DockView.Listener() { public void action(String id) { } public void configure() { } }, true);
         try {
@@ -224,7 +231,7 @@ final class PanelEntryChecks {
     }
     private void checkPanelWindowContinuity() {
         mount(); prefs.data.edit().putBoolean("panel_blur", false).commit();
-        CoverService owner = new CoverService(); owner.screenContext = activity; owner.prefs = prefs;
+        CoverService owner = service();
         DockGeometry.Box box = new DockGeometry.Box(0, 500, 400, 48), content = new DockGeometry.Box(0, 0, 600, 450);
         owner.placement = new DockGeometry.Placement(box, box, content, DockGeometry.BOTTOM, false);
         DockView dock = new DockView(activity, prefs, owner.placement, 0, new DockView.Listener() { public void action(String id) { } public void configure() { } }, true);

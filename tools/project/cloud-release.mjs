@@ -13,6 +13,15 @@ export function validateReleaseTag(tag, identity, previousCodes) {
   if (previousCodes.some(code => code >= identity.versionCode)) throw new Error('Release versionCode must exceed every recorded version');
 }
 
+export function previousVersionCodes(currentTag, command = git) {
+  const tags = command(['tag', '--list', 'v*']).split('\n').filter(tag => /^v\d+\.\d+\.\d+$/.test(tag) && tag !== currentTag);
+  return ['HEAD^', ...tags].map(ref => {
+    const match = command(['show', `${ref}:app/build.gradle`]).match(/versionCode\s+(\d+)/);
+    if (!match) throw new Error(`Cannot read versionCode from ${ref}`);
+    return Number(match[1]);
+  });
+}
+
 export function validateCloudManifest(manifest, identity, commit, repository, runId) {
   if (manifest.sourceCommit !== commit || manifest.sourceDirty !== false || manifest.provenance !== 'github-actions' || manifest.build?.repository !== repository || manifest.build?.runId !== runId) throw new Error('Artifact is not from this tagged source and workflow run');
   for (const field of ['packageName', 'versionName', 'versionCode', 'minSdk']) if (manifest[field] !== identity[field]) throw new Error('Artifact does not match the tagged Gradle identity');
@@ -33,8 +42,7 @@ async function preflight() {
   const identity = androidIdentity();
   const tag = process.env.GITHUB_REF_NAME;
   if (process.env.GITHUB_REF_TYPE !== 'tag') throw new Error('Cloud packaging requires a version tag');
-  const directories = await fs.readdir(path.join(projectRoot, 'dist/update-release'));
-  validateReleaseTag(tag, identity, directories.filter(name => /^\d+$/.test(name)).map(Number));
+  validateReleaseTag(tag, identity, previousVersionCodes(tag));
   execFileSync('git', ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], { cwd: projectRoot });
   if (git(['status', '--porcelain'])) throw new Error('Cloud packaging requires a clean tagged checkout');
   const existing = releaseByTag(process.env.GITHUB_REPOSITORY, tag);

@@ -33,12 +33,8 @@ __pycache__/
 !/dist/html/*.svg
 !/dist/html/*.png
 !/dist/html/*.webp
-!/dist/update-release/*/catalog.json
-!/dist/update-release/*/release-manifest.json
-!/dist/update-release/*/RELEASE.md
-!/dist/update-debug/*/catalog.json
-!/dist/update-debug/*/release-manifest.json
-!/dist/update-debug/*/RELEASE.md
+/dist/update-release/
+/dist/update-debug/
 
 # Selected existing UI images displayed in the repository README
 !/dist/开发设计/readme-gallery/*.png

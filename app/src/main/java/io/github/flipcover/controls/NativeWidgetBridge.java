@@ -199,8 +199,9 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
     void safeArea(Display display, int width, int height, DockGeometry.Box safe) {
         ChromeArea next = display == null || safe == null ? null : new ChromeArea(display.getDisplayId(), display.getRotation(), width, height, safe);
         if (java.util.Objects.equals(chromeArea, next)) return;
-        chromeArea = next; schedule(); CoverApp.launcherWidgets(context).schedule();
+        chromeArea = next; geometryChanged();
     }
+    void geometryChanged() { schedule(); CoverApp.launcherWidgets(context).schedule(); }
     private void observeSystem(boolean enabled) {
         if (observing == enabled) return; observing = enabled; DisplayManager displays = context.getSystemService(DisplayManager.class);
         if (enabled) {
@@ -232,6 +233,7 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
         } catch (RuntimeException failure) { stop(); android.util.Log.w("NativeWidgets", "Widget connection unavailable", failure); }
     }
     void resize(int outer) {
+        if (CoverService.instance != null && CoverService.instance.deferNativeCardUpdate(Displays.selected(context, prefs))) return;
         for (WidgetGrid.Item item : items(outer)) updateSize(item.id(), size(outer, item.width(), item.height()));
         dirty.add(outer); main.removeCallbacks(publishDirty); main.post(publishDirty);
     }
@@ -258,8 +260,11 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
     }
     WidgetSafeArea.Frame frame(int outer) { return frame(outer, null, false); }
     WidgetSafeArea.Frame launcherFrame(int outer) {
+        return launcherFrame(outer, false);
+    }
+    WidgetSafeArea.Frame launcherFrame(int outer, boolean available) {
         Display selected = Displays.selected(context, prefs); CoverService service = CoverService.instance;
-        return frame(outer, selected == null || service == null ? null : service.launcherContentBounds(selected.getDisplayId()), true);
+        return frame(outer, selected == null || service == null ? null : service.launcherContentBounds(selected.getDisplayId(), available), true);
     }
     private WidgetSafeArea.Frame frame(int outer, DockGeometry.Box launcherBounds, boolean launcher) {
         SizeF canvas = canvasSize(outer, launcher); Display display = Displays.selected(context, prefs);
@@ -273,7 +278,9 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
             android.view.DisplayCutout cutout = display.getCutout(); int left = cutout.getSafeInsetLeft(), top = cutout.getSafeInsetTop();
             safe = new DockGeometry.Box(left, top, Math.max(0, pixels.x - left - cutout.getSafeInsetRight()), Math.max(0, pixels.y - top - cutout.getSafeInsetBottom()));
         }
-        return WidgetSafeArea.fit(canvas.getWidth(), canvas.getHeight(), pixels.x, pixels.y, density, launcherBounds == null ? safe : launcherBounds);
+        CoverService service = CoverService.instance;
+        DockGeometry.Box host = service == null ? null : service.nativeHostBounds(display);
+        return WidgetSafeArea.fit(canvas.getWidth(), canvas.getHeight(), pixels.x, pixels.y, density, launcherBounds == null ? safe : launcherBounds, host);
     }
     SizeF size(int outer) { WidgetSafeArea.Frame frame = frame(outer); return new SizeF(Math.max(1, frame.width()), Math.max(1, frame.height())); }
     SizeF size(int outer, int width, int height) { SizeF full = size(outer); return new SizeF(full.getWidth() * width / 4, full.getHeight() * height / 4); }
@@ -307,6 +314,7 @@ final class NativeWidgetBridge implements DisplayManager.DisplayListener {
     }
     private void publish(int outer) {
         Display display = Displays.selected(context, prefs); if (!owns(outer) || display == null || display.getState() != Display.STATE_ON) return;
+        if (CoverService.instance != null && CoverService.instance.deferNativeCardUpdate(display)) return;
         if (restoreBeforePublish) { stop(); refresh(); return; }
         List<WidgetGrid.Item> items = items(outer); if (items.isEmpty()) { message(outer, "布置这张卡片", "点按添加组件 · 4×4自由布局"); return; }
         try {

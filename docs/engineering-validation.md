@@ -21,7 +21,7 @@
 
 截至上述本地验收，尚未执行：新工作流的远端 CI、Windows/Linux 运行、模拟器 UI、三星物理真机、新 APK 上传/安装/正式发布。当前应用稳定性沿用用户反馈，本轮不据此宣称新的设备验收通过。仓库根目录未自动选择软件许可证；许可及第三方声明应在明确授权范围后独立整理。
 
-流程入口见 [工程流程](engineering-workflow.md)，正式包记录见 [稳定基线](../dist/update-release/72/RELEASE.md)。
+流程入口见 [工程流程](engineering-workflow.md)，本次历史验收的正式包记录见 [0.18.14 / 72 稳定基线](https://github.com/xiaomaoju/zflip5screenhelper/blob/c3fa84f36a50befdf5f971e94ef51e65e37eeb90/dist/update-release/72/RELEASE.md)。
 
 ## 远端验收 · 2026-10-06
 

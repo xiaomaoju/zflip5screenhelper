@@ -6,10 +6,19 @@ import { projectRoot, sdkPackages } from './project.mjs';
 import { checkSite, assembleSite, siteDirectory } from './site.mjs';
 import { sha256, validateCatalog, publishDirectory } from './release.mjs';
 import { createSigning, removeSigning, propertyValue } from './signing.mjs';
-import { validateReleaseTag, validateCloudManifest, releaseByTag } from './cloud-release.mjs';
+import { validateReleaseTag, validateCloudManifest, releaseByTag, previousVersionCodes } from './cloud-release.mjs';
 
 const cache = path.join(projectRoot, 'Cache/build-output.nosync/project/tests');
 await fs.mkdir(cache, { recursive: true });
+
+test('cloud version guard reads Git history without local delivery directories', () => {
+  const command = args => args[0] === 'tag' ? 'v0.18.16\nv0.18.26\nnotes' : ({ 'HEAD^:app/build.gradle': 'versionCode 83', 'v0.18.16:app/build.gradle': 'versionCode 74' })[args[1]];
+  const codes = previousVersionCodes('v0.18.26', command);
+  assert.deepEqual(codes, [83, 74]);
+  assert.doesNotThrow(() => validateReleaseTag('v0.18.26', { versionName: '0.18.26', versionCode: 84 }, codes));
+  assert.throws(() => validateReleaseTag('v0.18.26', { versionName: '0.18.26', versionCode: 83 }, codes), /versionCode/);
+  assert.throws(() => previousVersionCodes('v0.18.26', args => args[0] === 'tag' ? '' : 'invalid'), /Cannot read versionCode/);
+});
 
 test('SDK packages resolve both legacy and major/minor repository names', () => {
   const repository = '<remotePackage path="platforms;android-36"><remotePackage path="platforms;android-37.0"><remotePackage path="platforms;android-37.2"><remotePackage path="build-tools;36.0.0">';

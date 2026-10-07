@@ -28,11 +28,12 @@ public final class DockView extends InputSurface {
     private final DockGeometry.Chrome chrome;
     private final Listener listener;
     private final LinearLayout track;
+    private final View background;
+    private final FrameLayout viewport;
     private final List<LinearLayout> pages = new ArrayList<>();
     private final List<ImageButton> launcherButtons = new ArrayList<>();
-    private boolean launcherHidden;
-    private float launcherProgress;
-    private android.animation.ValueAnimator launcherAnimation;
+    private final java.util.Map<ImageButton, String> actionButtons = new java.util.LinkedHashMap<>();
+    private boolean launcherDisabled;
     private final SwipeGesture gesture;
     private final View dots;
     private final int extent;
@@ -40,7 +41,7 @@ public final class DockView extends InputSurface {
     private final Prefs prefs;
     private final int touchSlop;
     private final ImageButton fixed;
-    private final boolean compact;
+    private boolean compact;
     private int page;
     private float startX, startY, startTranslation;
     private enum TouchMode { PENDING, PAGING, CONSUMED }
@@ -51,9 +52,9 @@ public final class DockView extends InputSurface {
     public DockView(Context context, Prefs prefs, DockGeometry.Placement placement, int initialPage, Listener listener) {
         this(context, prefs, placement, initialPage, listener, false);
     }
-    public DockView(Context context, Prefs prefs, DockGeometry.Placement placement, int initialPage, Listener listener, boolean compact) {
+    public DockView(Context context, Prefs prefs, DockGeometry.Placement placement, int initialPage, Listener listener, boolean initiallyCompact) {
         super(context); this.placement = placement; this.listener = listener; chrome = DockGeometry.chrome(placement, context.getResources().getDisplayMetrics().density);
-        this.compact = compact; this.prefs = prefs;
+        this.compact = initiallyCompact; this.prefs = prefs;
         setHapticFeedbackEnabled(prefs.haptics());
         setClipChildren(true); setClipToPadding(true);
         float density = context.getResources().getDisplayMetrics().density;
@@ -68,7 +69,7 @@ public final class DockView extends InputSurface {
         };
         DockGeometry.Box touch = placement.touch(), visual = placement.visual();
         int visualX = visual.x() - touch.x(), visualY = visual.y() - touch.y();
-        View background = new View(context); background.setBackgroundColor(prefs.chromeStyle().equals("black") ? Ui.BACKGROUND : android.graphics.Color.TRANSPARENT);
+        background = new View(context); background.setBackgroundColor(prefs.chromeStyle().equals("black") ? Ui.BACKGROUND : android.graphics.Color.TRANSPARENT);
         FrameLayout.LayoutParams bg = new FrameLayout.LayoutParams(visual.width(), visual.height());
         bg.leftMargin = visualX; bg.topMargin = visualY; addView(background, bg);
         if (compact) background.setVisibility(GONE);
@@ -77,7 +78,7 @@ public final class DockView extends InputSurface {
         extent = slots.extent(); int count = slots.pageSize();
         List<String> actions = prefs.scrollingActions();
         int total = Math.max(1, (actions.size() + count - 1) / count);
-        FrameLayout viewport = new FrameLayout(context); viewport.setClipChildren(true);
+        viewport = new FrameLayout(context); viewport.setClipChildren(true);
         FrameLayout.LayoutParams viewportParams = new FrameLayout.LayoutParams(slots.pager().width(), slots.pager().height()); viewportParams.leftMargin = slots.pager().x(); viewportParams.topMargin = slots.pager().y();
         viewport.setTag("paging-area"); addView(viewport, viewportParams);
         if (compact) viewport.setVisibility(GONE);
@@ -121,6 +122,7 @@ public final class DockView extends InputSurface {
     }
     private ImageButton actionButton(Context context, String id, int length) {
         ImageButton button = new RuntimeVisuals.Button(context); RuntimeVisuals.surface(button, android.graphics.Color.TRANSPARENT, 12);
+        RuntimeVisuals.control(button);
         button.setImageDrawable(Ui.chromeIcon(context, ActionCatalog.icon(context, id), prefs, !id.startsWith("app:") && !id.startsWith("tile:"))); button.setScaleType(ImageView.ScaleType.FIT_CENTER);
         DockGeometry.Box touch = placement.touch(), icons = chrome.icons();
         int thickness = placement.vertical() ? icons.width() : icons.height();
@@ -129,39 +131,45 @@ public final class DockView extends InputSurface {
         if (placement.vertical()) button.setPadding(icons.x() + across, along, touch.width() - icons.x() - across - size, along);
         else button.setPadding(along, icons.y() + across, along, touch.height() - icons.y() - across - size);
         button.setContentDescription(ActionCatalog.label(context, id));
+        actionButtons.put(button, id);
         boolean launcher = id.equals("app_hub") || id.equals("app_dock");
         if (launcher) launcherButtons.add(button);
-        button.setOnClickListener(v -> { if (!launcher || !launcherHidden) listener.action(id); });
+        button.setOnClickListener(v -> { if (!launcher || !launcherDisabled) listener.action(id); });
         return button;
     }
-    void launcherHidden(boolean hidden) {
-        if (launcherHidden == hidden) return;
-        launcherHidden = hidden;
-        if (launcherAnimation != null) { launcherAnimation.cancel(); launcherAnimation = null; }
+    void launcherDisabled(boolean disabled) {
+        if (launcherDisabled == disabled) return;
+        launcherDisabled = disabled;
         if (pressedButton != null && launcherButtons.contains(pressedButton)) endTouch();
         for (ImageButton button : launcherButtons) {
-            button.setEnabled(!hidden); button.setImportantForAccessibility(hidden ? IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS : IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+            button.setEnabled(!disabled);
+            if (disabled) RuntimeVisuals.control(button).cancel();
+            button.setStateDescription(disabled ? "应用中心已显示，此入口暂不可用" : null);
+            android.graphics.drawable.Drawable icon = ActionCatalog.icon(getContext(), actionButtons.get(button));
+            if (disabled) {
+                icon = icon.mutate(); icon.setTint(Ui.TEXT); icon.setAlpha(Math.round(255 * .3f));
+                android.graphics.drawable.Drawable mark = Ui.icon(getContext(), R.drawable.ic_ms_block, Ui.TEXT);
+                mark.setAlpha(Math.round(255 * AppLauncherStyle.DOCK_DISABLED_ALPHA));
+                android.graphics.drawable.LayerDrawable marked = new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{icon, mark});
+                marked.setLayerSize(1, Math.max(1, Math.round(icon.getIntrinsicWidth() * AppLauncherStyle.DOCK_DISABLED_SCALE)), Math.max(1, Math.round(icon.getIntrinsicHeight() * AppLauncherStyle.DOCK_DISABLED_SCALE)));
+                marked.setLayerGravity(1, android.view.Gravity.CENTER); button.setImageDrawable(marked);
+            } else button.setImageDrawable(Ui.chromeIcon(getContext(), icon, prefs, true));
         }
-        float target = hidden ? 1 : 0;
-        if (!isAttachedToWindow() || !android.animation.ValueAnimator.areAnimatorsEnabled()) { launcherProgress = target; applyLauncherProgress(); return; }
-        launcherAnimation = android.animation.ValueAnimator.ofFloat(launcherProgress, target);
-        launcherAnimation.setDuration(Math.max(1, Math.round(200 * Math.abs(target - launcherProgress))));
-        launcherAnimation.setInterpolator(new android.view.animation.DecelerateInterpolator());
-        launcherAnimation.addUpdateListener(frame -> { launcherProgress = (float) frame.getAnimatedValue(); applyLauncherProgress(); }); launcherAnimation.start();
     }
-    String launcherEntryDiagnostics() { return "hidden=" + launcherHidden + ", progress=" + launcherProgress; }
-    private void applyLauncherProgress() {
-        float distance = (placement.vertical() ? placement.touch().width() : placement.touch().height()) * launcherProgress;
-        float x = placement.edge() == DockGeometry.LEFT ? -distance : placement.edge() == DockGeometry.RIGHT ? distance : 0;
-        float y = placement.edge() == DockGeometry.TOP ? -distance : placement.edge() == DockGeometry.BOTTOM ? distance : 0;
-        for (ImageButton button : launcherButtons) { button.setTranslationX(x); button.setTranslationY(y); button.setAlpha(1 - launcherProgress); }
-    }
+    String launcherEntryDiagnostics() { return "disabled=" + launcherDisabled; }
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         setSystemGestureExclusionRects(java.util.List.of(new android.graphics.Rect(0, 0, w, h)));
     }
     public int page() { return page; }
     public boolean compact() { return compact; }
+    /** Clock-page toggles keep this full-sized window below the moving arrow. */
+    void compact(boolean value) {
+        if (compact == value) return;
+        endTouch(); track.animate().cancel(); compact = value; snap(false);
+        background.setVisibility(value ? GONE : VISIBLE); viewport.setVisibility(value ? GONE : VISIBLE); fixed.setVisibility(value ? GONE : VISIBLE);
+        dots.invalidate(); setVisibility(value ? GONE : VISIBLE);
+    }
     private void begin(MotionEvent event) {
         endTouch(); track.animate().cancel(); gesture.reset();
         startTranslation = placement.vertical() ? track.getTranslationY() : track.getTranslationX();
@@ -195,7 +203,7 @@ public final class DockView extends InputSurface {
         float along = placement.vertical() ? dy : dx, across = placement.vertical() ? dx : dy;
         if (touchMode == TouchMode.PENDING) {
             if (Math.hypot(dx, dy) <= touchSlop) return;
-            touchMoved = true; removeCallbacks(hold); if (pressedButton != null) pressedButton.setPressed(false);
+            touchMoved = true; removeCallbacks(hold); clearPressedButton();
             touchMode = TouchMode.PAGING;
         }
         if (touchMode != TouchMode.PAGING || compact) return;
@@ -233,8 +241,13 @@ public final class DockView extends InputSurface {
         return true;
     }
     private void endTouch() {
-        removeCallbacks(hold); if (pressedButton != null) pressedButton.setPressed(false); pressedButton = null;
+        removeCallbacks(hold); clearPressedButton(); pressedButton = null;
         touchMode = TouchMode.CONSUMED;
+    }
+    private void clearPressedButton() {
+        if (pressedButton == null) return;
+        pressedButton.setPressed(false);
+        ControlFeedback feedback = RuntimeVisuals.control(pressedButton); if (feedback != null) feedback.cancel();
     }
     @Override public boolean performClick() { return super.performClick(); }
     private void snap(boolean animated) {
@@ -262,5 +275,5 @@ public final class DockView extends InputSurface {
         if (action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) { page = Math.max(0, page - 1); snap(true); return true; }
         return super.performAccessibilityAction(action, args);
     }
-    @Override protected void onDetachedFromWindow() { endTouch(); track.animate().cancel(); if (launcherAnimation != null) { launcherAnimation.cancel(); launcherAnimation = null; } launcherProgress = launcherHidden ? 1 : 0; applyLauncherProgress(); super.onDetachedFromWindow(); }
+    @Override protected void onDetachedFromWindow() { endTouch(); track.animate().cancel(); super.onDetachedFromWindow(); }
 }

@@ -38,32 +38,33 @@ final class DockInputChecks {
                 prefs.data.edit().putBoolean("gestures_enabled", true).commit();
             });
             for (int side = 0; side < 4; side++) { edge = side; checkHolds(); }
-            checkLauncherAnimation();
+            checkLauncherFeedback();
             require(!prefs.tapHandles(), "stored legacy tap setting cannot reactivate handle clicks");
             org.json.JSONObject legacy = prefs.layoutSnapshot().put("tapHandles", true); prefs.prepareLayout(legacy, prefs.data.edit()).commit();
             require(!prefs.tapHandles() && !prefs.layoutSnapshot().getBoolean("tapHandles"), "legacy import is compatible and re-export disables handle clicks");
-            for (boolean compact : new boolean[]{false, true}) {
+            for (String state : List.of("buttons", "disabled", "handles")) {
                 android.graphics.Bitmap[] rendered = {null};
                 test.runOnMainSync(() -> {
-                    checkHandleDrawing(compact);
+                    checkHandleDrawing(state.equals("handles"), state.equals("disabled"));
                     rendered[0] = android.graphics.Bitmap.createBitmap(drawingRoot.getWidth(), drawingRoot.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
                     drawingRoot.draw(new android.graphics.Canvas(rendered[0]));
                 });
                 java.io.File folder = new java.io.File(activity.getFilesDir(), "dock-input"); folder.mkdirs();
-                try (java.io.FileOutputStream stream = new java.io.FileOutputStream(new java.io.File(folder, compact ? "handles.png" : "buttons.png"))) { rendered[0].compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream); }
+                try (java.io.FileOutputStream stream = new java.io.FileOutputStream(new java.io.File(folder, state + ".png"))) { rendered[0].compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream); }
                 rendered[0].recycle();
             }
             return "PASS: " + assertions + " dock input assertions; five buttons, four edges, both hands, hidden dock, no bottom panel pulls and cancellation; native components only";
         } finally { test.runOnMainSync(() -> activity.finish()); }
     }
     private int dp(float value) { return Ui.dp(activity, value); }
-    private void checkHandleDrawing(boolean compact) {
+    private void checkHandleDrawing(boolean compact, boolean disabled) {
         int width = activity.getResources().getDisplayMetrics().widthPixels, height = activity.getResources().getDisplayMetrics().heightPixels;
         float density = activity.getResources().getDisplayMetrics().density;
         DockGeometry.Placement p = DockGeometry.edgeTouch(DockGeometry.resolve(width, height, List.of(), density, 3, .46f, .088f, false), width, height);
         if (compact) p = DockGeometry.handlesOnly(p, density);
         DockGeometry.Chrome chrome = DockGeometry.chrome(p, density);
         DockView sample = new DockView(activity, prefs, p, 0, new DockView.Listener() { public void action(String id) { } public void configure() { } }, compact);
+        sample.launcherDisabled(disabled);
         FrameLayout root = new FrameLayout(activity); drawingRoot = root; root.setBackgroundColor(0xFF124D76);
         FrameLayout.LayoutParams position = new FrameLayout.LayoutParams(p.touch().width(), p.touch().height()); position.leftMargin = p.touch().x(); position.topMargin = p.touch().y(); root.addView(sample, position); activity.setContentView(root);
         root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)); root.layout(0, 0, width, height);
@@ -85,10 +86,10 @@ final class DockInputChecks {
     private void mount(boolean compact, int page) {
         mount(compact, page, false);
     }
-    private void mount(boolean compact, int page, boolean launcherInitiallyHidden) {
-        mount(compact, page, launcherInitiallyHidden, null);
+    private void mount(boolean compact, int page, boolean launcherInitiallyDisabled) {
+        mount(compact, page, launcherInitiallyDisabled, null);
     }
-    private void mount(boolean compact, int page, boolean launcherInitiallyHidden, DockGeometry.Placement measuredPlacement) {
+    private void mount(boolean compact, int page, boolean launcherInitiallyDisabled, DockGeometry.Placement measuredPlacement) {
         actions.clear(); begins = releases = toggles = configurations = 0; panel = ""; canceled = false;
         int width = dp(vertical() ? 44 : 300), height = dp(vertical() ? 300 : 44);
         DockGeometry.Box box = new DockGeometry.Box(0, 0, width, height); DockGeometry.Placement place = new DockGeometry.Placement(box, box, box, edge, false);
@@ -101,7 +102,7 @@ final class DockInputChecks {
             public void beginPull(String name, float distance, float originY) { begins++; panel = name; }
             public void release(String name, float distance, float speed, boolean cancel) { releases++; canceled = cancel; }
         }, compact);
-        if (launcherInitiallyHidden) dock.launcherHidden(true);
+        if (launcherInitiallyDisabled) dock.launcherDisabled(true);
         FrameLayout root = new FrameLayout(activity); root.addView(dock, new FrameLayout.LayoutParams(place.touch().width(), place.touch().height())); activity.setContentView(root);
         root.measure(View.MeasureSpec.makeMeasureSpec(place.touch().width(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(place.touch().height(), View.MeasureSpec.EXACTLY)); root.layout(0, 0, place.touch().width(), place.touch().height());
     }
@@ -154,10 +155,10 @@ final class DockInputChecks {
             int count = actions.size(); drag(point, 0, 0, MotionEvent.ACTION_UP);
             require(actions.size() == count + 1 && actions.get(count).equals(prefs.pinnedAction()), "camera-side blank tail activates the pinned launcher at " + along);
         }
-        actions.clear(); dock.launcherHidden(true);
+        actions.clear(); dock.launcherDisabled(true);
         float along = (blankFirst + blankLast) / 2f;
         drag(vertical() ? new float[]{center[0], along} : new float[]{along, center[1]}, 0, 0, MotionEvent.ACTION_UP);
-        require(actions.isEmpty(), "hidden launcher does not respond through the extended blank tail");
+        require(actions.isEmpty(), "disabled launcher does not respond through the extended blank tail");
     }
     private void checkPaging() {
         for (boolean fixed : new boolean[]{false, true}) for (float[] delta : new float[][]{{-40, 0}, {40, 0}, {0, -40}, {0, 40}, {-40, -25}, {25, 40}}) {
@@ -182,43 +183,44 @@ final class DockInputChecks {
         mount(false, 0); View fixed = dock.findViewWithTag("fixed-action"); float[] point = center(fixed);
         int left = fixed.getLeft(), top = fixed.getTop(), width = fixed.getWidth(), height = fixed.getHeight();
         long down = SystemClock.uptimeMillis(); event(down, 0, MotionEvent.ACTION_DOWN, point[0], point[1]);
-        dock.launcherHidden(true); event(down, 50, MotionEvent.ACTION_UP, point[0], point[1]); fixed.performClick();
-        require(actions.isEmpty() && !fixed.isEnabled(), "hiding cancels an in-flight launcher tap and blocks direct clicks");
-        require(fixed.getImportantForAccessibility() == View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, "hidden launcher is removed from accessibility actions");
-        drag(point, 0, 0, MotionEvent.ACTION_UP); require(actions.isEmpty(), "old launcher bounds do not open an invisible launcher");
+        dock.launcherDisabled(true); event(down, 50, MotionEvent.ACTION_UP, point[0], point[1]); fixed.performClick();
+        require(actions.isEmpty() && !fixed.isEnabled(), "disabling cancels an in-flight launcher tap and blocks direct clicks");
+        require(fixed.getImportantForAccessibility() != View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS && fixed.getStateDescription() != null, "disabled launcher retains an accessible explanation");
+        drag(point, 0, 0, MotionEvent.ACTION_UP); require(actions.isEmpty(), "disabled launcher bounds do not activate the entry");
         FrameLayout pager = dock.findViewWithTag("paging-area"); LinearLayout first = (LinearLayout) ((LinearLayout) pager.getChildAt(0)).getChildAt(0);
         View other = first.getChildAt(1); require(other.isEnabled(), "ordinary shortcuts remain enabled");
-        other.performClick(); require(actions.size() == 1, "other shortcuts keep working while launcher is hidden"); actions.clear();
-        dock.launcherHidden(false); drag(point, 0, 0, MotionEvent.ACTION_UP);
-        require(actions.equals(List.of(prefs.pinnedAction())) && fixed.isEnabled(), "show restores launcher input without rebuilding the dock");
-        require(left == fixed.getLeft() && top == fixed.getTop() && width == fixed.getWidth() && height == fixed.getHeight(), "launcher animation preserves slot geometry");
+        other.performClick(); require(actions.size() == 1, "other shortcuts keep working while launcher is disabled"); actions.clear();
+        dock.launcherDisabled(false); drag(point, 0, 0, MotionEvent.ACTION_UP);
+        require(actions.equals(List.of(prefs.pinnedAction())) && fixed.isEnabled(), "enabling restores launcher input without rebuilding the dock");
+        require(left == fixed.getLeft() && top == fixed.getTop() && width == fixed.getWidth() && height == fixed.getHeight(), "launcher state preserves slot geometry");
     }
     private void checkLauncherInitialVisibility() {
         mount(false, 0, true); View fixed = dock.findViewWithTag("fixed-action");
-        require(fixed.getAlpha() == 0 && !fixed.isEnabled(), "first frame hides and disables launcher before window attachment");
-        dock.launcherHidden(true);
-        require(fixed.getAlpha() == 0, "late card confirmation never plays a visible-to-hidden entrance");
+        require(fixed.getAlpha() == 1 && !fixed.isEnabled(), "first frame retains the disabled launcher before window attachment");
+        android.graphics.drawable.LayerDrawable marked = (android.graphics.drawable.LayerDrawable) ((android.widget.ImageButton) fixed).getDrawable();
+        require(marked.getDrawable(0).getAlpha() == Math.round(255 * .3f) && marked.getDrawable(1).getAlpha() == Math.round(255 * AppLauncherStyle.DOCK_DISABLED_ALPHA), "disabled icon and prohibition mark match native card opacity");
+        require(marked.getLayerGravity(1) == android.view.Gravity.CENTER && marked.getLayerWidth(1) == Math.round(marked.getDrawable(0).getIntrinsicWidth() * AppLauncherStyle.DOCK_DISABLED_SCALE), "prohibition mark uses the native card size and centering");
+        dock.launcherDisabled(true);
+        require(fixed.getAlpha() == 1 && fixed.getTranslationX() == 0 && fixed.getTranslationY() == 0, "late card confirmation preserves the visible slot");
         fixed.performClick(); require(actions.isEmpty(), "pending initial launcher cannot be clicked");
         FrameLayout pager = dock.findViewWithTag("paging-area"); LinearLayout first = (LinearLayout) ((LinearLayout) pager.getChildAt(0)).getChildAt(0);
         View other = first.getChildAt(1); require(other.getAlpha() == 1 && other.isEnabled(), "initial card wait does not delay ordinary shortcuts");
     }
-    private void checkLauncherAnimation() throws Exception {
-        test.runOnMainSync(() -> { edge = DockGeometry.RIGHT; mount(false, 0); dock.launcherHidden(true); });
+    private void checkLauncherFeedback() throws Exception {
+        test.runOnMainSync(() -> { edge = DockGeometry.RIGHT; mount(false, 0); View fixed = dock.findViewWithTag("fixed-action"); drag(center(fixed), 0, 0, MotionEvent.ACTION_UP); });
         SystemClock.sleep(80);
         test.runOnMainSync(() -> {
-            View fixed = dock.findViewWithTag("fixed-action"); float alpha = fixed.getAlpha(), offset = fixed.getTranslationX();
-            require(alpha > 0 && alpha < 1 && offset > 0, "launcher moves toward the physical edge while fading");
-            dock.launcherHidden(false); require(fixed.getAlpha() == alpha && fixed.getTranslationX() == offset, "reversal starts at the current animation position");
+            View fixed = dock.findViewWithTag("fixed-action"); android.graphics.Matrix matrix = new android.graphics.Matrix(); RuntimeVisuals.control(fixed).matrix(matrix);
+            require(!matrix.isIdentity() && fixed.getScaleX() == 1 && fixed.getTranslationX() == 0, "tap visibly scales paint without moving layout or touch bounds");
         });
-        SystemClock.sleep(250);
+        SystemClock.sleep(350);
         test.runOnMainSync(() -> {
-            View fixed = dock.findViewWithTag("fixed-action"); require(fixed.getAlpha() == 1 && fixed.getTranslationX() == 0, "return animation ends at the original slot"); dock.launcherHidden(true);
-        });
-        SystemClock.sleep(250);
-        test.runOnMainSync(() -> {
-            View fixed = dock.findViewWithTag("fixed-action"); require(fixed.getAlpha() == 0 && fixed.getTranslationX() == dock.getWidth(), "hidden launcher fully leaves the edge");
-            dock.launcherHidden(false); ((android.view.ViewGroup) dock.getParent()).removeView(dock);
-            require(fixed.getAlpha() == 1 && fixed.getTranslationX() == 0, "unmount cancels animation and settles the requested state");
+            View fixed = dock.findViewWithTag("fixed-action"); android.graphics.Matrix matrix = new android.graphics.Matrix(); RuntimeVisuals.control(fixed).matrix(matrix);
+            require(matrix.isIdentity(), "tap bounce settles at original size");
+            dock.launcherDisabled(true); actions.clear(); fixed.performClick(); RuntimeVisuals.control(fixed).matrix(matrix);
+            require(actions.isEmpty() && matrix.isIdentity() && fixed.getAlpha() == 1, "disabled launcher remains visible without click action or bounce");
+            dock.launcherDisabled(false); fixed.performClick(); ((android.view.ViewGroup) dock.getParent()).removeView(dock); RuntimeVisuals.control(fixed).matrix(matrix);
+            require(matrix.isIdentity(), "unmount cancels click feedback");
         });
     }
     private void checkCrossAxisGuard() {

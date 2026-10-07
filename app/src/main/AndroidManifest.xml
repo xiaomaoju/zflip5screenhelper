@@ -23,6 +23,8 @@
     <application android:name=".CoverApp" android:label="@string/app_name" android:theme="@style/AppTheme"
         android:icon="@drawable/ic_launcher" android:allowBackup="false" android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:networkSecurityConfig="@xml/update_network_security">
+        <!-- Keep our requested window cutout policy when Samsung enters tent mode. -->
+        <meta-data android:name="com.samsung.android.foldable.keep_cutout_mode_in_tent_mode" android:value="true" />
         <provider android:name=".UpdateFileProvider" android:authorities="${applicationId}.updates"
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_file_paths" />

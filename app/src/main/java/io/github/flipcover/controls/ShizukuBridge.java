@@ -15,8 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import rikka.shizuku.Shizuku;
 
 public final class ShizukuBridge {
-    // Refresh the user service when task-snapshot behavior changes within a validation version.
-    private static final int SERVICE_REVISION = 1;
+    // Refresh the user service when the operation whitelist changes within a validation version.
+    private static final int SERVICE_REVISION = 2;
     record Snapshot(android.graphics.Bitmap bitmap, String message, boolean retryable) {
         Snapshot(android.graphics.Bitmap bitmap, String message) { this(bitmap, message, false); }
     }

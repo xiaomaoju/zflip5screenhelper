@@ -50,4 +50,46 @@ public class WidgetSafeAreaTest {
         var frame = WidgetSafeArea.fit(30, 20, 720, 748, 2, new DockGeometry.Box(0, 48, 720, 604));
         assertEquals(0, frame.height(), 0); assertTrue(frame.top() <= 20); assertTrue(frame.width() >= 0);
     }
+    @Test public void tentHostConsumesTopInsetOnceAndKeepsDockInsideItsBottom() {
+        float density = 2.125f;
+        var safe = new DockGeometry.Box(0, 151, 748, 569);
+        var host = new DockGeometry.Box(0, 66, 748, 654);
+        var frame = WidgetSafeArea.fit(352, 339, 748, 720, density, safe, host);
+        assertEquals(85, frame.top() * density, .001f);
+        assertEquals(569, frame.height() * density, .001f);
+        assertEquals(654, (frame.top() + frame.height()) * density, .001f);
+        assertEquals(151, host.y() + frame.top() * density, .001f);
+        assertEquals(frame, WidgetSafeArea.fit(352, 308, 748, 720, density, safe, host));
+    }
+    @Test public void fullOrUnknownHostKeepsOriginalGeometryExactly() {
+        var safe = new DockGeometry.Box(0, 151, 748, 569);
+        var original = WidgetSafeArea.fit(352, 339, 748, 720, 2.125f, safe);
+        assertEquals(original, WidgetSafeArea.fit(352, 339, 748, 720, 2.125f, safe, null));
+        assertEquals(original, WidgetSafeArea.fit(352, 339, 748, 720, 2.125f, safe, new DockGeometry.Box(0, 0, 748, 720)));
+        assertEquals(original, WidgetSafeArea.fit(352, 339, 748, 720, 2.125f, safe, new DockGeometry.Box(0, 66, 748, 720)));
+    }
+    @Test public void smallerCardIsNotRepositionedFromHostWindowAlone() {
+        var safe = new DockGeometry.Box(0, 151, 748, 569);
+        assertEquals(WidgetSafeArea.fit(300, 200, 748, 720, 2.125f, safe), WidgetSafeArea.fit(300, 200, 748, 720, 2.125f, safe, new DockGeometry.Box(0, 66, 748, 654)));
+    }
+    @Test public void rotatedHostProjectsPhysicalEdgesWithoutMirroring() {
+        float density = 2.125f;
+        var canvas = WidgetSafeArea.canvas(352, 339, 720 / density, 748 / density, true);
+        var frame = WidgetSafeArea.fit(canvas.width(), canvas.height(), 720, 748, density, new DockGeometry.Box(90, 72, 610, 630), new DockGeometry.Box(66, 0, 654, 748));
+        assertEquals(24, frame.left() * density, .001f);
+        assertEquals(72, frame.top() * density, .001f);
+        assertEquals(610, frame.width() * density, .001f);
+        assertEquals(630, frame.height() * density, .001f);
+    }
+    @Test public void hostWithoutChromeFillsOnlyMeasuredWindowAndDisjointAreaStaysEmpty() {
+        var host = new DockGeometry.Box(0, 66, 748, 654);
+        var frame = WidgetSafeArea.fit(352, 339, 748, 720, 2.125f, null, host);
+        assertEquals(new WidgetSafeArea.Frame(0, 0, 352, 654 / 2.125f), frame);
+        for (var safe : new DockGeometry.Box[]{new DockGeometry.Box(0, 0, 748, 60), new DockGeometry.Box(800, 800, 10, 10)}) {
+            frame = WidgetSafeArea.fit(352, 339, 748, 720, 2.125f, safe, host);
+            assertEquals(0, frame.height(), 0);
+            assertTrue(frame.left() + frame.width() <= 352);
+            assertTrue(frame.top() + frame.height() <= 654 / 2.125f);
+        }
+    }
 }

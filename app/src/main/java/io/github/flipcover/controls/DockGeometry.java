@@ -19,6 +19,48 @@ public final class DockGeometry {
     }
     public record Slots(Box pager, Box fixed, int pageSize, int extent) { }
     public record Chrome(Box icons, Box firstHandle, Box secondHandle) { }
+    record ClockHandle(Box collapsed, Box expanded) { }
+    static Box outsideDisplay(Box target, int edge, int width, int height) {
+        return new Box(edge == LEFT ? -target.width() : edge == RIGHT ? width : target.x(), edge == TOP ? -target.height() : edge == BOTTOM ? height : target.y(), target.width(), target.height());
+    }
+    static Box interpolate(Box from, Box to, float progress) {
+        float t = Math.max(0, Math.min(1, progress));
+        return new Box(Math.round(from.x() + (to.x() - from.x()) * t), Math.round(from.y() + (to.y() - from.y()) * t), from.width(), from.height());
+    }
+    static ClockHandle clockHandlePositions(Placement dock, Box expanded, Box systemSafe) {
+        Box visual = dock.visual().intersect(systemSafe);
+        int w = Math.min(expanded.width(), visual.width()), h = Math.min(expanded.height(), visual.height());
+        Box collapsed = new Box(visual.x() + (visual.width() - w) / 2, visual.y() + (visual.height() - h) / 2, w, h);
+        Box open = new Box(expanded.x() + (expanded.width() - w) / 2, expanded.y() + (expanded.height() - h) / 2, w, h);
+        return new ClockHandle(collapsed, open);
+    }
+    /** One small target on the inward side of the dock, clear of buttons and physical/system edges. */
+    static Box clockHandle(Placement dock, int width, int height, List<Box> cutouts, float density, Box systemSafe, Box entryTouch) {
+        Box safe = panelContent(dock, width, height, cutouts).intersect(systemSafe), touch = dock.touch(), visual = dock.visual();
+        int gap = Math.max(1, Math.round(2 * density));
+        int left = safe.x(), top = safe.y(), right = safe.right(), bottom = safe.bottom();
+        switch (dock.edge()) {
+            case TOP -> top = Math.max(top, touch.bottom() + gap);
+            case LEFT -> left = Math.max(left, touch.right() + gap);
+            case RIGHT -> right = Math.min(right, touch.x() - gap);
+            default -> bottom = Math.min(bottom, touch.y() - gap);
+        }
+        int w = Math.min(Math.max(0, right - left), Math.round((dock.vertical() ? 28 : 48) * density));
+        int h = Math.min(Math.max(0, bottom - top), Math.round((dock.vertical() ? 48 : 28) * density));
+        int x = dock.edge() == LEFT ? left : dock.edge() == RIGHT ? right - w : Math.max(left, Math.min(right - w, visual.x() + (visual.width() - w) / 2));
+        int y = dock.edge() == TOP ? top : dock.edge() == BOTTOM ? bottom - h : Math.max(top, Math.min(bottom - h, visual.y() + (visual.height() - h) / 2));
+        Box candidate = new Box(x, y, w, h), overlap = candidate.intersect(entryTouch);
+        if (overlap.width() > 0 && overlap.height() > 0) {
+            switch (dock.edge()) {
+                case TOP -> y = entryTouch.bottom() + gap;
+                case LEFT -> x = entryTouch.right() + gap;
+                case RIGHT -> x = entryTouch.x() - gap - w;
+                default -> y = entryTouch.y() - gap - h;
+            }
+            if (x < left || y < top || x + w > right || y + h > bottom) return new Box(left, top, 0, 0);
+        }
+        return new Box(x, y, w, h);
+    }
     /** Horizontal entry at the selected top corner or the original camera-bottom right position. */
     public static Placement panelEntry(Placement anchor, Placement dock, int width, int height, List<Box> cutouts, float density, int homeInset, String position) {
         return panelEntry(anchor, dock, width, height, cutouts, density, homeInset, position, 0);
@@ -72,6 +114,18 @@ public final class DockGeometry {
         int offset = p.edge() == TOP ? p.visual().y() - p.touch().y() : 0;
         Box a = result.firstHandle(), b = result.secondHandle();
         return new Chrome(result.icons(), new Box(a.x(), a.y() + offset, a.width(), a.height()), new Box(b.x(), b.y() + offset, b.width(), b.height()));
+    }
+    /** Retain the edge-to-handle swipe target, reclaiming only the unused tail below the artwork. */
+    public static Placement compactTopEntry(Placement entry, float density) {
+        if (entry.edge() != TOP) return entry;
+        Chrome handles = panelEntryChrome(entry, density); Box visual = entry.visual(), touch = entry.touch(), panel = entry.panel();
+        int bottom = Math.min(touch.bottom(), touch.y() + Math.max(handles.firstHandle().bottom(), handles.secondHandle().bottom()) + Math.max(1, Math.round(3 * density)));
+        return new Placement(new Box(visual.x(), visual.y(), visual.width(), bottom - visual.y()), new Box(touch.x(), touch.y(), touch.width(), bottom - touch.y()), new Box(panel.x(), bottom, panel.width(), Math.max(0, panel.bottom() - bottom)), entry.edge(), entry.measured());
+    }
+    /** Preserve the content's dimensions when it fits; only redistribute vertical spare space. */
+    public static Box centerVertically(Box content, Box available) {
+        int height = Math.min(content.height(), available.height());
+        return new Box(content.x(), available.y() + (available.height() - height) / 2, content.width(), height);
     }
     private static Chrome chrome(Placement p, float density, int edgeInsetDp) {
         Box v = p.visual(), t = p.touch(); boolean vertical = p.vertical();

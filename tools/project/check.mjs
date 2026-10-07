@@ -35,7 +35,7 @@ try {
         if (!files.has(target)) errors.push(`${file}: untracked or missing link ${reference}`);
       }
     }
-    const samples = ['Cache/probe.txt', 'local.properties', 'keystore.properties', 'dist/html/leaked.keystore', 'dist/update-release/999/probe.apk'];
+    const samples = ['Cache/probe.txt', 'local.properties', 'keystore.properties', 'dist/html/leaked.keystore', ...['release', 'debug'].flatMap(kind => ['probe.apk', 'catalog.json', 'release-manifest.json', 'RELEASE.md'].map(name => `dist/update-${kind}/999/${name}`))];
     const excluded = new Set(execFileSync('git', ['check-ignore', '--no-index', '--stdin'], { cwd: projectRoot, input: samples.join('\n') + '\n', encoding: 'utf8' }).trim().split('\n'));
     for (const sample of samples) if (!excluded.has(sample)) errors.push(`Ignore rule missing: ${sample}`);
     for (const name of ['zflip5-cover-overlay.svg', 'zflip5-cover-overlay.png', 'zflip5-cover-overlay@2x.png']) {

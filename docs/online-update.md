@@ -60,10 +60,10 @@ catalog 保持服务端协议的原字段名称：
 已有版本复核（设置 ANDROID_HOME 和 JDK，Windows 同命令）：
 
 ```sh
-node tools/project/release.mjs verify dist/update-release/72
+node tools/project/release.mjs verify dist/update-release/84
 ```
 
-catalog、公开版本清单与说明入 Git；APK 和私钥不入库。版本清单记录准备时源码提交和设备检查状态，设备验收完成前不宣称正式发布已通过。完整流程及标签位置见 [工程流程](engineering-workflow.md)。
+`dist/update-debug/` 与 `dist/update-release/` 整目录由 Git 忽略，APK、catalog、版本清单和说明均保留本地或作为独立发布附件；私钥不入库。版本清单记录准备时源码提交和设备检查状态，设备验收完成前不宣称正式发布已通过。完整流程及标签位置见 [工程流程](engineering-workflow.md)。
 
 debug 使用 `:app:assembleDebug` 构建后，按上表命名整理到 `dist/update-debug/<versionCode>/` 并生成实际对应的 catalog；不要以 Release 产物替代 debug 包或只复制旧 catalog。测试基线采用临时版本名称时，catalog 的更新说明须明确标记测试用途。
 

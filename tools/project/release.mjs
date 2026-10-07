@@ -37,15 +37,9 @@ export function inspectApk(apk) {
 }
 
 function officialCertificate() {
-  const directory = path.join(projectRoot, 'dist/update-release');
-  const certificates = new Set();
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
-    const manifest = path.join(directory, entry.name, 'release-manifest.json');
-    if (fs.existsSync(manifest)) certificates.add(JSON.parse(fs.readFileSync(manifest, 'utf8')).certificateSha256);
-  }
-  if (certificates.size !== 1 || !/^[a-f0-9]{64}$/.test([...certificates][0])) throw new Error('A single recorded official signing certificate is required');
-  return [...certificates][0];
+  const certificate = fs.readFileSync(path.join(projectRoot, 'tools/project/release-certificate.sha256'), 'utf8').trim();
+  if (!/^[a-f0-9]{64}$/.test(certificate)) throw new Error('A recorded official signing certificate is required');
+  return certificate;
 }
 
 export async function verifyRelease(directory) {

@@ -5,6 +5,37 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class DockGeometryTest {
+    @Test public void compactEntryKeepsArtworkAndEdgeOriginWhileReleasingOnlyItsLowerTail() {
+        DockGeometry.Box camera = new DockGeometry.Box(0, 0, 369, 66);
+        for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (int scale : new int[]{50, 100, 150}) {
+            DockGeometry.Placement dock = DockGeometry.resolve(748, 720, List.of(camera), density, 1, .46f, .088f, true);
+            DockGeometry.Placement original = DockGeometry.panelEntry(dock, dock, 748, 720, List.of(camera), density, 12, "top_left", DockGeometry.panelEntryTopInset("top_left", scale, density));
+            DockGeometry.Placement compact = DockGeometry.compactTopEntry(original, density);
+            DockGeometry.Chrome before = DockGeometry.panelEntryChrome(original, density), after = DockGeometry.panelEntryChrome(compact, density);
+            assertEquals(before.firstHandle(), after.firstHandle()); assertEquals(before.secondHandle(), after.secondHandle());
+            assertEquals(original.touch().x(), compact.touch().x()); assertEquals(original.touch().y(), compact.touch().y()); assertEquals(original.touch().width(), compact.touch().width());
+            assertTrue(compact.touch().bottom() < original.touch().bottom());
+            assertTrue(compact.touch().height() > after.secondHandle().bottom());
+            assertEquals(compact.touch().bottom(), compact.panel().y()); assertEquals(original.panel().bottom(), compact.panel().bottom());
+            assertEquals(compact, DockGeometry.compactTopEntry(compact, density));
+        }
+    }
+    @Test public void verticalCenteringPreservesSizeAndHandlesConstrainedSpace() {
+        DockGeometry.Box original = new DockGeometry.Box(12, 160, 700, 540), available = new DockGeometry.Box(12, 120, 700, 580);
+        assertEquals(new DockGeometry.Box(12, 140, 700, 540), DockGeometry.centerVertically(original, available));
+        assertEquals(original, DockGeometry.centerVertically(original, original));
+        assertEquals(new DockGeometry.Box(12, 160, 700, 200), DockGeometry.centerVertically(original, new DockGeometry.Box(12, 160, 700, 200)));
+    }
+    @Test public void launcherCenteringPreservesBodyGridAndDockInBothHosts() {
+        for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (boolean right : new boolean[]{false, true}) for (boolean paging : new boolean[]{false, true}) for (int space : new int[]{0, 17, 38}) {
+            AppLauncherStyle.HubGeometry original = AppLauncherStyle.hubGeometry(748, 540, density, right, paging);
+            AppLauncherStyle.HubGeometry centered = AppLauncherStyle.hubGeometry(748, 540 + space, density, right, paging, space);
+            assertEquals(original.bodyHeight(), centered.bodyHeight()); assertEquals(original.gridHeight(), centered.gridHeight()); assertEquals(original.gridWidth(), centered.gridWidth());
+            assertEquals(original.railListHeight(), centered.railListHeight()); assertEquals(original.dockHeight(), centered.dockHeight());
+            assertEquals(original.bodyTop() + space / 2, centered.bodyTop());
+            assertEquals(original.catalogLeft(), centered.catalogLeft()); assertEquals(original.railLeft(), centered.railLeft());
+        }
+    }
     @Test public void measuredShortcutGroupCompactsAwayFromCameraAcrossRotations() {
         DockGeometry.Box[] cuts = {new DockGeometry.Box(379, 654, 369, 66), new DockGeometry.Box(654, 0, 66, 369), new DockGeometry.Box(0, 0, 369, 66), new DockGeometry.Box(0, 379, 66, 369)};
         for (float density : new float[]{1.5f, 2.125f, 2.75f}) for (int rotation = 0; rotation < 4; rotation++) {

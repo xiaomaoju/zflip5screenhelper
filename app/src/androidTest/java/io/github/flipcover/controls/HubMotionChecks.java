@@ -76,6 +76,8 @@ final class HubMotionChecks {
             main(() -> checkDismissal(prefs));
             main(() -> {
                 CoverService owner = new CoverService(); owner.screenContext = activity; owner.prefs = prefs; field(owner, "hub", hub);
+                try { java.lang.reflect.Method attach = android.content.ContextWrapper.class.getDeclaredMethod("attachBaseContext", android.content.Context.class); attach.setAccessible(true); attach.invoke(owner, activity); }
+                catch (ReflectiveOperationException error) { throw new AssertionError(error); }
                 owner.act("app_dock");
                 if (ValueAnimator.areAnimatorsEnabled()) {
                     ValueAnimator exit = motion(); exit.pause(); exit.setCurrentPlayTime(90); float y = hub.getTranslationY();

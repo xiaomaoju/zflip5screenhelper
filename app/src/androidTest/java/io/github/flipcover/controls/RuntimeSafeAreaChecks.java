@@ -78,7 +78,14 @@ final class RuntimeSafeAreaChecks {
         owner.placement = DockGeometry.edgeTouch(anchor, width, height);
         DockGeometry.Box widget = owner.resolveContentGeometry(new Point(width, height), rotation, cuts, anchor, actual, Math.max(mandatory.bottom, showNavigation ? navigation.bottom : 0));
         DockGeometry.Box panel = owner.placement.panel(), hub = box(owner, "hubFrame"), statusBox = box(owner, "controlStatusBox"), frame = box(owner, "panelFrame");
-        for (DockGeometry.Box area : List.of(panel, hub, widget, statusBox, box(owner, "cardSafeFrame"))) inside(area, system);
+        DockGeometry.Box available = box(owner, "hubAvailableFrame"), taskArea = box(owner, "taskFrame");
+        for (DockGeometry.Box area : List.of(panel, hub, available, taskArea, widget, statusBox, box(owner, "cardSafeFrame"))) inside(area, system);
+        if (rotation != android.view.Surface.ROTATION_180) { require(available.equals(hub), "other rotations keep the original launcher bounds"); require(taskArea.equals(hub), "other rotations keep the original task bounds"); }
+        else {
+            require(Math.abs((taskArea.y() - available.y()) - (available.bottom() - taskArea.bottom())) <= 1, "task viewport redistributes only spare vertical space");
+            require(taskArea.height() == Math.min(hub.height(), available.height()), "task preview viewport keeps its previous height when it fits");
+            require(Math.abs((panel.y() - available.y()) - (system.bottom() - panel.bottom())) <= 1, "panel viewport has balanced top and bottom gaps");
+        }
         require(frame.equals(new DockGeometry.Box(0, 0, width, height)), "the backdrop viewport stays full screen");
         DockGeometry.Placement entry = (DockGeometry.Placement) field(owner, "panelEntryPlacement");
         if (entry.edge() == DockGeometry.TOP) {
@@ -92,7 +99,30 @@ final class RuntimeSafeAreaChecks {
                 inside(new DockGeometry.Box(content.getPaddingLeft(), content.getPaddingTop(), width - content.getPaddingLeft() - content.getPaddingRight(), height - content.getPaddingTop() - content.getPaddingBottom()), system);
                 if (card.statusBar() != null) inside(new DockGeometry.Box(card.statusBar().getLeft(), card.statusBar().getTop(), card.statusBar().getWidth(), card.statusBar().getHeight()), system);
                 RectF visual = new RectF(); card.visualBounds(visual); require(visual.equals(new RectF(0, 0, width, height)), "system edges do not shrink the glass backdrop");
-                if (page.equals("controls") && hasCutout && showStatus && showNavigation) picture(card, "controls-" + rotation);
+                if (hasCutout && showStatus && showNavigation) {
+                    picture(card, page + "-" + rotation);
+                    if (rotation == android.view.Surface.ROTATION_180) {
+                        int top = content.getPaddingTop(), bottom = content.getPaddingBottom();
+                        int originalTop = entry.visual().y() + Ui.dp(context, 24);
+                        DockGeometry.Box originalArea = new DockGeometry.Box(panel.x(), originalTop, panel.width(), system.bottom() - originalTop);
+                        content.setPadding(content.getPaddingLeft(), originalTop + Ui.dp(context, 6), content.getPaddingRight(), height - system.bottom()); card.contentSafeBounds(originalArea);
+                        measure(card, width, height); picture(card, page + "-" + rotation + "-before");
+                        content.setPadding(content.getPaddingLeft(), top, content.getPaddingRight(), bottom); card.contentSafeBounds(panel); measure(card, width, height);
+                    }
+                }
+                if (rotation == android.view.Surface.ROTATION_180 && page.equals("notifications")) {
+                    NotificationCenterView center = card.findViewWithTag("notification-center"); View header = card.findViewWithTag("panel-header");
+                    int headerTop = header.getTop(), viewportTop = content.getPaddingTop(), viewportBottom = content.getHeight() - content.getPaddingBottom();
+                    java.util.ArrayList<android.service.notification.StatusBarNotification> messages = new java.util.ArrayList<>();
+                    for (int i = 0; i < 12; i++) {
+                        android.app.Notification notification = new android.app.Notification.Builder(context, "centering-fixture").setSmallIcon(R.drawable.ic_ms_notifications).setContentTitle("通知 " + i).setContentText("用于检查列表滚动时的稳定位置").build();
+                        messages.add(new android.service.notification.StatusBarNotification(context.getPackageName(), context.getPackageName(), i, "centering", 10001, 0, 0, notification, android.os.Process.myUserHandle(), 0));
+                    }
+                    for (java.util.List<android.service.notification.StatusBarNotification> items : List.of(messages, java.util.List.<android.service.notification.StatusBarNotification>of())) {
+                        center.update(true, items); measure(card, width, height);
+                        require(header.getTop() == headerTop && content.getPaddingTop() == viewportTop && content.getHeight() - content.getPaddingBottom() == viewportBottom, "empty and long notification lists keep the same centered viewport");
+                    }
+                }
             } finally { card.release(); }
         }
         AppHubView.Listener listener = new AppHubView.Listener() { public void action(String id) { } public void editFavorites() { } public void editPinned() { } public void expand(boolean value) { } public void close() { } };
@@ -100,7 +130,27 @@ final class RuntimeSafeAreaChecks {
         FrameLayout host = owner.attachHubContent(launcher); InterfaceCard card = (InterfaceCard) host.getChildAt(0);
         try {
             measure(host, width, height);
-            require(new DockGeometry.Box(launcher.getLeft(), launcher.getTop(), launcher.getWidth(), launcher.getHeight()).equals(hub), "launcher consumes the resolved safe bounds once");
+            require(new DockGeometry.Box(launcher.getLeft(), launcher.getTop(), launcher.getWidth(), launcher.getHeight()).equals(available), "launcher consumes the resolved safe bounds once");
+            AppHubView original = new AppHubView(context, prefs, listener);
+            try {
+                measure(original, hub.width(), Math.min(hub.height(), available.height()));
+                View body = (View) launcher.findViewWithTag("hub-catalog").getParent(), oldBody = (View) original.findViewWithTag("hub-catalog").getParent();
+                View dock = launcher.getChildAt(launcher.getChildCount() - 1), oldDock = original.getChildAt(original.getChildCount() - 1);
+                require(body.getHeight() == oldBody.getHeight(), "centering retains sidebar and application body height");
+                require(launcher.getTop() + dock.getTop() == hub.bottom() - original.getHeight() + oldDock.getTop(), "Dock stays at its original screen position");
+                require(body.getWidth() == oldBody.getWidth(), "centering never changes horizontal geometry");
+                int above = body.getTop() - launcher.getPaddingTop(), below = dock.getTop() - body.getBottom();
+                require(Math.abs(above - below) <= 1, "launcher body divides released space equally above and below");
+                launcher.setExpanded(false); measure(host, width, height); launcher.setExpanded(true); measure(host, width, height);
+                require(launcher.getTop() + dock.getTop() == hub.bottom() - original.getHeight() + oldDock.getTop(), "Dock anchor survives collapse and expansion");
+            } finally { original.dispose(); }
+            if (hasCutout && showStatus && showNavigation) {
+                picture(host, "launcher-" + rotation);
+                if (rotation == android.view.Surface.ROTATION_180) {
+                    launcher.centeringSpace(0); card.contentBounds(hub, frame); measure(host, width, height); picture(host, "launcher-" + rotation + "-before");
+                    launcher.centeringSpace(hub.y() - available.y()); card.contentBounds(available, frame); measure(host, width, height);
+                }
+            }
         } finally { card.release(); host.removeAllViews(); }
         AppHubView tasks = new AppHubView(context, prefs, listener); tasks.showTasks(true);
         FrameLayout taskHost = owner.attachHubContent(tasks); InterfaceCard taskCard = (InterfaceCard) taskHost.getChildAt(0);
@@ -108,7 +158,23 @@ final class RuntimeSafeAreaChecks {
             java.lang.reflect.Method changed = CoverService.class.getDeclaredMethod("taskPageChanged", RecentTasksView.class); changed.setAccessible(true); changed.invoke(owner, tasks.taskPage());
             measure(taskHost, width, height);
             View stage = tasks.findViewWithTag("tasks-stage"); Rect bounds = new Rect(); stage.getDrawingRect(bounds); taskCard.offsetDescendantRectToMyCoords(stage, bounds);
-            require(new DockGeometry.Box(bounds.left, bounds.top, bounds.width(), bounds.height()).equals(hub), "task stage consumes the same safe frame without double insets");
+            require(new DockGeometry.Box(bounds.left, bounds.top, bounds.width(), bounds.height()).equals(taskArea), "task stage consumes its centered safe frame without double insets");
+            tasks.taskPage().data(List.of(new RecentTasks.Task(701, 2, 0, context.getPackageName() + "/.MainActivity", context.getPackageName(), false)), true, true, false, true, true, true, "图标模式");
+            measure(taskHost, width, height);
+            if (hasCutout && showStatus && showNavigation) {
+                picture(taskHost, "tasks-" + rotation);
+                if (rotation == android.view.Surface.ROTATION_180) {
+                    tasks.taskPage().safeArea(hub, frame); taskCard.contentSafeBounds(hub); measure(taskHost, width, height); picture(taskHost, "tasks-" + rotation + "-before");
+                    tasks.taskPage().safeArea(taskArea, frame); taskCard.contentSafeBounds(taskArea); measure(taskHost, width, height);
+                }
+            }
+            for (int count : new int[]{0, 6}) {
+                java.util.ArrayList<RecentTasks.Task> items = new java.util.ArrayList<>();
+                for (int i = 0; i < count; i++) items.add(new RecentTasks.Task(701 + i, 2, 0, context.getPackageName() + "/.MainActivity", context.getPackageName(), false));
+                tasks.taskPage().data(items, true, true, false, true, true, true, "图标模式"); measure(taskHost, width, height);
+                Rect next = new Rect(); stage.getDrawingRect(next); taskCard.offsetDescendantRectToMyCoords(stage, next);
+                require(next.equals(bounds), "empty and populated task lists keep the same centered viewport");
+            }
         } finally { taskCard.release(); taskHost.removeAllViews(); }
         cases++;
     }

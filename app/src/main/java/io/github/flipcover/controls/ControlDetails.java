@@ -23,11 +23,12 @@ final class ControlDetails implements AutoCloseable {
     private MediaRouter2 router;
     private String pendingRoute;
     private ConnectivityDetails connectivity;
+    private SystemLocation location;
     private final java.util.ArrayList<SwitchRow> switches=new java.util.ArrayList<>();
     void torchChanged() { if (!closed) for (SwitchRow control:switches) if (control.id.equals("torch") && (!control.pending || java.util.Objects.equals(control.current(),control.requested))) control.complete(); }
     void statesChanged() { if (!closed) for (SwitchRow control:switches) if (!control.pending && !control.id.equals("torch")) control.complete(); }
     void stateChanged(String id) { if (!closed) for (SwitchRow control:switches) if (!control.pending && control.id.equals(id)) control.complete(); }
-    void statesInvalidated() { if (!closed) for (SwitchRow control:switches) { if (control.id.equals("rotation")) control.complete(); else if (!control.id.equals("torch")) { control.requestGeneration++; control.finish(null,"状态未知 · 请刷新连接状态"); } } }
+    void statesInvalidated() { if (!closed) for (SwitchRow control:switches) { if (control.id.equals("rotation") || control.id.equals("location")) control.complete(); else if (!control.id.equals("torch")) { control.requestGeneration++; control.finish(null,"状态未知 · 请刷新连接状态"); } } }
     private final Runnable routeTimeout = () -> { if (!closed && pendingRoute != null) { pendingRoute = null; outputs(); note("切换未确认，请使用系统输出选择"); } };
     private final MediaRouter2.RouteCallback routes = new MediaRouter2.RouteCallback() { @Override public void onRoutesUpdated(List<MediaRoute2Info> list) { if (!closed) outputs(); } };
     private final MediaRouter2.ControllerCallback controller = new MediaRouter2.ControllerCallback() { @Override public void onControllerUpdated(MediaRouter2.RoutingController c) { if (!closed) outputs(); } };
@@ -63,6 +64,11 @@ final class ControlDetails implements AutoCloseable {
             case "bluetooth" -> { switches(id); row("连接 / 配对设备", "由系统管理蓝牙设备", R.drawable.ic_ms_bluetooth, () -> settings(Settings.ACTION_BLUETOOTH_SETTINGS)); sheet.footer("更多蓝牙设置", () -> settings(Settings.ACTION_BLUETOOTH_SETTINGS)); }
             case "brightness" -> { sheet.title.setText("亮度与显示"); row("显示设置", "自动亮度 / 护眼由系统提供", R.drawable.ic_ms_brightness_6, () -> settings(Settings.ACTION_DISPLAY_SETTINGS)); }
             case "data" -> { switches(id); sheet.footer("SIM 与移动网络", () -> settings(Settings.ACTION_WIRELESS_SETTINGS)); }
+            case "location" -> {
+                switches(id); note("影响整台手机的定位总开关，需要 Shizuku；不会更改各应用的定位权限。");
+                sheet.footer("系统定位设置", () -> settings(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                location = new SystemLocation(context, () -> stateChanged("location"));
+            }
             case "dnd" -> { switches(id); sheet.footer("勿扰时段与允许打扰", () -> settings(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS)); }
             case "airplane" -> { switches(id); row("Wi-Fi", "单独管理无线连接", R.drawable.ic_ms_wifi, () -> owner.showDetails("wifi", null)); row("蓝牙", "单独管理蓝牙设备", R.drawable.ic_ms_bluetooth, () -> owner.showDetails("bluetooth", null)); }
             case "torch" -> { switches("torch"); note("亮度档位由设备支持情况决定"); }
@@ -89,7 +95,7 @@ final class ControlDetails implements AutoCloseable {
             toggle=new GlassToggle(context,title,current(),this::click); toggle.setTag("detail-switch-"+id); line.addView(toggle); choices=Ui.row(context); choices.setVisibility(View.GONE); choices.addView(PanelUi.button(context,"开启",() -> request(true)),new LinearLayout.LayoutParams(0,-2,1)); choices.addView(PanelUi.button(context,"关闭",() -> request(false)),new LinearLayout.LayoutParams(0,-2,1)); sheet.content.addView(choices); complete();
         }
         Boolean current() { return id.equals("rotation") ? Boolean.valueOf(owner.rotationAutomatic()) : owner.on(id); }
-        void click() { if (pending || closed) return; if (confirmed==null) { choices.setVisibility(choices.getVisibility()==View.VISIBLE ? View.GONE : View.VISIBLE); return; } request(!confirmed); }
+        void click() { if (pending || closed) return; if (id.equals("location")) confirmed = current(); if (confirmed==null) { choices.setVisibility(choices.getVisibility()==View.VISIBLE ? View.GONE : View.VISIBLE); return; } request(!confirmed); }
         void request(boolean value) {
             if (pending || closed) return; pending=true; requested=value; int generation=++requestGeneration; Runnable finished=() -> { if (!closed && pending && generation==requestGeneration && line.isAttachedToWindow()) complete(); }; choices.setVisibility(View.GONE); line.setEnabled(false); toggle.setEnabled(false); toggle.pending(value); status.setText("正在切换…"); owner.main.removeCallbacks(timeout); owner.main.postDelayed(timeout,4000);
             if (id.equals("rotation")) { if (owner.rotationAutomatic()!=value) owner.toggleRotation(); complete(); }
@@ -146,5 +152,5 @@ final class ControlDetails implements AutoCloseable {
         note("更改屏幕方向可能会让液态玻璃临时失效,届时请手动重启带有液态玻璃的页面");
         sheet.footer("交回系统旋转", () -> { owner.stopAutomaticRotation(); owner.shell("rotation_auto", 0, "", null); sheet.close(); });
     }
-    @Override public void close() { closed = true; for (SwitchRow control:switches) owner.main.removeCallbacks(control.timeout); switches.clear(); if (connectivity != null) { connectivity.close(); connectivity = null; } owner.main.removeCallbacks(routeTimeout); if (router != null) { router.unregisterRouteCallback(routes); router.unregisterControllerCallback(controller); router.unregisterTransferCallback(transfers); router = null; } }
+    @Override public void close() { closed = true; for (SwitchRow control:switches) owner.main.removeCallbacks(control.timeout); switches.clear(); if (location != null) { location.close(); location = null; } if (connectivity != null) { connectivity.close(); connectivity = null; } owner.main.removeCallbacks(routeTimeout); if (router != null) { router.unregisterRouteCallback(routes); router.unregisterControllerCallback(controller); router.unregisterTransferCallback(transfers); router = null; } }
 }

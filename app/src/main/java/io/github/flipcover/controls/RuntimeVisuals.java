@@ -64,7 +64,7 @@ final class RuntimeVisuals {
             boolean handled = canceled || super.dispatchTouchEvent(event); if (controlFeedback != null && (canceled || event.getActionMasked() == MotionEvent.ACTION_CANCEL)) controlFeedback.cancel(); return handled;
         }
         @Override public void setPressed(boolean value) { super.setPressed(value); if (controlFeedback != null) controlFeedback.pressed(value); else if (press != null) press.set(value); }
-        @Override public boolean performClick() { if (controlFeedback != null) controlFeedback.pulse(); return super.performClick(); }
+        @Override public boolean performClick() { if (!isEnabled()) return false; if (controlFeedback != null) controlFeedback.pulse(); return super.performClick(); }
         @Override public void draw(Canvas canvas) { if (controlFeedback == null) { super.draw(canvas); return; } int saved = controlFeedback.save(canvas, getWidth() / 2f, getHeight() / 2f); super.draw(canvas); canvas.restoreToCount(saved); }
         @Override protected void onDraw(Canvas canvas) {
             int saved = canvas.save(); if (force != null) canvas.scale(force.scaleX(node), force.scaleY(node), getWidth() / 2f, getHeight() / 2f);

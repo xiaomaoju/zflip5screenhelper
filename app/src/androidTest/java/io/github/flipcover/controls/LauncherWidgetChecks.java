@@ -50,11 +50,15 @@ final class LauncherWidgetChecks {
         } finally { pixels.recycle(); }
     }
     private void sharedHubLayout(Prefs prefs) {
+        sharedHubLayout(prefs, 0);
+    }
+    private void sharedHubLayout(Prefs prefs, int topSpace) {
         ViewGroup panel = card.findViewById(R.id.launcher_panel);
         AppHubView floating = new AppHubView(activity, prefs, new AppHubView.Listener() {
             public void action(String id) { } public void editFavorites() { } public void editPinned() { } public void expand(boolean value) { } public void close() { }
         });
         try {
+            floating.centeringSpace(topSpace);
             floating.measure(View.MeasureSpec.makeMeasureSpec(panel.getWidth(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(panel.getHeight(), View.MeasureSpec.EXACTLY)); floating.layout(0, 0, panel.getWidth(), panel.getHeight());
             ViewGroup tools = floating.findViewWithTag("hub-tools"), nativeTools = panel.findViewById(R.id.launcher_rail_tools);
             require(tools.getChildCount() == 1 && nativeTools.getChildCount() == 1, "both sidebar footers contain only the edit button");
@@ -231,6 +235,133 @@ final class LauncherWidgetChecks {
             main(() -> { CoverService.instance = previous; service[0].main.removeCallbacksAndMessages(null); CoverApp.launcherWidgets(context).refresh(); });
             java.lang.reflect.Field files = CoverService.class.getDeclaredField("files"); files.setAccessible(true); ((java.util.concurrent.ExecutorService) files.get(service[0])).shutdownNow();
         }
+    }
+    private void nativeHostContinuity(Context context, Prefs prefs, int widget, android.view.Display target) throws Exception {
+        CoverService previous = CoverService.instance; CoverService[] owner = {null}; NativeWidgetBridge widgets = CoverApp.widgets(context);
+        AppWidgetManager manager = AppWidgetManager.getInstance(context); Bundle original = manager.getAppWidgetOptions(widget);
+        int oldWidth = card.getLayoutParams().width, oldHeight = card.getLayoutParams().height;
+        android.graphics.Point pixels = Displays.size(target); float density = context.createDisplayContext(target).getResources().getDisplayMetrics().density;
+        DockGeometry.Box hostArea = new DockGeometry.Box(0, 66, pixels.x, pixels.y - 66), safe = new DockGeometry.Box(0, 151, pixels.x, pixels.y - 151);
+        java.lang.reflect.Method attach = android.content.ContextWrapper.class.getDeclaredMethod("attachBaseContext", Context.class); attach.setAccessible(true);
+        java.lang.reflect.Method observed = CoverService.class.getDeclaredMethod("nativeHostArea", android.view.Display.class, DockGeometry.Box.class); observed.setAccessible(true);
+        java.lang.reflect.Field visible = CoverService.class.getDeclaredField("nativeHostVisible"); visible.setAccessible(true);
+        java.lang.reflect.Field deferred = CoverService.class.getDeclaredField("nativeGeometryDeferred"); deferred.setAccessible(true);
+        java.lang.reflect.Method resume = CoverService.class.getDeclaredMethod("resumeNativeCardUpdates"); resume.setAccessible(true);
+        java.lang.reflect.Field update = CoverService.class.getDeclaredField("updateDisplay"); update.setAccessible(true);
+        java.lang.reflect.Field settled = CoverService.class.getDeclaredField("settledDisplay"); settled.setAccessible(true);
+        java.util.function.Consumer<Boolean> foreground = shown -> { try { visible.setBoolean(owner[0], shown); } catch (Exception error) { throw new AssertionError(error); } };
+        java.util.function.Consumer<DockGeometry.Box> observe = bounds -> { try { observed.invoke(owner[0], target, bounds); } catch (Exception error) { throw new AssertionError(error); } };
+        List<DockGeometry.Box> layouts = new ArrayList<>();
+        android.view.ViewTreeObserver.OnGlobalLayoutListener changed = () -> { View panel = card.findViewById(R.id.launcher_panel); if (panel != null) layouts.add(new DockGeometry.Box(panel.getLeft(), panel.getTop(), panel.getWidth(), panel.getHeight())); };
+        main(() -> { owner[0] = new CoverService(); owner[0].prefs = prefs; owner[0].screenContext = activity; owner[0].display = target; });
+        attach.invoke(owner[0], context);
+        try {
+            main(() -> {
+                CoverService.instance = owner[0];
+                foreground.accept(true);
+                ViewGroup.LayoutParams params = card.getLayoutParams(); params.width = Ui.dp(activity, pixels.x / density); params.height = Ui.dp(activity, hostArea.height() / density); card.setLayoutParams(params);
+                widgets.safeArea(target, pixels.x, pixels.y, safe); observe.accept(hostArea);
+                Bundle options = new Bundle(original); options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, Math.round(pixels.x / density)); options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, Math.round(pixels.x / density));
+                options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, Math.round(pixels.y / density)); options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, Math.round(pixels.y / density));
+                manager.updateAppWidgetOptions(widget, options); CoverApp.launcherWidgets(context).refresh();
+            });
+            until(() -> Math.abs(card.findViewById(R.id.launcher_panel).getTop() - Ui.dp(activity, 85 / density)) <= 1, "measured native host consumes the notch inset once before transition checks");
+            WidgetSafeArea.Frame[] expected = {null}; DockGeometry.Box[] initial = {null};
+            main(() -> {
+                expected[0] = widgets.launcherFrame(widget); View panel = card.findViewById(R.id.launcher_panel); initial[0] = new DockGeometry.Box(panel.getLeft(), panel.getTop(), panel.getWidth(), panel.getHeight());
+                card.getViewTreeObserver().addOnGlobalLayoutListener(changed);
+            });
+            for (int step = 0; step < 6; step++) {
+                String[] previousText = {null}; boolean[] nextFailure = {false};
+                main(() -> {
+                    foreground.accept(false);
+                    observe.accept(null);
+                    require(hostArea.equals(owner[0].nativeHostBounds(target)), "temporary foreground loss retains the confirmed native host geometry");
+                    require(expected[0].equals(widgets.launcherFrame(widget)), "a hidden or returning card never publishes the full-display fallback frame");
+                    require(!owner[0].nativeInputEligible(), "retained geometry cannot make a hidden native card eligible for input");
+                    previousText[0] = ((TextView) card.findViewById(R.id.launcher_refresh)).getText().toString(); nextFailure[0] = !previousText[0].contains("刷新失败");
+                    if (nextFailure[0]) CoverApp.launcherWidgets(context).recentFailure("deferred fixture"); else CoverApp.launcherWidgets(context).recent(List.of(), true, true);
+                    widgets.safeArea(target, pixels.x, pixels.y, new DockGeometry.Box(0, 87, pixels.x, safe.height()));
+                    CoverApp.launcherWidgets(context).refresh();
+                    try { require(deferred.getBoolean(owner[0]), "an app's navigation geometry defers native publication instead of reflowing the hidden card"); } catch (Exception error) { throw new AssertionError(error); }
+                });
+                SystemClock.sleep(100); test.waitForIdleSync();
+                main(() -> {
+                    require(previousText[0].contentEquals(((TextView) card.findViewById(R.id.launcher_refresh)).getText()), "content changes do not republish the hidden card with application insets");
+                    widgets.safeArea(target, pixels.x, pixels.y, safe); foreground.accept(true); observe.accept(hostArea);
+                    try {
+                        Runnable pending = (Runnable) update.get(owner[0]); owner[0].main.postDelayed(pending, 30000);
+                        resume.invoke(owner[0]); require(deferred.getBoolean(owner[0]), "visible host waits while display reconciliation is queued");
+                        owner[0].main.removeCallbacks(pending); Runnable stable = (Runnable) settled.get(owner[0]); owner[0].main.postDelayed(stable, 30000);
+                        resume.invoke(owner[0]); require(deferred.getBoolean(owner[0]), "first layout pass must not publish the outgoing application's unsettled navigation insets");
+                        owner[0].main.removeCallbacks(stable); resume.invoke(owner[0]);
+                        require(!deferred.getBoolean(owner[0]), "reconciled host resumes pending native content updates");
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                until(() -> ((TextView) card.findViewById(R.id.launcher_refresh)).getText().toString().contains("刷新失败") == nextFailure[0], "resumption schedules the latest RemoteViews without a direct refresh from the test");
+            }
+            main(() -> {
+                require(!layouts.isEmpty() && layouts.stream().allMatch(initial[0]::equals), "every real RemoteViews layout during leave/return keeps the same origin and size");
+                card.getViewTreeObserver().removeOnGlobalLayoutListener(changed);
+            });
+            centeredNativeLayout(context, prefs, widget, target, owner[0]);
+            main(() -> {
+                try { java.lang.reflect.Method rebuild = CoverService.class.getDeclaredMethod("removeWindows", boolean.class); rebuild.setAccessible(true); rebuild.invoke(owner[0], true); } catch (Exception error) { throw new AssertionError(error); }
+                require(hostArea.equals(owner[0].nativeHostBounds(target)), "same-session overlay rebuild does not erase native host geometry");
+                widgets.safeArea(target, pixels.x, pixels.y, safe);
+                foreground.accept(true);
+                observe.accept(new DockGeometry.Box(0, 0, pixels.x, pixels.y));
+                require(widgets.launcherFrame(widget).equals(WidgetSafeArea.fit(pixels.x / density, pixels.y / density, pixels.x, pixels.y, density, safe)), "a measured full host immediately restores the original full-mode calculation");
+                observe.accept(hostArea); owner[0].onDisplayRemoved(target.getDisplayId());
+                require(owner[0].nativeHostBounds(target) == null, "display removal immediately invalidates retained geometry");
+                observe.accept(hostArea);
+                try { java.lang.reflect.Method teardown = CoverService.class.getDeclaredMethod("removeWindows"); teardown.setAccessible(true); teardown.invoke(owner[0]); } catch (Exception error) { throw new AssertionError(error); }
+                require(owner[0].nativeHostBounds(target) == null, "screen-off and service teardown release native host geometry");
+            });
+        } finally {
+            main(() -> {
+                card.getViewTreeObserver().removeOnGlobalLayoutListener(changed); CoverService.instance = previous; owner[0].main.removeCallbacksAndMessages(null);
+                widgets.safeArea(null, 0, 0, null); ViewGroup.LayoutParams params = card.getLayoutParams(); params.width = oldWidth; params.height = oldHeight; card.setLayoutParams(params);
+                manager.updateAppWidgetOptions(widget, original); CoverApp.launcherWidgets(context).refresh();
+            });
+            java.lang.reflect.Field files = CoverService.class.getDeclaredField("files"); files.setAccessible(true); ((java.util.concurrent.ExecutorService) files.get(owner[0])).shutdownNow();
+        }
+    }
+    private android.graphics.Rect nativeBounds(int id) {
+        View view = card.findViewById(id); android.graphics.Rect bounds = new android.graphics.Rect(0, 0, view.getWidth(), view.getHeight()); card.offsetDescendantRectToMyCoords(view, bounds); return bounds;
+    }
+    private void centeredNativeLayout(Context context, Prefs prefs, int widget, android.view.Display target, CoverService owner) throws Exception {
+        require(target.getRotation() == Surface.ROTATION_180, "centering fixture uses the actual upside-down display");
+        android.graphics.Point pixels = Displays.size(target); float density = context.createDisplayContext(target).getResources().getDisplayMetrics().density;
+        java.lang.reflect.Field area = CoverService.class.getDeclaredField("hubAvailableFrame"); area.setAccessible(true);
+        DockGeometry.Box[] centered = {null}; LauncherWidgetBridge bridge = CoverApp.launcherWidgets(context); NativeWidgetBridge widgets = CoverApp.widgets(context);
+        main(() -> {
+            List<DockGeometry.Box> cuts = List.of(new DockGeometry.Box(0, 0, pixels.x / 2, 66));
+            DockGeometry.Placement anchor = DockGeometry.resolve(pixels.x, pixels.y, cuts, density, 1, .46f, .088f, true);
+            owner.placement = DockGeometry.edgeTouch(anchor, pixels.x, pixels.y);
+            owner.resolveContentGeometry(pixels, target.getRotation(), cuts, anchor, android.graphics.Insets.of(0, 66, 0, 0), 0);
+            try { centered[0] = (DockGeometry.Box) area.get(owner); area.set(owner, owner.launcherContentBounds(target.getDisplayId())); } catch (Exception error) { throw new AssertionError(error); }
+            bridge.refresh();
+        });
+        until(() -> Math.abs(card.findViewById(R.id.launcher_panel).getTop() - Ui.dp(activity, widgets.launcherFrame(widget).top())) <= 1, "baseline native geometry is rendered");
+        android.graphics.Rect[] body = {null}, rail = {null}, dock = {null};
+        main(() -> { body[0] = nativeBounds(R.id.launcher_catalog); rail[0] = nativeBounds(R.id.launcher_rail_panel); dock[0] = nativeBounds(R.id.launcher_pins); });
+        cardFrame("hub-180-center-before");
+        main(() -> { try { area.set(owner, centered[0]); } catch (Exception error) { throw new AssertionError(error); } bridge.refresh(); });
+        until(() -> nativeBounds(R.id.launcher_catalog).top < body[0].top, "native body moves upward after reclaiming the entry tail");
+        main(() -> {
+            android.graphics.Rect moved = nativeBounds(R.id.launcher_catalog), movedRail = nativeBounds(R.id.launcher_rail_panel);
+            require(moved.width() == body[0].width() && moved.height() == body[0].height(), "native body size stays unchanged after centering");
+            require(movedRail.height() == rail[0].height() && rail[0].top - movedRail.top == body[0].top - moved.top, "native sidebar and settings move by the same amount as the catalog");
+            require(dock[0].equals(nativeBounds(R.id.launcher_pins)), "native Dock remains exactly fixed in host coordinates");
+            int space = Math.max(0, Ui.dp(activity, widgets.launcherFrame(widget).top()) - Ui.dp(activity, widgets.launcherFrame(widget, true).top()));
+            sharedHubLayout(prefs, space); fixedGrid(prefs);
+            int top = nativeBounds(R.id.launcher_panel).top + Ui.dp(activity, AppLauncherStyle.SURFACE_INSET);
+            require(Math.abs((moved.top - top) - (dock[0].top - moved.bottom)) <= 2, "native body shares the reclaimed space above and below");
+            described(card, "编辑说明").performClick();
+        });
+        until(() -> nativeToast(bridge) != null, "moved settings button retains its native PendingIntent");
+        cardFrame("hub-180-center-after");
     }
     private void cancelledFloatingLaunch(Context context, Prefs prefs, CoverService owner, int target, String app, java.util.concurrent.atomic.AtomicInteger launchedDisplay, String close, int widget) throws Exception {
         ShizukuBridge bridge = CoverApp.bridge(context); java.lang.reflect.Field remote = ShizukuBridge.class.getDeclaredField("remote"); remote.setAccessible(true); Object previous = remote.get(bridge);
@@ -499,6 +630,7 @@ final class LauncherWidgetChecks {
             cardFrame("hub-180-card");
             main(() -> { described(card, "全部应用（固定显示）").performClick(); bridge.action(ids[0], target, "apps", ""); filledBackground(); require(card.findViewById(R.id.launcher_body).getVisibility() == View.VISIBLE, "180-degree native body cannot collapse"); });
             folderReturn(prefs, bridge, ids[0], target, folder);
+            nativeHostContinuity(context, prefs, ids[0], display.getDisplay());
             // Keep the fixture host on the primary display while rotating its target;
             // otherwise MainActivity recreation leaves the assertions on a detached card.
             Activity rotatedHost = activity;

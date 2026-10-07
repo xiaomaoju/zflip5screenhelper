@@ -86,6 +86,11 @@ final class Panels {
     void working(String id, boolean value) { Tile tile = buttons.get(id); if (tile != null) tile.working(value); }
     private void controls() {
         List<String> actions = owner.prefs.actions("panel");
+        if (!preview && actions.contains("location")) body.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            private SystemLocation location;
+            @Override public void onViewAttachedToWindow(View view) { location = new SystemLocation(context, owner::refreshLocationState); }
+            @Override public void onViewDetachedFromWindow(View view) { if (location != null) { location.close(); location = null; } }
+        });
         if (!preview && (actions.contains("nfc") || actions.contains("hotspot"))) {
             Runnable read = () -> { if (body.isAttachedToWindow()) owner.refreshConnectivityStates(); };
             Runnable changed = () -> { owner.main.removeCallbacks(read); owner.main.postDelayed(read, 160); };
@@ -220,7 +225,7 @@ final class Panels {
         for (Map.Entry<String, Tile> entry : buttons.entrySet()) {
             String id = entry.getKey();
             if (preview) { entry.getValue().state(null); continue; }
-            if (List.of("wifi", "bluetooth", "data", "torch", "dnd", "airplane", "system_controls", "nfc", "hotspot").contains(id)) entry.getValue().state(owner.on(id));
+            if (List.of("wifi", "bluetooth", "data", "location", "torch", "dnd", "airplane", "system_controls", "nfc", "hotspot").contains(id)) entry.getValue().state(owner.on(id));
             if (id.equals("system_controls")) { Boolean state = owner.on(id); entry.getValue().icon.setImageDrawable(Ui.icon(context, Boolean.FALSE.equals(state) ? R.drawable.ic_ms_toggle_off : R.drawable.ic_ms_toggle_on, Boolean.TRUE.equals(state) ? Ui.ON_ACTIVE : Ui.TEXT)); }
             if (id.equals("rotation")) { entry.getValue().state(owner.rotationAutomatic()); entry.getValue().label.setText(owner.rotationAutomatic() ? "自动旋转" : "旋转锁定"); }
         }

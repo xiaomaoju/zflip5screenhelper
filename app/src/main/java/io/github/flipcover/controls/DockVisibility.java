@@ -18,16 +18,25 @@ final class DockVisibility {
     void keyboard(boolean visible) { if (keyboard != visible) { keyboard = visible; keyboardManual = null; } }
     boolean needsForeground() { return manual != null || keyboardManual != null; }
     void rulesChanged() { matchedApplications = null; matchedForeground = null; }
+    void clearManual() { manual = null; keyboardManual = null; }
     /** Application rules are an immutable configuration snapshot, replaced on changes. */
     boolean compact(boolean automatic, Set<String> compactApps) {
         if (keyboard) return keyboardManual == null || keyboardManual;
         if (manual != null) return manual;
+        return automaticallyCompact(automatic, compactApps);
+    }
+    boolean automaticallyCompact(boolean automatic, Set<String> compactApps) {
         if (!automatic || compactApps.isEmpty()) return false;
         if (matchedApplications != compactApps || matchedForeground != foreground) {
             matchedApplications = compactApps; matchedForeground = foreground;
             automaticCompact = foreground.isEmpty() || compactApps.contains(foreground);
         }
         return automaticCompact;
+    }
+    /** Samsung's unlocked clock is a System UI application window, distinct from SubLauncherWindow cards. */
+    static boolean clockPage(String packageName, CharSequence title, CharSequence systemUiTitle, boolean active) {
+        if (!active || title == null || "SubLauncherWindow".contentEquals(title)) return false;
+        return "com.android.systemui".equals(packageName) || packageName == null && systemUiTitle != null && systemUiTitle.toString().contentEquals(title);
     }
     void toggle(boolean automatic, Set<String> compactApps) { boolean next = !compact(automatic, compactApps); if (keyboard) keyboardManual = next; else manual = next; }
     void reset() { foreground = ""; manual = null; keyboard = false; keyboardManual = null; rulesChanged(); }

@@ -76,9 +76,13 @@ adb -s <TEST_EMULATOR_SERIAL> shell am instrument -w -e scenario app-update io.g
 
 包名与签名规则见上文；不要沿用历史文档中的 `.debug.test` 包名。场景的操作范围、前置条件与断言以对应检查源码和专题文档为准。
 
+定位入口可用 `-e scenario location` 检查：仅在测试模拟器上运行，会重置应用配置，验证三个位置的动作保存及配置往返、默认控制中心、定位状态只读接口、广播订阅释放及控制中心/详情布局，不执行定位切换。实际 Shizuku 开关、系统外部变更后的状态同步、断连与锁屏、三星原生侧栏点击仍需物理真机验收。
+
 本地编译、单元测试、Lint、模拟器 UI 检查和三星物理真机验证分别报告。系统窗口路由、缺口与导航边衬、锁屏与解锁恢复、Shizuku 实际执行、三星原生卡片及第三方小组件须在所选物理外屏确认，不能用原型或模拟器结果替代。系统调用失败、未连接设备或未执行的项目明确标为未验证。
 
 原始截图与日志保留在 `Cache/` 的对应任务目录；正式 APK、发布说明和最终 UI 效果按 [AGENTS](../AGENTS.md) 的交付规则放入 `dist/`。历史结果见[项目历史](project-history.md)，在线更新与打包专项见[在线更新](online-update.md)。
+
+时钟页箭头的本地 UI 回归使用 `-e scenario clock-dock`，覆盖初次屏幕外滑入提示、透明入口单击、区域外透传、白条同款淡入／半透明／延迟淡出、重复展开取消旧倒计时、多指与尺寸变化取消、无障碍点击及服务清理及复用按钮首帧隐藏。`ClockDockGeometryTest` 检查四方向的收起／展开位置、线性插值与屏外起点、缺口、快捷按钮、双白条触摸区和系统边衬避让，`DockVisibilityTest` 检查时钟窗口元数据识别及现有显隐设置优先级。另运行 `-e scenario lock-wake` 检查亮屏／解锁事件生命周期。真机须检查已解锁时钟页出现入口、单击展开／收起的箭头与快捷栏同步位置动画、第二页返回时钟页不闪现按钮、直接显示设置免箭头、离开时钟页移除、息屏后重置，以及真正锁定时维持全部隐藏。
 
 ## 项目结构
 
@@ -88,7 +92,7 @@ adb -s <TEST_EMULATOR_SERIAL> shell am instrument -w -e scenario app-update io.g
 | `app-config.json` | 更新、设置默认值、主要外观与动效的常用调节参数 |
 | `gradle/`、`gradlew`、`gradlew.bat` | 可复用的 Gradle 构建入口 |
 | `docs/` | 开发流程、模块契约、功能边界、设计方案与验证文档 |
-| `dist/` | `html/` 静态网站、`开发设计/` 历史资料、标准设备框及版本交付；公开 catalog/清单/说明入库，APK 独立分发；`开发设计/readme-gallery/` 的展示图片入库 |
+| `dist/` | `html/` 静态网站、`开发设计/` 历史资料、标准设备框及版本交付；`update-debug/` 和 `update-release/` 整目录不入库，APK 与配套元数据独立分发；`开发设计/readme-gallery/` 的展示图片入库 |
 | `tools/` | 设备外框、macOS 带框投屏工具和独立通知测试 App 源码 |
 | `tools/project/` | 跨平台工程检查、网页组装、真实 APK 验证及正式版本准备 |
 | `.github/workflows/ci.yml` | main 自动检查/Pages 部署；版本标签检查、正式签名打包及 GitHub 预发布 |

@@ -1,6 +1,9 @@
 <resources>
     <string name="app_name">Flip外屏助手</string>
     <string name="settings_support">免费软件,为爱发电,有问题和建议请联系QQ:769954413</string>
+    <string name="settings_compatibility">兼容性说明</string>
+    <string name="settings_tested_devices">测试机型</string>
+    <string name="settings_tested_devices_description">三星zFlip5,OneUI8.5,其他版本出现bug请及时反馈.</string>
     <string name="update_check">检查更新</string>
     <string name="update_recheck">重新检查</string>
     <string name="update_download">下载更新</string>
